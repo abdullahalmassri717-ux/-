@@ -172,7 +172,7 @@ create table public.support_tickets (
   created_by       uuid not null references public.profiles (id) on delete cascade default auth.uid(),
   subject          text not null check (length(trim(subject)) between 3 and 200),
   category         text,
-  priority         text not null default 'normal' check (priority in ('low', 'normal', 'high')),
+  priority         text not null default 'normal' check (priority in ('normal', 'high', 'urgent')),
   status           public.ticket_status not null default 'open',
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
@@ -227,3 +227,8 @@ create policy messages_insert on public.support_messages for insert to authentic
 
 revoke all on public.support_tickets, public.support_messages from anon;
 revoke update, delete on public.support_messages from authenticated;
+
+-- رقم واتساب الدعم الفني الظاهر للمعلمين (يضيفه مدير المنصة).
+insert into public.platform_settings (key, value, is_public) values
+  ('support', '{"whatsapp": ""}', true)
+on conflict (key) do nothing;
