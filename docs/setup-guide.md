@@ -13,7 +13,21 @@
 | 4. تقارير واتساب | WhatsApp Business API من Meta، مع قالب رسالة معتمد. | نعم (لكل رسالة) |
 | 5. الاستضافة | Vercel لنشر الموقع. | مجاني للبداية |
 
-## الخطوات التقنية (ينفّذها المبرمج أو Claude بعد استلام المفاتيح)
+## الطريقة الأسهل: النشر التلقائي من GitHub (بدون أوامر)
+
+الملف `.github/workflows/deploy-supabase.yml` يطبّق قاعدة البيانات ويرفع وظائف الخادم تلقائياً كلما تغيّر مجلد `supabase/` في الفرع الرئيسي (main)، أو يدوياً من تبويب Actions ← Deploy Supabase ← Run workflow.
+
+يحتاج فقط هذه الأسرار في GitHub ← المستودع ← Settings ← Secrets and variables ← Actions ← New repository secret:
+
+| الاسم | من أين |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | supabase.com ← صورة حسابك ← Account ← Access Tokens ← Generate new token |
+| `SUPABASE_DB_PASSWORD` | كلمة سر قاعدة البيانات التي اخترتها عند إنشاء المشروع |
+| `ANTHROPIC_API_KEY` | console.anthropic.com ← API Keys |
+
+هذه أسرار: تُكتب في GitHub فقط، ولا تُرسل في أي محادثة.
+
+## الخطوات التقنية اليدوية (بديل للطريقة السابقة)
 
 1. **قاعدة البيانات:**
    ```bash
