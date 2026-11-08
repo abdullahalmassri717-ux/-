@@ -681,6 +681,8 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                   fullName={teacherName}
                   orgName={orgName}
                   kind={entityType}
+                  region={orgRegion}
+                  invites={teachersToInvite}
                   buttonLabel="إتمام التسجيل والدخول للوحة الإدارة"
                   onBack={() => setStep(2)}
                   onCreated={(id, kind) => onOrganizationCreated?.(id, kind)}

@@ -17,12 +17,14 @@ interface Props {
   fullName: string;
   orgName: string;
   kind: EntityType;
+  region?: string;
+  invites?: { name: string; phone: string }[];
   buttonLabel: string;
   onBack: () => void;
   onCreated: (organizationId: string, kind: EntityType) => void;
 }
 
-export const FinishSignupWithWhatsApp: React.FC<Props> = ({ phone, fullName, orgName, kind, buttonLabel, onBack, onCreated }) => {
+export const FinishSignupWithWhatsApp: React.FC<Props> = ({ phone, fullName, orgName, kind, region, invites, buttonLabel, onBack, onCreated }) => {
   const auth = useAuth();
   const signedIn = auth.status === 'signed_in';
   const [codeSent, setCodeSent] = useState(false);
@@ -44,7 +46,7 @@ export const FinishSignupWithWhatsApp: React.FC<Props> = ({ phone, fullName, org
   }, [phone]);
 
   const create = async () => {
-    const { id, error: createError } = await auth.createOrganization({ name: orgName, kind, fullName });
+    const { id, error: createError } = await auth.createOrganization({ name: orgName, kind, fullName, region, invites });
     if (createError || !id) {
       setError(createError ?? 'تعذّر إنشاء الحساب. حاول مرة أخرى.');
       return;

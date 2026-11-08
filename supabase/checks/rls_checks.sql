@@ -193,6 +193,14 @@ select tests.eq((select role::text from public.memberships where user_id = auth.
 select tests.eq((select full_name from public.profiles where id = auth.uid()), 'أ. تجربة', 'مستخدم جديد: حُفظ اسمه');
 select tests.eq((select count(*) from public.students), 0::bigint, 'مستخدم جديد: لا يرى طلاب غيره');
 select tests.throws($$insert into public.organizations (name, kind) values ('x', 'school')$$, 'مستخدم جديد: الإنشاء عبر الدالة فقط');
+-- مدير المدرسة يدعو صاحب الحساب القائم؛ يقبلها عند دخوله التالي.
+reset role;
+insert into public.invitations (organization_id, phone, full_name) values (tests.org('school'), '+970590000030', 'أ. مدعو');
+set local role authenticated;
+select tests.eq((select count(*) from public.memberships where user_id = auth.uid()), 1::bigint, 'دعوة: ليست عضوية قبل القبول');
+select tests.eq(public.accept_my_invitations(), 1, 'دعوة: قُبلت عند الدخول');
+select tests.eq((select count(*) from public.memberships where user_id = auth.uid()), 2::bigint, 'دعوة: صار عضواً في المدرسة أيضاً');
+select tests.eq(public.accept_my_invitations(), 0, 'دعوة: لا تُقبل مرتين');
 rollback;
 
 \echo 'كل الفحوص نجحت ✓'

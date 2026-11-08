@@ -30,7 +30,13 @@ interface AuthContextValue {
   /** Checks the code. Returns an Arabic error message, or null on success. */
   verifyCode: (phoneInput: string, code: string) => Promise<string | null>;
   /** Creates a new organization with the signed-in person as owner. */
-  createOrganization: (input: { name: string; kind: EntityType; fullName: string }) => Promise<{ id: string | null; error: string | null }>;
+  createOrganization: (input: {
+    name: string;
+    kind: EntityType;
+    fullName: string;
+    region?: string;
+    invites?: { name: string; phone: string }[];
+  }) => Promise<{ id: string | null; error: string | null }>;
   /** Re-reads profile and memberships (e.g. after creating an organization). */
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -91,6 +97,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
     const userId = current.user.id;
+    // A teacher who already had an account joins the schools that invited them.
+    await supabase.rpc('accept_my_invitations').then(() => undefined, () => undefined);
     // Platform admins are kept in their own table and checked by a server function,
     // so nobody can make themselves admin by editing their own profile.
     const [profileRes, membershipsRes, adminRes] = await Promise.all([
@@ -174,7 +182,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   }, [loadAccount]);
 
-  const createOrganization = useCallback(async (input: { name: string; kind: EntityType; fullName: string }) => {
+  const createOrganization = useCallback(async (input: {
+    name: string;
+    kind: EntityType;
+    fullName: string;
+    region?: string;
+    invites?: { name: string; phone: string }[];
+  }) => {
     if (!supabase) return { id: null, error: null };
     const { data, error } = await supabase.rpc('create_organization', {
       p_name: input.name.trim(),
@@ -182,6 +196,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       p_full_name: input.fullName.trim(),
     });
     if (error) return { id: null, error: friendlyError(error) };
+    const orgId = data as string;
+    // Region and teacher invitations are extras: a failure here must not block sign-up.
+    if (input.region?.trim()) await supabase.from('organizations').update({ region: input.region.trim() }).eq('id', orgId);
+    const invites = (input.invites ?? [])
+      .map((t) => ({ organization_id: orgId, phone: toInternationalPhone(t.phone), full_name: t.name.trim() || null, role: 'teacher' }))
+      .filter((t) => t.phone);
+    if (invites.length) await supabase.from('invitations').upsert(invites, { onConflict: 'organization_id,phone', ignoreDuplicates: true });
     const { data: current } = await supabase.auth.getSession();
     await loadAccount(current.session);
     return { id: (data as string) ?? null, error: null };
