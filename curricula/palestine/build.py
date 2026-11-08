@@ -12,6 +12,7 @@ in the column layout of the admin "import curriculum" screen:
 
 Run:  python3 curricula/palestine/build.py
 """
+import json
 import re
 import sys
 from pathlib import Path
@@ -100,19 +101,44 @@ def read_book(path: Path):
     return meta, units, general
 
 
+def fix_text(t: str) -> str:
+    """Undoes a common PDF font glitch where lam-alef comes out as alef+hamza+lam (األ -> الأ)."""
+    t = re.sub(r"ا([أإآ])ل", r"ال\1", t)
+    t = re.sub(r"(?<![\u0600-\u06ff])اال", "الا", t)
+    t = re.sub(r"ا([أإ])", r"\1", t)  # same glitch when the lam is lost: اأخرى -> أخرى
+    t = re.sub(r"[\u0100-\u05ff]", "", t)  # stray glyphs from broken fonts
+    t = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", t)  # control characters (not allowed in xlsx)
+    t = re.sub(r"(?m)^.*\.indd\s+\d+.*$|^\d\d/\d\d/\d{4}\s+\d\d:\d\d.*$", "", t)  # printer marks
+    # Quran text set in a special font comes out as rows of single letters: drop those lines.
+    keep = []
+    for line in t.split("\n"):
+        words = line.split()
+        if len(words) >= 4 and sum(len(w) == 1 for w in words) / len(words) >= 0.6:
+            continue
+        keep.append(line)
+    return re.sub(r"\n{2,}", "\n", "\n".join(keep)).strip()
+
+
+def read_content(book: Path) -> dict:
+    """Lesson text cut from the book PDF (extract_content.py), keyed "unit<TAB>lesson"."""
+    f = book.with_name(book.stem + ".content.json")
+    return {k: fix_text(v) for k, v in json.loads(f.read_text(encoding="utf-8")).items()} if f.exists() else {}
+
+
 def rows_for_grade(folder: Path):
     grade = GRADES[folder.name]
     books = {}
     for f in sorted(folder.glob("*.txt")):
         meta, units, general = read_book(f)
-        books.setdefault(meta["subject"], []).append((meta["sem"], units, general))
+        books.setdefault(meta["subject"], []).append((meta["sem"], units, general, read_content(f)))
     rows = []
     for subject, parts in books.items():
         parts.sort(key=lambda p: p[0])
         seen_units = set()
         n = 0
-        for sem, units, general in parts:
+        for sem, units, general, content in parts:
             for name, lessons, outcomes in units:
+                raw_unit = name
                 n += 1
                 if not lessons:  # books with no lesson list (English): the unit itself is the lesson
                     lessons = [re.sub(r"^(Unit\s+\d+|الوحدة\s+\S+)\s*:\s*", "", name)]
@@ -138,8 +164,9 @@ def rows_for_grade(folder: Path):
                                 break
                 for l in lessons:
                     outs = list(dict.fromkeys(per_lesson[l])) or [""]
-                    for o in outs:
-                        rows.append([grade, subject, name, l, o, ""])
+                    text = content.get(f"{raw_unit}\t{l}", "")
+                    for i, o in enumerate(outs):
+                        rows.append([grade, subject, name, l, o, text if i == 0 else ""])
     return rows
 
 

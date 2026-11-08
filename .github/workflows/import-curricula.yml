@@ -5,7 +5,7 @@ name: Import curricula
 
 on:
   push:
-    paths: ['curricula/palestine/import.sql', '.github/workflows/import-curricula.yml']
+    paths: ['curricula/palestine/import.sql', 'curricula/palestine/import-content/**', '.github/workflows/import-curricula.yml']
   workflow_dispatch:
 
 concurrency:
@@ -23,10 +23,14 @@ jobs:
       - name: Run import
         run: |
           if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then echo "::error::SUPABASE_ACCESS_TOKEN is missing"; exit 1; fi
-          jq -Rs '{query: .}' curricula/palestine/import.sql > /tmp/body.json
-          code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --retry 3 --retry-all-errors \
-            -X POST "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/database/query" \
-            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' \
-            --data-binary @/tmp/body.json)
-          echo "HTTP $code"; cat /tmp/out.json; echo
-          case "$code" in 2*) ;; *) exit 1 ;; esac
+          # Structure first, then the lesson text in parts (each part only fills empty lessons).
+          for f in curricula/palestine/import.sql curricula/palestine/import-content/*.sql; do
+            echo "== $f"
+            jq -Rs '{query: .}' "$f" > /tmp/body.json
+            code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --retry 3 --retry-all-errors --max-time 300 \
+              -X POST "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/database/query" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' \
+              --data-binary @/tmp/body.json)
+            echo "HTTP $code"; head -c 2000 /tmp/out.json; echo
+            case "$code" in 2*) ;; *) exit 1 ;; esac
+          done

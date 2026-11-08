@@ -3939,11 +3939,6 @@ select distinct l.id, i.outcome, i.o_ord from imp i join public.grades g on g.na
 where i.outcome is not null
   and not exists (select 1 from public.learning_outcomes o where o.lesson_id = l.id and o.text = i.outcome);
 
-update public.lessons l set content = x.content
-from (select distinct on (l.id) l.id, i.content from imp i join public.grades g on g.name = i.grade and g.curriculum_id = (select id from public.curricula where slug = 'palestinian') join public.subjects s on s.grade_id = g.id and s.name = i.subject join public.units u on u.subject_id = s.id and u.title = i.unit join public.lessons l on l.unit_id = u.id and l.title = i.lesson
-      where i.content is not null order by l.id, i.o_ord) x
-where l.id = x.id and coalesce(l.content, '') = '';
-
 update public.subjects set status = 'published'
 where grade_id in (select g.id from public.grades g
                    join public.curricula c on c.id = g.curriculum_id
