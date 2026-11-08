@@ -1,321 +1,389 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ScreenId } from '../../types';
-import {
-  Camera,
-  Upload,
-  ArrowRight,
-  FileCheck2,
-  Sparkles,
-  BookOpen,
-  Edit3,
-  Check,
-  Plus
-} from 'lucide-react';
+import { Camera, ArrowRight, FileCheck2, Sparkles, Check, Loader2, Database, FilePlus2, Trash2, Layers, Eye } from 'lucide-react';
+import { useData, useLoad, errorMessage } from '../../data/DataContext';
+import type { DraftQuestion } from '../../data/ai';
+import type { QuestionGradeRow, SubmissionRow } from '../../data/types';
+import { setExamDraft } from '../../data/examDraft';
+import { getSelected, setSelected } from '../../data/selection';
+import { prepareImageForGrading, type PreparedImage } from '../../lib/imageResize';
 import { notify } from '../../lib/notify';
 
 interface ConvertOldExamToolProps {
   onNavigate: (screen: ScreenId) => void;
 }
 
-export const ConvertOldExamTool: React.FC<ConvertOldExamToolProps> = ({ onNavigate }) => {
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [extractedQuestions, setExtractedQuestions] = useState([
-    {
-      id: 'eq1',
-      text: 'إذا كان س² + ص² = 25، أوجد د²ص / دس² عند النقطة (3, 4).',
-      suggestedLesson: 'الاشتقاق الضمني',
-      suggestedScore: 20,
-    },
-    {
-      id: 'eq2',
-      text: 'جد معادلة المماس لمنحنى الاقتران ص = هـ^(2س) عند س = 0.',
-      suggestedLesson: 'مشتقات الاقترانات الأسية',
-      suggestedScore: 15,
-    },
-    {
-      id: 'eq3',
-      text: 'احسب نها(س→0) [ (جا 5س) / (ظا 2س) ].',
-      suggestedLesson: 'النهايات الدائرية',
-      suggestedScore: 10,
-    },
-  ]);
+/** Subjects of the teacher's groups, with their lessons. */
+function useTeacherSubjects() {
+  const groupsQ = useLoad((st) => st.listGroups());
+  const curriculaQ = useLoad((st) => st.listCurricula());
+  return useMemo(() => {
+    const groups = groupsQ.data ?? [];
+    const ids = new Set(groups.map((g) => g.subjectId).filter(Boolean));
+    const out: { id: string; label: string; groupId: string | null; lessons: { id: string; title: string }[] }[] = [];
+    for (const c of curriculaQ.data ?? [])
+      for (const g of c.grades)
+        for (const s of g.subjects)
+          if (ids.has(s.id))
+            out.push({
+              id: s.id,
+              label: `${s.name} • ${g.name}`,
+              groupId: groups.find((gr) => gr.subjectId === s.id)?.id ?? null,
+              lessons: s.units.flatMap((u) => u.lessons.map((l) => ({ id: l.id, title: l.title }))),
+            });
+    return out;
+  }, [groupsQ.data, curriculaQ.data]);
+}
 
-  const handleUploadOld = () => {
+export const ConvertOldExamTool: React.FC<ConvertOldExamToolProps> = ({ onNavigate }) => {
+  const store = useData();
+  const subjects = useTeacherSubjects();
+  const [subjectId, setSubjectId] = useState('');
+  useEffect(() => {
+    if (!subjectId && subjects.length) setSubjectId(subjects[0].id);
+  }, [subjects, subjectId]);
+  const subject = subjects.find((s) => s.id === subjectId);
+
+  const [pages, setPages] = useState<PreparedImage[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [questions, setQuestions] = useState<(DraftQuestion & { key: string })[]>([]);
+  const [saved, setSaved] = useState(false);
+
+  const addPages = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const picked = [...files].slice(0, Math.max(6 - pages.length, 0));
+    try {
+      const prepared = await Promise.all(picked.map((f) => prepareImageForGrading(f)));
+      setPages((prev) => [...prev, ...prepared]);
+    } catch {
+      notify('اختر صوراً فقط (JPG أو PNG).', 'warning');
+    }
+  };
+
+  const extract = async () => {
+    if (!subjectId) return notify('اختر المادة أولاً');
+    if (!pages.length) return notify('أضف صورة واحدة على الأقل للورقة');
     setIsProcessing(true);
-    setTimeout(() => {
+    try {
+      const r = await store.aiExtractExam(subjectId, pages);
+      if (!r.readable || !r.questions.length) return notify('لم نتمكن من قراءة الأسئلة. صوّر الورقة بوضوح ومن الأعلى.', 'warning');
+      setQuestions(r.questions.map((q, i) => ({ ...q, key: `x${Date.now()}_${i}` })));
+      setSaved(false);
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
       setIsProcessing(false);
-      notify('تم استخراج الأسئلة وتحديد الدروس والدرجات المقترحة بنجاح من ورقة الامتحان القديمة!');
-    }, 1200);
+    }
+  };
+
+  const update = (key: string, patch: Partial<DraftQuestion>) => setQuestions((prev) => prev.map((q) => (q.key === key ? { ...q, ...patch } : q)));
+
+  const saveToBank = async () => {
+    try {
+      const n = await store.addBankQuestions(questions.map((q) => ({ ...q, subjectId, source: 'old_exam' as const })));
+      setSaved(true);
+      notify(`حُفظ ${n} سؤال في بنك الأسئلة`, 'success');
+    } catch (e) {
+      notify(errorMessage(e));
+    }
+  };
+
+  const createExam = () => {
+    setExamDraft({
+      title: '',
+      groupId: subject?.groupId ?? null,
+      kind: 'exam',
+      questions: questions.map(({ key: _key, ...q }) => q),
+    });
+    onNavigate('B5');
   };
 
   return (
     <div className="space-y-6 text-right max-w-5xl mx-auto pb-16">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
-        <div>
-          <button
-            onClick={() => onNavigate('C_HUB')}
-            className="text-xs text-slate-500 hover:text-[#1E3A5F] flex items-center gap-1 cursor-pointer font-medium mb-1"
-          >
-            <ArrowRight className="w-4 h-4" />
-            <span>العودة لمركز الأدوات الذكية</span>
-          </button>
-          <h1 className="text-xl font-extrabold text-[#1E3A5F]">
-            تحويل امتحان ورقي قديم أو ملزمة إلى أسئلة رقمية
-          </h1>
-          <p className="text-xs text-slate-500">
-            صوّر أو ارفع امتحاناً قديماً لديك ليقوم الذكاء الاصطناعي باستخراج الأسئلة واقتراح سلم التصحيح.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => notify('تمت إضافة الأسئلة المستخرجة إلى بنك الأسئلة بنجاح!')}
-            className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer"
-          >
-            + أضف لبنك الأسئلة
-          </button>
-
-          <button
-            onClick={() => onNavigate('B5')}
-            className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-2xs"
-          >
-            <FileCheck2 className="w-4 h-4 text-emerald-400" />
-            <span>احفظ كامتحان وتابع الإعداد ←</span>
-          </button>
-        </div>
+      <div className="border-b border-slate-200 pb-4">
+        <button onClick={() => onNavigate('C_HUB')} className="text-xs text-slate-500 hover:text-[#1E3A5F] flex items-center gap-1 cursor-pointer font-medium mb-1">
+          <ArrowRight className="w-4 h-4" />
+          <span>العودة للأدوات الذكية</span>
+        </button>
+        <h1 className="text-xl font-extrabold text-[#1E3A5F]">تحويل امتحان ورقي قديم إلى أسئلة جاهزة</h1>
+        <p className="text-xs text-slate-500">صوّر امتحاناً قديماً، فيقرأ الذكاء الاصطناعي الأسئلة ويقترح الدرس والدرجة ومعايير التصحيح. راجعها ثم احفظها في البنك أو أنشئ منها امتحاناً.</p>
       </div>
 
-      {/* Upload Old Paper Button (PDF requirement: زر "صوّر أو ارفع امتحاناً قديماً") */}
-      <div className="bg-white border-2 border-dashed border-slate-300 rounded-2xl p-8 text-center space-y-3 hover:border-[#1E3A5F] transition-colors cursor-pointer">
-        <div className="w-12 h-12 rounded-xl bg-blue-50 text-[#1E3A5F] flex items-center justify-center mx-auto">
-          <Camera className="w-6 h-6" />
-        </div>
-        <div>
-          <button
-            type="button"
-            onClick={handleUploadOld}
-            className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-6 py-2.5 rounded-xl font-bold text-xs cursor-pointer inline-flex items-center gap-2"
-          >
-            <Upload className="w-4 h-4 text-emerald-400" />
-            <span>{isProcessing ? 'جارِ القراءة والاستخراج...' : 'صوّر أو ارفع امتحاناً قديماً (PDF أو صورة)'}</span>
-          </button>
-        </div>
-        <p className="text-[11px] text-slate-400">
-          يدعم الخط المطبوع ونماذج امتحانات التوجيهي السابقة والمذكرات المصورة
-        </p>
-      </div>
-
-      {/* Side-by-Side: Original Scanned Exam vs Extracted Editable Questions (PDF requirement) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Right (Original Scanned Image) */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2 text-xs">
-            <span className="font-bold text-slate-800">صورة الامتحان الورقي الأصلي (للمقارنة)</span>
-            <span className="font-mono text-[10px] text-slate-400">OLD_EXAM_SCAN_2023.jpg</span>
-          </div>
-
-          <div className="bg-[#FAF9F6] border border-slate-200 rounded-xl p-6 min-h-[350px] font-mono text-xs text-slate-600 space-y-4">
-            <div className="border-b border-slate-300 pb-2 text-center font-bold text-slate-800 font-sans">
-              دولة فلسطين · مديرية التربية والتعليم · اختبار الرياضيات الفصلي 2023
-            </div>
-            <div className="space-y-3 leading-relaxed opacity-80">
-              <p>س1) إذا كان س² + ص² = 25، أوجد د²ص / دس² عند النقطة (3, 4) ... [20 علامة]</p>
-              <p>س2) جد معادلة المماس لمنحنى الاقتران ص = هـ^(2س) عند س = 0 ... [15 علامة]</p>
-              <p>س3) احسب نها(س←0) [ (جا 5س) / (ظا 2س) ] ... [10 علامات]</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Left (Extracted Editable Questions with suggested lessons & marks) */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-bold text-[#1E3A5F]">الأسئلة المستخرجة بالذكاء الاصطناعي (قابلة للتعديل):</span>
-            <span className="text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold">
-              تم التعرف على 3 أسئلة ✓
-            </span>
-          </div>
-
-          <div className="space-y-3">
-            {extractedQuestions.map((q, idx) => (
-              <div
-                key={q.id}
-                className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-3 text-xs"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900">سؤال {idx + 1}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="bg-blue-50 text-[#1E3A5F] px-2 py-0.5 rounded font-bold">
-                      {q.suggestedLesson}
-                    </span>
-                    <span className="bg-slate-100 text-slate-800 font-mono font-bold px-2 py-0.5 rounded tabular-nums">
-                      {q.suggestedScore} علامة
-                    </span>
-                  </div>
-                </div>
-
-                <textarea
-                  rows={2}
-                  defaultValue={q.text}
-                  className="w-full p-2 bg-[#F7F8FA] border border-slate-300 rounded-lg text-xs"
-                />
-
-                <div className="flex items-center justify-between text-[11px] text-slate-400">
-                  <span>تم استخراج النص وسلّم التصحيح تلقائياً</span>
-                  <button className="text-blue-700 hover:underline font-bold cursor-pointer">
-                    تعديل المعايير
-                  </button>
-                </div>
-              </div>
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4 text-xs">
+        <label className="flex items-center gap-2">
+          <span className="font-bold text-slate-700 shrink-0">المادة:</span>
+          <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className="w-full sm:w-auto bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold min-w-0">
+            {!subjects.length && <option value="">أنشئ مجموعة لها مادة أولاً</option>}
+            {subjects.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
             ))}
-          </div>
+          </select>
+        </label>
+
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+          {pages.map((p, i) => (
+            <div key={i} className="relative aspect-[3/4] rounded-lg overflow-hidden border border-slate-200">
+              <img src={p.dataUrl} alt={`صفحة ${i + 1}`} className="w-full h-full object-cover" />
+              <button
+                onClick={() => setPages((prev) => prev.filter((_, j) => j !== i))}
+                aria-label={`حذف الصفحة ${i + 1}`}
+                className="absolute top-1 left-1 w-6 h-6 rounded-full bg-black/60 text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          {pages.length < 6 && (
+            <label className="aspect-[3/4] rounded-lg border-2 border-dashed border-[#1E3A5F]/30 bg-blue-50 flex flex-col items-center justify-center gap-1 text-[#1E3A5F] text-[11px] font-bold cursor-pointer text-center p-1">
+              <Camera className="w-6 h-6" />
+              <span>صوّر أو اختر صفحة</span>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                multiple
+                className="sr-only"
+                onChange={(e) => {
+                  void addPages(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+          )}
         </div>
+
+        <button
+          onClick={extract}
+          disabled={isProcessing || !pages.length}
+          className="w-full bg-[#1E3A5F] hover:bg-[#152a45] text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+        >
+          {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-amber-300" />}
+          <span>{isProcessing ? 'جارٍ قراءة الورقة...' : 'استخراج الأسئلة'}</span>
+        </button>
       </div>
+
+      {questions.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-bold text-slate-900 flex items-center gap-2 text-sm">
+              <FileCheck2 className="w-5 h-5 text-emerald-600" />
+              <span>الأسئلة المستخرجة ({questions.length})</span>
+            </h2>
+            <div className="flex gap-2 text-xs">
+              <button onClick={saveToBank} disabled={saved} className="bg-white border border-slate-300 px-3 py-2 rounded-xl font-bold flex items-center gap-1 cursor-pointer disabled:opacity-60">
+                {saved ? <Check className="w-4 h-4 text-emerald-600" /> : <Database className="w-4 h-4" />}
+                <span>{saved ? 'في البنك' : 'احفظ في البنك'}</span>
+              </button>
+              <button onClick={createExam} className="bg-emerald-600 text-white px-3 py-2 rounded-xl font-bold flex items-center gap-1 cursor-pointer">
+                <FilePlus2 className="w-4 h-4" />
+                <span>أنشئ امتحاناً</span>
+              </button>
+            </div>
+          </div>
+          {questions.map((q, i) => (
+            <div key={q.key} className="bg-white border border-slate-200 rounded-2xl p-4 space-y-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="bg-[#1E3A5F] text-white font-black px-2.5 py-0.5 rounded-lg">سؤال {i + 1}</span>
+                <button onClick={() => setQuestions((prev) => prev.filter((x) => x.key !== q.key))} aria-label="حذف السؤال" className="text-slate-400 hover:text-red-600 cursor-pointer">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+              <textarea value={q.text} onChange={(e) => update(q.key, { text: e.target.value })} rows={3} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm font-bold text-slate-900" />
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={q.lessonId ?? ''}
+                  onChange={(e) => update(q.key, { lessonId: e.target.value || null })}
+                  className="p-2 border border-slate-200 rounded-lg bg-slate-50 min-w-0"
+                  aria-label="الدرس"
+                >
+                  <option value="">الدرس: غير محدد</option>
+                  {subject?.lessons.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.title}
+                    </option>
+                  ))}
+                </select>
+                <span className="p-2 bg-slate-50 rounded-lg border border-slate-200 font-bold">الدرجة المقترحة: {q.maxScore}</span>
+              </div>
+              <details>
+                <summary className="font-bold text-slate-600 cursor-pointer">نموذج الإجابة والمعايير</summary>
+                {q.modelAnswer && <p className="mt-2 text-slate-600 whitespace-pre-wrap">{q.modelAnswer}</p>}
+                <ul className="mt-2 list-disc list-inside text-slate-600">
+                  {q.criteria.map((c, j) => (
+                    <li key={j}>
+                      {c.description} ({c.points})
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </div>
+          ))}
+          <p className="text-[11px] text-slate-500 text-center">تعدّل الدرجات والمعايير بالتفصيل في شاشة إنشاء الامتحان.</p>
+        </div>
+      )}
     </div>
   );
 };
 
+/**
+ * Groups one question's answers by which marking criteria the AI found met.
+ * Answers in a group earned the same points for the same reasons, so the
+ * teacher can confirm the whole group at once and open any single paper.
+ */
 export const ClusterGradingTool: React.FC<{ onNavigate: (screen: ScreenId) => void }> = ({ onNavigate }) => {
-  const [clusters, setClusters] = useState([
-    {
-      id: 'cl1',
-      representativeAnswer: '2س + 2ص(ص\') = 0  ⇒  ص\' = -س/ص  ⇒  ص\'\' = -25/64',
-      studentCount: 34,
-      suggestedScore: 20,
-      maxScore: 20,
-      applied: true,
-      label: 'حل نموذجي كامل (مجموعة الإجابات الصحيحة)',
-    },
-    {
-      id: 'cl2',
-      representativeAnswer: 'ص\'\' = (-4 + 9/4)/16 = -7/64 (خطأ في توحيد المقامات بالبسط)',
-      studentCount: 12,
-      suggestedScore: 14,
-      maxScore: 20,
-      applied: false,
-      label: 'خطأ مشترك في توحيد المقامات',
-    },
-    {
-      id: 'cl3',
-      representativeAnswer: 'نسيان اشتقاق ص بالنسبة لـ س (كتب 2ص بدلاً من 2ص ص\')',
-      studentCount: 6,
-      suggestedScore: 4,
-      maxScore: 20,
-      applied: false,
-      label: 'خلل جوهري في مفهوم الاشتقاق الضمني',
-    },
-  ]);
+  const store = useData();
+  const examsQ = useLoad((st) => st.listAssessments());
+  const exams = (examsQ.data ?? []).filter((e) => e.status !== 'awaiting_papers');
+  const [examId, setExamId] = useState(() => getSelected('exam') ?? '');
+  useEffect(() => {
+    if (!exams.length) return;
+    if (!examId || !exams.some((e) => e.id === examId)) setExamId(exams[0].id);
+  }, [exams, examId]);
 
-  const handleApplyGrade = (id: string) => {
-    setClusters(prev => prev.map(c => c.id === id ? { ...c, applied: true } : c));
+  const gradesQ = useLoad((st) => (examId ? st.listAssessmentGrades(examId) : Promise.resolve<QuestionGradeRow[]>([])), [examId]);
+  const subsQ = useLoad((st) => (examId ? st.listSubmissions(examId) : Promise.resolve<SubmissionRow[]>([])), [examId]);
+  const grades = gradesQ.data ?? [];
+  const subs = new Map((subsQ.data ?? []).map((s) => [s.id, s]));
+  const questionNumbers = [...new Set(grades.map((g) => g.questionNumber))].sort((a, b) => a - b);
+  const [qNum, setQNum] = useState<number | null>(null);
+  const activeQ = qNum && questionNumbers.includes(qNum) ? qNum : questionNumbers[0] ?? null;
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const answers = grades.filter((g) => g.questionNumber === activeQ && g.aiScore !== null && subs.get(g.submissionId)?.status !== 'approved');
+  const clusters = useMemo(() => {
+    const map = new Map<string, QuestionGradeRow[]>();
+    for (const a of answers) {
+      const key = a.aiCriteria.map((c) => (c.met ? '1' : '0')).join('') + `|${a.aiScore}`;
+      map.set(key, [...(map.get(key) ?? []), a]);
+    }
+    return [...map.values()].sort((a, b) => b.length - a.length);
+  }, [answers]);
+  const question = grades.find((g) => g.questionNumber === activeQ);
+
+  const applyCluster = async (rows: QuestionGradeRow[], id: string) => {
+    setBusy(id);
+    try {
+      for (const r of rows.filter((r) => !r.reviewedAt)) await store.saveTeacherGrade(r.id, Number(r.aiScore), r.teacherNote);
+      notify(`اعتُمدت الدرجة لـ ${rows.length} إجابة`, 'success');
+      gradesQ.reload();
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openPaper = (submissionId: string) => {
+    setSelected('exam', examId);
+    setSelected('submission', submissionId);
+    onNavigate('B8');
   };
 
   return (
     <div className="space-y-6 text-right max-w-5xl mx-auto pb-16">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
-        <div>
-          <button
-            onClick={() => onNavigate('B8')}
-            className="text-xs text-slate-500 hover:text-[#1E3A5F] flex items-center gap-1 cursor-pointer font-medium mb-1"
-          >
-            <ArrowRight className="w-4 h-4" />
-            <span>العودة لشاشة مراجعة التصحيح</span>
-          </button>
-          <h1 className="text-xl font-extrabold text-[#1E3A5F]">
-            تجميع الإجابات المتشابهة والتصحيح بالكتل
-          </h1>
-          <p className="text-xs text-slate-500">
-            السؤال الأول: الاشتقاق الضمني (س² + ص² = 25) · تم فرز وتجميع إجابات 52 طالباً في 3 مجموعات متطابقة.
-          </p>
-        </div>
-
-        <button
-          onClick={() => onNavigate('B8')}
-          className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer shadow-2xs"
-        >
-          العودة للمراجعة الفردية ←
+      <div className="border-b border-slate-200 pb-4 space-y-3">
+        <button onClick={() => onNavigate('B8')} className="text-xs text-slate-500 hover:text-[#1E3A5F] flex items-center gap-1 cursor-pointer font-medium">
+          <ArrowRight className="w-4 h-4" />
+          <span>العودة لمراجعة التصحيح</span>
         </button>
-      </div>
-
-      {/* Top Banner (PDF requirement: مؤشر أعلى الشاشة: صحّحت 180 إجابة بـ 6 نقرات) */}
-      <div className="bg-gradient-to-r from-emerald-700 to-[#1E3A5F] text-white p-4 rounded-2xl shadow-sm flex items-center justify-between text-xs">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-emerald-300" />
-          <span className="text-sm font-black">
-            إنجاز التصحيح الذكي: «صحّحت 180 إجابة بـ 6 نقرات فقط»
-          </span>
-        </div>
-        <span className="bg-white/20 text-white px-2.5 py-1 rounded-lg font-mono font-bold tabular-nums">
-          وفرت 45 دقيقة
-        </span>
-      </div>
-
-      {/* Clusters List (PDF requirement: بطاقة لكل مجموعة مع الإجابة الممثلة، عدد الطلاب مثلاً 34، صور مصغرة لأول 3، والدرجة المقترحة، وأزرار تطبيق وافصل) */}
-      <div className="space-y-4">
-        {clusters.map((cl) => (
-          <div
-            key={cl.id}
-            className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4 text-xs"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-              <div className="space-y-0.5">
-                <span className="font-extrabold text-slate-900 text-sm">{cl.label}</span>
-                <span className="text-slate-500 block">
-                  تشمل حلول: <strong className="text-[#1E3A5F] font-mono text-sm tabular-nums">{cl.studentCount} طالباً</strong> بنفس النمط تماماً
-                </span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="text-left">
-                  <span className="text-[10px] text-slate-400 block">الدرجة المقترحة للكتلة</span>
-                  <span className="text-xl font-black text-emerald-600 font-mono tabular-nums">
-                    {cl.suggestedScore} / {cl.maxScore}
-                  </span>
-                </div>
-
-                {/* Apply Score to Whole Cluster Button */}
-                <button
-                  onClick={() => handleApplyGrade(cl.id)}
-                  className={`px-4 py-2 rounded-xl font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs ${
-                    cl.applied ? 'bg-slate-100 text-slate-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                  }`}
-                >
-                  <Check className="w-4 h-4" />
-                  <span>{cl.applied ? 'تم تطبيق الدرجة على الـ 34 طالباً ✓' : 'طبّق الدرجة على المجموعة كلها'}</span>
-                </button>
-
-                <button
-                  onClick={() => notify('تم فصل هذه الإجابة وتخصيصها لمجموعة مراجعة منفصلة.')}
-                  className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 px-3 py-2 rounded-xl font-bold cursor-pointer"
-                >
-                  افصل إجابة
-                </button>
-              </div>
-            </div>
-
-            {/* Representative Answer */}
-            <div className="p-3 bg-slate-50 rounded-xl space-y-1">
-              <span className="font-bold text-slate-700 text-[11px]">صيغة الإجابة الممثلة لهذه المجموعة:</span>
-              <p className="font-mono text-slate-800 text-xs leading-relaxed">{cl.representativeAnswer}</p>
-            </div>
-
-            {/* Thumbnails of First 3 Answers in this cluster (PDF requirement) */}
-            <div className="space-y-1.5">
-              <span className="text-slate-500 font-medium text-[11px]">صور مصغّرة لأول 3 إجابات في هذه الكتلة:</span>
-              <div className="grid grid-cols-3 gap-3">
-                {['طالب 1 (أحمد)', 'طالب 2 (رزان)', 'طالب 3 (يوسف)'].map((stLabel, i) => (
-                  <div key={i} className="h-20 bg-[#FAF9F6] border border-slate-200 rounded-lg p-2 font-mono text-[9px] text-slate-500 flex flex-col justify-between">
-                    <span className="font-bold text-slate-700 font-sans">{stLabel}</span>
-                    <span className="opacity-70">2س + 2ص ص' = 0 ...</span>
-                    <span className="text-emerald-700 text-[8px] font-bold">تطابق 98%</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+        <h1 className="text-xl font-extrabold text-[#1E3A5F] flex items-center gap-2">
+          <Layers className="w-5 h-5" />
+          <span>مراجعة سؤالاً سؤالاً: الإجابات المتشابهة معاً</span>
+        </h1>
+        <p className="text-xs text-slate-500">نجمع إجابات الطلاب التي حققت نفس معايير التصحيح. اعتمد درجة المجموعة كلها بضغطة، أو افتح أي ورقة لمراجعتها وحدها.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+          <select value={examId} onChange={(e) => setExamId(e.target.value)} className="p-2 border border-slate-200 rounded-lg bg-white font-bold min-w-0" aria-label="الامتحان">
+            {!exams.length && <option value="">لا توجد امتحانات مصحّحة بعد</option>}
+            {exams.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.title}
+              </option>
+            ))}
+          </select>
+          <div className="flex flex-wrap gap-1.5">
+            {questionNumbers.map((n) => (
+              <button
+                key={n}
+                onClick={() => setQNum(n)}
+                className={`px-3 py-1.5 rounded-lg font-bold border cursor-pointer ${activeQ === n ? 'bg-[#1E3A5F] text-white border-[#1E3A5F]' : 'bg-white border-slate-200 text-slate-700'}`}
+              >
+                س{n}
+              </button>
+            ))}
           </div>
-        ))}
+        </div>
       </div>
+
+      {question && (
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-xs space-y-1">
+          <span className="font-bold text-slate-700">السؤال {activeQ} ({question.maxScore} درجات):</span>
+          <p className="text-slate-800 whitespace-pre-wrap">{question.questionText}</p>
+        </div>
+      )}
+
+      {gradesQ.loading ? (
+        <div className="flex justify-center py-10 text-slate-400">
+          <Loader2 className="w-6 h-6 animate-spin" />
+        </div>
+      ) : !clusters.length ? (
+        <p className="bg-white border border-dashed border-slate-300 rounded-2xl p-8 text-center text-sm text-slate-500">
+          لا توجد إجابات مصحّحة بانتظار المراجعة في هذا السؤال.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {clusters.map((rows, i) => {
+            const rep = rows[0];
+            const id = `c${i}`;
+            const pending = rows.filter((r) => !r.reviewedAt).length;
+            return (
+              <div key={id} className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 text-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div>
+                    <span className="font-extrabold text-slate-900 text-sm">مجموعة {i + 1}: {rows.length} إجابة</span>
+                    <span className="block text-slate-500">حققت: {rep.aiCriteria.filter((c) => c.met).map((c) => c.criterion).join('، ') || 'لا معايير'}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg font-black text-emerald-600 tabular-nums">
+                      {rep.aiScore} / {rep.maxScore}
+                    </span>
+                    <button
+                      onClick={() => applyCluster(rows, id)}
+                      disabled={!pending || busy !== null}
+                      className={`px-3 py-2 rounded-xl font-bold flex items-center gap-1.5 cursor-pointer disabled:cursor-default ${pending ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-100 text-slate-600'}`}
+                    >
+                      {busy === id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      <span>{pending ? `اعتمد الدرجة لـ ${pending}` : 'معتمدة ✓'}</span>
+                    </button>
+                  </div>
+                </div>
+                {rep.aiTranscription && (
+                  <div className="p-3 bg-slate-50 rounded-xl">
+                    <span className="font-bold text-slate-700 text-[11px] block">مثال من إجابات المجموعة:</span>
+                    <p className="text-slate-800 leading-relaxed whitespace-pre-wrap">{rep.aiTranscription}</p>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-1.5">
+                  {rows.map((r) => {
+                    const s = subs.get(r.submissionId);
+                    return (
+                      <button
+                        key={r.id}
+                        onClick={() => openPaper(r.submissionId)}
+                        className={`px-2.5 py-1 rounded-lg border font-bold flex items-center gap-1 cursor-pointer ${r.reviewedAt ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-white border-slate-200 text-slate-700'}`}
+                      >
+                        <Eye className="w-3 h-3" />
+                        <span>{s?.studentName || s?.studentCode || 'ورقة'}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };
