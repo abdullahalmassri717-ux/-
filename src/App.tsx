@@ -20,6 +20,7 @@ import { StudentSubmissionPage } from './components/groupA/StudentSubmissionPage
 // Group B Components
 import { TeacherDashboard } from './components/groupB/TeacherDashboard';
 import { GroupsStudentsPage } from './components/groupB/GroupsStudentsPage';
+import { getSelected, setSelected } from './data/selection';
 import { StudentProfilePage } from './components/groupB/StudentProfilePage';
 import { ExamsListPage } from './components/groupB/ExamsListPage';
 import { CreateExamPage } from './components/groupB/CreateExamPage';
@@ -258,11 +259,14 @@ export default function App() {
         return (
           <GroupsStudentsPage
             onNavigate={handleNavigate}
-            onSelectStudent={(id) => setSelectedStudentId(id)}
+            onSelectStudent={(id) => {
+              setSelected('student', id);
+              setSelectedStudentId(id);
+            }}
           />
         );
       case 'B3':
-        return <StudentProfilePage studentId={selectedStudentId} onNavigate={handleNavigate} />;
+        return <StudentProfilePage studentId={getSelected('student') ?? selectedStudentId} onNavigate={handleNavigate} />;
       case 'B4':
         return <ExamsListPage onNavigate={handleNavigate} />;
       case 'B5':

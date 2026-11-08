@@ -110,6 +110,19 @@ export interface StudentHistory {
   lessons: { lesson: string; mastery: number }[];
 }
 
+/** One graded question of one approved paper, for «تشخيص طلابي». */
+export interface DiagnosticRow {
+  submissionId: string;
+  studentId: string;
+  groupId: string;
+  assessmentTitle: string;
+  questionNumber: number;
+  lesson: string;
+  finalScore: number;
+  maxScore: number;
+  criteria: { criterion: string; met: boolean }[];
+}
+
 export interface DashboardSummary {
   groupsCount: number;
   studentsCount: number;
@@ -130,6 +143,7 @@ export type TaughtLessons = Record<string, string>; // lessonId -> taught_at ISO
 export interface DataStore {
   readonly mode: 'demo' | 'real';
   getDashboard(): Promise<DashboardSummary>;
+  listDiagnosticRows(groupId: string | null): Promise<DiagnosticRow[]>;
   // Curriculum (read-only for teachers)
   listCurricula(): Promise<Curriculum[]>;
   // Groups

@@ -124,6 +124,25 @@ export function createDemoStore(): DataStore {
   return {
     mode: 'demo',
     listCurricula: () => wait(CURRICULA_DATA),
+    listDiagnosticRows: (groupId) => {
+      // Demo: a few made-up graded questions per student, based on their mock level.
+      const lessons = ['قواعد الاشتقاق الأساسية', 'الاشتقاق الضمني', 'قاعدة السلسلة', 'المعدلات المرتبطة بالزمن'];
+      const misses = ['توحيد المقامات في المشتقة الثانية', 'نسيان ضرب مشتقة الداخل', 'العلاقة الهندسية المساعدة', 'إشارة السالب عند اشتقاق جتا'];
+      const rows = s().students
+        .filter((st) => !groupId || st.groupId === groupId)
+        .flatMap((st) =>
+          lessons.map((lesson, i) => {
+            const level = Math.max(0.2, Math.min(1, (st.latestScore + (i === 0 ? 15 : i === 1 ? -25 : i === 2 ? -10 : -15)) / 100));
+            const score = Math.round(level * 10);
+            return {
+              submissionId: `demo_${st.id}`, studentId: st.id, groupId: st.groupId, assessmentTitle: 'امتحان الشهر الأول',
+              questionNumber: i + 1, lesson, finalScore: score, maxScore: 10,
+              criteria: [{ criterion: misses[i], met: score >= 7 }, { criterion: 'كتابة القانون الصحيح', met: score >= 4 }],
+            };
+          }),
+        );
+      return wait(rows);
+    },
     getDashboard: () => {
       const st = s();
       const review = st.submissions.filter((x) => x.status === 'needs_review');

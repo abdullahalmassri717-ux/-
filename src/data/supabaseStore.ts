@@ -313,6 +313,40 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     mode: 'real',
     listCurricula,
 
+    async listDiagnosticRows(groupId) {
+      let q = db
+        .from('question_grades')
+        .select('submission_id, final_score, ai_criteria, questions!inner(number, max_score, lessons(title)), submissions!inner(student_id, status, assessments!inner(title, group_id))')
+        .eq('organization_id', orgId)
+        .eq('submissions.status', 'approved')
+        .not('submissions.student_id', 'is', null)
+        .limit(10000);
+      if (groupId) q = q.eq('submissions.assessments.group_id', groupId);
+      const { data, error } = await q;
+      if (error) fail(error, 'تعذّر تحميل بيانات التشخيص.');
+      type Row = {
+        submission_id: string; final_score: number | null; ai_criteria: { criterion: string; met: boolean }[] | null;
+        questions: { number: number; max_score: number; lessons: { title: string } | null } | null;
+        submissions: { student_id: string; assessments: { title: string; group_id: string } | null } | null;
+      };
+      return ((data ?? []) as unknown as Row[]).map((r) => {
+        const q2 = one(r.questions);
+        const sub = one(r.submissions);
+        const a = one(sub?.assessments);
+        return {
+          submissionId: r.submission_id,
+          studentId: sub?.student_id ?? '',
+          groupId: a?.group_id ?? '',
+          assessmentTitle: a?.title ?? '',
+          questionNumber: q2?.number ?? 0,
+          lesson: one(q2?.lessons)?.title ?? '',
+          finalScore: Number(r.final_score ?? 0),
+          maxScore: Number(q2?.max_score ?? 0),
+          criteria: r.ai_criteria ?? [],
+        };
+      });
+    },
+
     async getDashboard() {
       const now = Date.now();
       const weekAgo = new Date(now - 7 * 86400000).toISOString();
