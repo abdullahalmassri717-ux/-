@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useAuth } from '../../lib/auth';
+import { toInternationalPhone } from '../../lib/phone';
 import { ScreenId, UserRole } from '../../types';
 import { ArrowRight, MessageCircle, ShieldCheck, Check, Sparkles, Phone, RotateCcw } from 'lucide-react';
 
@@ -8,9 +10,11 @@ interface LoginPageProps {
 }
 
 // Login is by WhatsApp number + a one-time code sent on WhatsApp (no passwords).
-// In this design prototype the code is not really sent; any 6 digits work.
+// With a real Supabase project the code is really sent and checked. Without one
+// (demo mode) the code is not sent and any 6 digits work with the demo accounts.
 
 const CODE_LENGTH = 6;
+const RESEND_WAIT_SECONDS = 60;
 
 type DemoAccount = {
   label: string;
@@ -52,7 +56,16 @@ const normalizePhone = (value: string) => value.replace(/[^0-9+]/g, '');
 const isValidPhone = (value: string) => normalizePhone(value).replace('+', '').length >= 9;
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }) => {
-  const [phone, setPhone] = useState(DEMO_ACCOUNTS[0].phone);
+  const auth = useAuth();
+  const isReal = auth.mode === 'real';
+  const [phone, setPhone] = useState(isReal ? '' : DEMO_ACCOUNTS[0].phone);
+  const [resendIn, setResendIn] = useState(0);
+
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const timer = setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendIn]);
   const [step, setStep] = useState<'phone' | 'code'>('phone');
   const [code, setCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -61,11 +74,30 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
 
   const account = DEMO_ACCOUNTS.find((a) => a.phone === normalizePhone(phone)) || DEMO_ACCOUNTS[0];
 
-  const sendCode = (e: React.FormEvent) => {
+  const requestRealCode = async () => {
+    setIsLoading(true);
+    const message = await auth.sendCode(phone);
+    setIsLoading(false);
+    if (message) {
+      setError(message);
+      return false;
+    }
+    setResendIn(RESEND_WAIT_SECONDS);
+    return true;
+  };
+
+  const sendCode = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!isValidPhone(phone)) {
+    if (isReal ? !toInternationalPhone(phone) : !isValidPhone(phone)) {
       setError('اكتب رقم واتساب صحيحاً، مثال: 0599123456');
+      return;
+    }
+    if (isReal) {
+      if (await requestRealCode()) {
+        setStep('code');
+        setCode('');
+      }
       return;
     }
     setIsLoading(true);
@@ -76,11 +108,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
     }, 600);
   };
 
-  const verifyCode = (e: React.FormEvent) => {
+  const verifyCode = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (code.length !== CODE_LENGTH) {
       setError(`اكتب الرمز المكوّن من ${CODE_LENGTH} أرقام كما وصلك على واتساب.`);
+      return;
+    }
+    if (isReal) {
+      setIsLoading(true);
+      const message = await auth.verifyCode(phone, code);
+      setIsLoading(false);
+      if (message) {
+        setError(message);
+        return;
+      }
+      // The app moves on to the right dashboard by itself once the account is loaded.
+      setLoginSuccess('تم التحقق بنجاح. جاري فتح حسابك...');
       return;
     }
     setIsLoading(true);
@@ -113,7 +157,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
           </p>
         </div>
 
-        {step === 'phone' && (
+        {step === 'phone' && !isReal && (
           <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2">
             <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
               <span className="flex items-center gap-1 text-[#1E3A5F]">
@@ -197,7 +241,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
               <span className="flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-[#1E3A5F]" />
                 <span>
-                  أُرسل الرمز إلى <span dir="ltr" className="font-bold tabular-nums">{normalizePhone(phone)}</span>
+                  أُرسل الرمز إلى <span dir="ltr" className="font-bold tabular-nums">{isReal ? toInternationalPhone(phone) : normalizePhone(phone)}</span>
                 </span>
               </span>
               <button
@@ -226,7 +270,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
                 placeholder="••••••"
                 autoFocus
               />
-              <span className="block text-[10px] text-slate-400 mt-1">في النسخة التجريبية يكفي أي {CODE_LENGTH} أرقام.</span>
+              {!isReal && (
+                <span className="block text-[10px] text-slate-400 mt-1">في النسخة التجريبية يكفي أي {CODE_LENGTH} أرقام.</span>
+              )}
             </label>
 
             <button
@@ -246,14 +292,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
 
             <button
               type="button"
-              onClick={() => {
+              disabled={isLoading || resendIn > 0}
+              onClick={async () => {
                 setCode('');
                 setError(null);
+                if (isReal) await requestRealCode();
               }}
-              className="w-full text-[11px] text-slate-500 hover:text-[#1E3A5F] flex items-center justify-center gap-1 cursor-pointer"
+              className="w-full text-[11px] text-slate-500 hover:text-[#1E3A5F] disabled:opacity-60 disabled:hover:text-slate-500 flex items-center justify-center gap-1 cursor-pointer disabled:cursor-default"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>لم يصلك الرمز؟ أعد الإرسال</span>
+              <span>
+                {resendIn > 0 ? (
+                  <>
+                    يمكنك طلب رمز جديد بعد <span className="tabular-nums">{resendIn}</span> ثانية
+                  </>
+                ) : (
+                  'لم يصلك الرمز؟ أعد الإرسال'
+                )}
+              </span>
             </button>
           </form>
         )}

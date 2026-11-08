@@ -20,18 +20,25 @@ import {
   PhoneCall
 } from 'lucide-react';
 import { CURRICULA_DATA, PLATFORM_CONFIG } from '../../mockData';
+import { useAuth } from '../../lib/auth';
+import { FinishSignupWithWhatsApp } from './FinishSignupWithWhatsApp';
 
 interface RegisterPageProps {
   onNavigate: (screen: ScreenId) => void;
   onRoleChange: (role: UserRole) => void;
   onRegisterEntity?: (entity: Entity) => void;
+  /** Real sign-in only: called after the organization was created in the database. */
+  onOrganizationCreated?: (organizationId: string, kind: EntityType) => void;
 }
 
 export const RegisterPage: React.FC<RegisterPageProps> = ({
   onNavigate,
   onRoleChange,
   onRegisterEntity,
+  onOrganizationCreated,
 }) => {
+  const auth = useAuth();
+  const isReal = auth.mode === 'real';
   // Account Type
   const [entityType, setEntityType] = useState<EntityType>('individual_teacher');
   const [step, setStep] = useState<number>(1);
@@ -40,18 +47,23 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
   const [selectedCurriculumId, setSelectedCurriculumId] = useState<string>(CURRICULA_DATA[0].id);
   const [selectedGradeIds, setSelectedGradeIds] = useState<string[]>(['grade_12']);
   const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>(['math_scientific']);
-  const [teacherName, setTeacherName] = useState('أ. محمد المصري');
-  const [teacherPhone, setTeacherPhone] = useState('0599123456');
+  // Demo mode keeps sample values so the prototype can be clicked through quickly.
+  const [teacherName, setTeacherName] = useState(isReal ? auth.profile?.fullName ?? '' : 'أ. محمد المصري');
+  const [teacherPhone, setTeacherPhone] = useState(isReal ? '' : '0599123456');
 
   // School / Center Form State
-  const [orgName, setOrgName] = useState('مدرسة الأمل الخاصة');
-  const [orgRegion, setOrgRegion] = useState('غزة - الرمال الجنوبي');
+  const [orgName, setOrgName] = useState(isReal ? '' : 'مدرسة الأمل الخاصة');
+  const [orgRegion, setOrgRegion] = useState(isReal ? '' : 'غزة - الرمال الجنوبي');
   const [studentEstimate, setStudentEstimate] = useState('280');
   const [logoUploaded, setLogoUploaded] = useState(false);
-  const [teachersToInvite, setTeachersToInvite] = useState([
-    { name: 'أ. أحمد حلس', phone: '0599110011', subject: 'الرياضيات' },
-    { name: 'أ. ريم شملخ', phone: '0599220022', subject: 'اللغة الإنجليزية' },
-  ]);
+  const [teachersToInvite, setTeachersToInvite] = useState(
+    isReal
+      ? []
+      : [
+          { name: 'أ. أحمد حلس', phone: '0599110011', subject: 'الرياضيات' },
+          { name: 'أ. ريم شملخ', phone: '0599220022', subject: 'اللغة الإنجليزية' },
+        ]
+  );
   const [newTeacherName, setNewTeacherName] = useState('');
   const [newTeacherPhone, setNewTeacherPhone] = useState('');
   const [newTeacherSubject, setNewTeacherSubject] = useState('');
@@ -388,12 +400,19 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                 />
               </div>
 
+              {isReal && auth.status === 'signed_in' ? (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700">
+                  أنت مسجّل الدخول برقم{' '}
+                  <span dir="ltr" className="font-bold tabular-nums">{auth.profile?.phone}</span>، وسيُضاف الحساب الجديد إلى حساباتك.
+                </div>
+              ) : (
               <div>
                 <label className="block font-bold text-slate-700 mb-1">رقم الواتساب</label>
                 <input
                   type="tel"
                   inputMode="tel"
                   dir="ltr"
+                  placeholder="0599123456"
                   value={teacherPhone}
                   onChange={(e) => setTeacherPhone(e.target.value)}
                   className="w-full p-2.5 bg-[#F7F8FA] border border-slate-300 rounded-xl text-left tabular-nums text-slate-900"
@@ -402,6 +421,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                   تدخل لاحقاً بهذا الرقم ورمز تحقق يصلك على واتساب، بدون كلمة مرور.
                 </p>
               </div>
+              )}
 
               {/* Confirmation badge */}
               <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs space-y-1">
@@ -415,6 +435,17 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
               </div>
             </div>
 
+            {isReal ? (
+              <FinishSignupWithWhatsApp
+                phone={teacherPhone}
+                fullName={teacherName}
+                orgName={`أكاديمية ${teacherName.trim()}`}
+                kind="individual_teacher"
+                buttonLabel="ابدأ الآن وادخل للوحة التحكم"
+                onBack={() => setStep(2)}
+                onCreated={(id, kind) => onOrganizationCreated?.(id, kind)}
+              />
+            ) : (
             <div className="pt-4 flex items-center justify-between">
               <button
                 onClick={() => setStep(2)}
@@ -430,6 +461,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                 <span>ابدأ الآن وادخل للوحة التحكم</span>
               </button>
             </div>
+            )}
           </div>
         )}
 
@@ -610,6 +642,51 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
               </button>
             </div>
 
+            {isReal ? (
+              <div className="space-y-3 text-xs border-t border-slate-100 pt-4">
+                <div className="font-bold text-[#1E3A5F]">بيانات مدير الحساب</div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">الاسم الكامل</label>
+                  <input
+                    type="text"
+                    value={teacherName}
+                    onChange={(e) => setTeacherName(e.target.value)}
+                    className="w-full p-2.5 bg-[#F7F8FA] border border-slate-300 rounded-xl font-bold text-slate-900"
+                  />
+                </div>
+                {auth.status === 'signed_in' ? (
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700">
+                    أنت مسجّل الدخول برقم{' '}
+                    <span dir="ltr" className="font-bold tabular-nums">{auth.profile?.phone}</span>، وسيُضاف الحساب الجديد إلى حساباتك.
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">رقم الواتساب</label>
+                    <input
+                      type="tel"
+                      inputMode="tel"
+                      dir="ltr"
+                      placeholder="0599123456"
+                      value={teacherPhone}
+                      onChange={(e) => setTeacherPhone(e.target.value)}
+                      className="w-full p-2.5 bg-[#F7F8FA] border border-slate-300 rounded-xl text-left tabular-nums text-slate-900"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      تدخل لاحقاً بهذا الرقم ورمز تحقق يصلك على واتساب، بدون كلمة مرور.
+                    </p>
+                  </div>
+                )}
+                <FinishSignupWithWhatsApp
+                  phone={teacherPhone}
+                  fullName={teacherName}
+                  orgName={orgName}
+                  kind={entityType}
+                  buttonLabel="إتمام التسجيل والدخول للوحة الإدارة"
+                  onBack={() => setStep(2)}
+                  onCreated={(id, kind) => onOrganizationCreated?.(id, kind)}
+                />
+              </div>
+            ) : (
             <div className="pt-4 flex items-center justify-between">
               <button
                 onClick={() => setStep(2)}
@@ -625,6 +702,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                 <span>إتمام التسجيل والدخول للوحة الإدارة</span>
               </button>
             </div>
+            )}
           </div>
         )}
       </div>
