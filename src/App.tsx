@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { pathForScreen, roleForPath, screenForPath } from './routes';
 import { UserRole, ScreenId, Entity } from './types';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
@@ -54,20 +56,37 @@ import { Sparkles } from 'lucide-react';
 import { notify } from './lib/notify';
 
 export default function App() {
-  // Production default: starts on Landing Page as visitor
-  // Dev-only shortcut for previews: ?screen=B8&role=teacher&entity=e_tutor_1
-  const devParams = import.meta.env.DEV ? new URLSearchParams(window.location.search) : null;
-  const [currentRole, setCurrentRole] = useState<UserRole>((devParams?.get('role') as UserRole) || 'visitor');
-  const [currentScreen, setCurrentScreen] = useState<ScreenId>((devParams?.get('screen') as ScreenId) || 'A1');
+  // The web address decides the screen. Until real sign-in exists, it also decides the role.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const currentScreen: ScreenId = screenForPath(location.pathname);
+  const [currentRole, setCurrentRole] = useState<UserRole>(() => roleForPath(location.pathname));
+  const setCurrentScreen = (screen: ScreenId) => navigate(pathForScreen(screen));
   const [selectedStudentId, setSelectedStudentId] = useState<string>('s1');
   const [isEnglish, setIsEnglish] = useState<boolean>(false);
   const [isAIOpen, setIsAIOpen] = useState<boolean>(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState<boolean>(false);
 
   // Active Entity state for multi-tenancy & account switcher
-  const [activeEntity, setActiveEntity] = useState<Entity>(
-    MOCK_ENTITIES.find((e) => e.id === devParams?.get('entity')) || MOCK_ENTITIES[0]
+  const [activeEntity, setActiveEntity] = useState<Entity>(() =>
+    roleForPath(location.pathname) === 'school_principal'
+      ? MOCK_ENTITIES.find((e) => e.type === 'school') || MOCK_ENTITIES[0]
+      : MOCK_ENTITIES[0]
   );
+
+  // Keep the role in step with the area of the site the address points to
+  // (e.g. opening a student link, or pressing the browser's back button).
+  useEffect(() => {
+    const areaRole = roleForPath(location.pathname);
+    if (areaRole === 'visitor') return; // public pages keep whoever is signed in
+    if (areaRole === 'teacher' && currentRole === 'teacher') return;
+    if (areaRole !== currentRole) setCurrentRole(areaRole);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+    setIsMobileDrawerOpen(false);
+  }, [location.pathname]);
 
   const handleNavigate = (screen: ScreenId) => {
     // School teachers cannot navigate to B11 (Subscriptions & Invoices)
@@ -76,8 +95,6 @@ export default function App() {
       return;
     }
     setCurrentScreen(screen);
-    setIsMobileDrawerOpen(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleRoleChange = (role: UserRole) => {
@@ -237,7 +254,7 @@ export default function App() {
         onOpenMobileMenu={() => setIsMobileDrawerOpen(true)}
         onLogout={() => {
           setCurrentRole('visitor');
-          setCurrentScreen('A1');
+          navigate('/');
         }}
       />
 
