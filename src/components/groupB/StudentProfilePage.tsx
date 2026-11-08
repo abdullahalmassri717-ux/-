@@ -1,6 +1,6 @@
 import React from 'react';
-import { ScreenId, Student } from '../../types';
-import { MOCK_STUDENTS, MOCK_EXAMS } from '../../mockData';
+import { ScreenId } from '../../types';
+import { useLoad } from '../../data/DataContext';
 import {
   ArrowRight,
   TrendingUp,
@@ -22,23 +22,41 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({
   studentId,
   onNavigate,
 }) => {
-  const student = MOCK_STUDENTS.find(s => s.id === studentId) || MOCK_STUDENTS[0];
+  const studentQ = useLoad((st) => st.getStudent(studentId), [studentId]);
+  const historyQ = useLoad((st) => st.getStudentHistory(studentId), [studentId]);
+  const student = studentQ.data;
+  const papers = historyQ.data?.papers ?? [];
+  const pct = (p: { score: number; total: number }) => (p.total ? Math.round((p.score / p.total) * 100) : 0);
+  // Oldest first for the trajectory.
+  const examHistory = [...papers].reverse().map((p) => ({ name: p.title, score: pct(p), date: p.date }));
+  const lessonMastery = (historyQ.data?.lessons ?? []).map((l) => ({
+    lesson: l.lesson,
+    mastery: l.mastery,
+    status: l.mastery >= 80 ? 'strong' : l.mastery >= 65 ? 'medium' : 'weak',
+  }));
+  const weakest = lessonMastery.find((l) => l.status === 'weak') ?? lessonMastery.find((l) => l.status === 'medium');
+  const trend =
+    examHistory.length < 2 ? null : examHistory[examHistory.length - 1].score >= examHistory[examHistory.length - 2].score ? 'up' : 'down';
+  // An honest range only after enough exams: average ± spread, never a single number.
+  const expectedRange = (() => {
+    if (examHistory.length < 3) return null;
+    const scores = examHistory.map((e) => e.score);
+    const avg = scores.reduce((n, x) => n + x, 0) / scores.length;
+    const spread = Math.max(3, Math.round(Math.sqrt(scores.reduce((n, x) => n + (x - avg) ** 2, 0) / scores.length)));
+    return `${Math.max(0, Math.round(avg - spread))} - ${Math.min(100, Math.round(avg + spread))}`;
+  })();
 
-  // Mock exam score history
-  const examHistory = [
-    { name: 'اختبار قصير 1 (النهايات)', score: 82, total: 100, date: '15 سبتمبر' },
-    { name: 'امتحان الشهر الأول (التفاضل)', score: 79, total: 100, date: '5 أكتوبر' },
-    { name: 'واجب منزلي (قاعدة السلسلة)', score: 90, total: 100, date: '18 أكتوبر' },
-    { name: 'امتحان نصف الفصل الأول', score: 88, total: 100, date: '3 نوفمبر' },
-  ];
-
-  // Lessons mastery breakdown
-  const lessonMastery = [
-    { lesson: 'النهايات والاتصال', mastery: 92, status: 'strong' },
-    { lesson: 'قواعد الاشتقاق الأساسية', mastery: 86, status: 'strong' },
-    { lesson: 'الاشتقاق الضمني والمعادلات', mastery: 70, status: 'medium' },
-    { lesson: 'تطبيقات القيم القصوى والمعدلات', mastery: 58, status: 'weak' },
-  ];
+  if (studentQ.loading && !student) {
+    return <div className="py-24 text-center text-sm text-slate-500">جاري تحميل ملف الطالب...</div>;
+  }
+  if (!student) {
+    return (
+      <div className="py-24 text-center space-y-3">
+        <p className="text-sm text-slate-600">{studentQ.error ?? 'لم نجد هذا الطالب.'}</p>
+        <button onClick={() => onNavigate('B2')} className="text-xs font-bold text-[#1E3A5F] underline cursor-pointer">العودة لقائمة الطلاب</button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 text-right">
@@ -98,14 +116,16 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-500 italic">
-              «تقدير مبني على سجل امتحانات الطالب ومعدل الصعوبة، وليس ضماناً». يظهر للمدرّس فقط.
+              {expectedRange
+                ? '«تقدير مبني على سجل امتحانات الطالب، وليس ضماناً». يظهر للمدرّس فقط.'
+                : 'يظهر التقدير بعد تصحيح 3 امتحانات على الأقل للطالب. يظهر للمدرّس فقط.'}
             </p>
           </div>
 
           <div className="bg-white border border-blue-200 px-4 py-2 rounded-lg text-center shrink-0">
             <span className="text-[10px] text-slate-400 block">النطاق التقديري المتوقع</span>
             <span className="text-xl font-black text-[#1E3A5F] font-mono tabular-nums">
-              {student.expectedTawjihiRange || '84 - 90'}
+              {expectedRange ?? '—'}
             </span>
           </div>
         </div>
@@ -120,13 +140,17 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({
               <TrendingUp className="w-4 h-4 text-blue-600" />
               <span>مسار درجات الطالب عبر الامتحانات السابقة</span>
             </h3>
-            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-              مسار صاعد ↗
-            </span>
+            {trend === 'up' && (
+              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">مسار صاعد ↗</span>
+            )}
+            {trend === 'down' && (
+              <span className="text-xs font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded">مسار هابط ↘</span>
+            )}
           </div>
 
           {/* Simple Visual Line Chart Bars */}
           <div className="space-y-3 pt-2">
+            {examHistory.length === 0 && <p className="text-xs text-slate-500">لا توجد امتحانات معتمدة لهذا الطالب بعد.</p>}
             {examHistory.map((ex, idx) => (
               <div key={idx} className="space-y-1 text-xs">
                 <div className="flex items-center justify-between text-slate-700">
@@ -154,10 +178,10 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({
               <BookOpen className="w-4 h-4 text-blue-600" />
               <span>نقاط القوة والضعف بحسب المهارات والدروس</span>
             </h3>
-            <span className="text-xs text-slate-500">منهاج الرياضيات</span>
           </div>
 
           <div className="space-y-3 pt-1">
+            {lessonMastery.length === 0 && <p className="text-xs text-slate-500">تظهر نقاط القوة والضعف بعد تصحيح أول امتحان مربوط بدروس المنهج.</p>}
             {lessonMastery.map((lm, idx) => (
               <div key={idx} className="space-y-1 text-xs">
                 <div className="flex items-center justify-between">
@@ -180,12 +204,14 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({
             ))}
           </div>
 
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <span>
-              نصيحة المنصة للمعلم: ركّز مع {student.name} في الجلسة القادمة على مهارة ترجمة المسائل الكلامية في درس "المعدلات المرتبطة بالزمن" لضمان تفوقه في الامتحان الوزاري.
-            </span>
-          </div>
+          {weakest && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <span>
+                نصيحة للمعلم: ركّز مع {student.name} في الجلسة القادمة على درس «{weakest.lesson}» (إتقانه {weakest.mastery}%).
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -193,37 +219,26 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4">
         <h3 className="font-extrabold text-[#1E3A5F] text-sm">أوراق الطالب المصححة في المنصة</h3>
         <div className="divide-y divide-slate-100">
-          <div className="py-3 flex items-center justify-between">
-            <div className="space-y-0.5">
-              <h4 className="font-bold text-xs text-slate-800">امتحان التفاضل والاشتقاق المتقدم (الشهر الأول)</h4>
-              <p className="text-[11px] text-slate-500">تم التصحيح والاعتماد بتاريخ 3 نوفمبر 2026 · 5 أسئلة</p>
+          {papers.length === 0 && <p className="py-3 text-xs text-slate-500">لا توجد أوراق مصححة ومعتمدة بعد.</p>}
+          {papers.map((p) => (
+            <div key={p.submissionId} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="space-y-0.5">
+                <h4 className="font-bold text-xs text-slate-800">{p.title}</h4>
+                <p className="text-[11px] text-slate-500">تم التصحيح والاعتماد بتاريخ {p.date} · {p.questionsCount} أسئلة</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={`font-bold text-sm font-mono tabular-nums ${pct(p) >= 85 ? 'text-emerald-600' : pct(p) >= 65 ? 'text-amber-600' : 'text-red-600'}`}>
+                  {p.score} / {p.total}
+                </span>
+                <button
+                  onClick={() => onNavigate('B12')}
+                  className="bg-blue-50 hover:bg-blue-100 text-[#1E3A5F] px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer"
+                >
+                  عرض الورقة المصححة
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="font-bold text-emerald-600 text-sm font-mono tabular-nums">88 / 100</span>
-              <button
-                onClick={() => onNavigate('B12')}
-                className="bg-blue-50 hover:bg-blue-100 text-[#1E3A5F] px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer"
-              >
-                عرض الورقة المصححة
-              </button>
-            </div>
-          </div>
-
-          <div className="py-3 flex items-center justify-between">
-            <div className="space-y-0.5">
-              <h4 className="font-bold text-xs text-slate-800">واجب منزلي: الاشتقاق الضمني والمعادلات</h4>
-              <p className="text-[11px] text-slate-500">تم التصحيح بتاريخ 1 نوفمبر 2026 · 3 أسئلة</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="font-bold text-emerald-600 text-sm font-mono tabular-nums">18 / 20</span>
-              <button
-                onClick={() => onNavigate('B12')}
-                className="bg-blue-50 hover:bg-blue-100 text-[#1E3A5F] px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer"
-              >
-                عرض الورقة المصححة
-              </button>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
     </div>

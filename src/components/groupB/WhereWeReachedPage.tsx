@@ -10,8 +10,10 @@ import {
   Award,
   Layers
 } from 'lucide-react';
-import { CURRICULA_DATA, MOCK_GROUPS } from '../../mockData';
 import { LessonProgressStatus, ScreenId } from '../../types';
+import { useData, useLoad, errorMessage } from '../../data/DataContext';
+import { useSelected } from '../../data/selection';
+import { notify } from '../../lib/notify';
 
 interface WhereWeReachedPageProps {
   groupId?: string;
@@ -19,72 +21,93 @@ interface WhereWeReachedPageProps {
   onOpenExamGen?: (lessonIds: string[]) => void;
 }
 
-export default function WhereWeReachedPage({ 
-  groupId = 'g1', 
+export default function WhereWeReachedPage({
+  groupId,
   onNavigate,
-  onOpenExamGen 
+  onOpenExamGen
 }: WhereWeReachedPageProps) {
-  const [selectedGroupId, setSelectedGroupId] = useState(groupId);
-  const activeGroup = MOCK_GROUPS.find(g => g.id === selectedGroupId) || MOCK_GROUPS[0];
-  
+  const store = useData();
+  const [savedGroupId, setSavedGroupId] = useSelected('group');
+  const groupsQ = useLoad((st) => st.listGroups());
+  const curriculaQ = useLoad((st) => st.listCurricula());
+  const groups = groupsQ.data ?? [];
+  const selectedGroupId = groupId ?? (groups.some((g) => g.id === savedGroupId) ? savedGroupId! : groups[0]?.id ?? '');
+  const setSelectedGroupId = (id: string) => setSavedGroupId(id);
+  const activeGroup = groups.find(g => g.id === selectedGroupId);
+
   // Find curriculum details
-  const curriculum = CURRICULA_DATA.find(c => c.id === activeGroup.curriculumId);
-  const grade = curriculum?.grades.find(g => g.id === activeGroup.gradeId);
-  const subject = grade?.subjects.find(s => s.id === activeGroup.subjectId);
+  let curriculum = curriculaQ.data?.find(c => c.id === activeGroup?.curriculumId);
+  let grade = curriculum?.grades.find(g => g.id === activeGroup?.gradeId);
+  let subject = grade?.subjects.find(s => s.id === activeGroup?.subjectId);
+  if (!subject && activeGroup?.subjectId) {
+    for (const c of curriculaQ.data ?? []) for (const g of c.grades) for (const sb of g.subjects)
+      if (sb.id === activeGroup.subjectId) { curriculum = c; grade = g; subject = sb; }
+  }
 
-  // Lesson status state for this group
-  const [lessonStatuses, setLessonStatuses] = useState<Record<string, LessonProgressStatus>>({
-    'l_1_1': 'examined',
-    'l_1_2': 'examined',
-    'l_1_3': 'examined',
-    'l_1_4': 'taught',
-    'l_2_1': 'taught',
-    'l_2_2': 'taught',
-    'l_2_3': 'not_taught',
-  });
+  const taughtQ = useLoad((st) => (selectedGroupId ? st.getTaughtLessons(selectedGroupId) : Promise.resolve({} as Record<string, string>)), [selectedGroupId]);
+  const examinedQ = useLoad((st) => (selectedGroupId ? st.getExaminedLessons(selectedGroupId) : Promise.resolve({} as Record<string, number | null>)), [selectedGroupId]);
+  const taught = taughtQ.data ?? {};
+  const examined = examinedQ.data ?? {};
+  const lessonStatuses: Record<string, LessonProgressStatus> = {};
+  for (const id of Object.keys(taught)) lessonStatuses[id] = 'taught';
+  for (const id of Object.keys(examined)) lessonStatuses[id] = 'examined';
+  const masteryOf = (lessonId: string) => examined[lessonId] ?? null;
 
-  // Expanded units
-  const [expandedUnits, setExpandedUnits] = useState<Record<string, boolean>>({
-    'u_1': true,
-    'u_2': true,
-  });
+  // Expanded units (all open by default)
+  const [collapsedUnits, setCollapsedUnits] = useState<Record<string, boolean>>({});
 
   // Expanded lesson details (outcomes & terms)
   const [expandedLessonDetails, setExpandedLessonDetails] = useState<Record<string, boolean>>({});
 
   const toggleUnit = (unitId: string) => {
-    setExpandedUnits(prev => ({ ...prev, [unitId]: !prev[unitId] }));
+    setCollapsedUnits(prev => ({ ...prev, [unitId]: !prev[unitId] }));
   };
 
   const toggleLessonDetails = (lessonId: string) => {
     setExpandedLessonDetails(prev => ({ ...prev, [lessonId]: !prev[lessonId] }));
   };
 
-  const changeStatus = (lessonId: string, newStatus: LessonProgressStatus) => {
-    setLessonStatuses(prev => ({
-      ...prev,
-      [lessonId]: newStatus
-    }));
+  const saveTaught = async (lessonIds: string[], value: boolean) => {
+    const before = taughtQ.data ?? {};
+    // Show the change at once, then save.
+    taughtQ.setData(() => {
+      const next = { ...before };
+      for (const id of lessonIds) {
+        if (value) next[id] = next[id] ?? new Date().toISOString();
+        else delete next[id];
+      }
+      return next;
+    });
+    try {
+      for (const id of lessonIds) await store.setLessonTaught(selectedGroupId, id, value);
+    } catch (e) {
+      taughtQ.setData(before);
+      notify(errorMessage(e));
+    }
   };
 
-  // Fast forward button: "وصلنا لحد هذا الدرس" -> Marks all previous lessons as 'taught' (if not already 'examined')
+  const changeStatus = (lessonId: string, newStatus: LessonProgressStatus) => {
+    if (newStatus === 'examined') {
+      if (!(lessonId in examined)) {
+        notify('تظهر «امتُحن» تلقائياً بعد إنشاء امتحان فيه أسئلة من هذا الدرس. علّمناه كمشروح.', 'info');
+      }
+      if (!(lessonId in taught)) void saveTaught([lessonId], true);
+      return;
+    }
+    if (newStatus === 'not_taught' && lessonId in examined) {
+      notify('هذا الدرس دخل في امتحان سابق، لكن علّمناه «لم يُشرح» كما طلبت.', 'info');
+    }
+    void saveTaught([lessonId], newStatus !== 'not_taught');
+  };
+
+  // Fast forward button: "وصلنا لحد هذا الدرس" -> Marks all previous lessons as 'taught'
   const markUpToLesson = (targetLessonId: string) => {
     if (!subject) return;
     const allLessons = subject.units.flatMap(u => u.lessons);
     const targetIndex = allLessons.findIndex(l => l.id === targetLessonId);
     if (targetIndex === -1) return;
-
-    setLessonStatuses(prev => {
-      const next = { ...prev };
-      for (let i = 0; i <= targetIndex; i++) {
-        const lid = allLessons[i].id;
-        // Keep examined as examined, upgrade not_taught to taught
-        if (!next[lid] || next[lid] === 'not_taught') {
-          next[lid] = 'taught';
-        }
-      }
-      return next;
-    });
+    const ids = allLessons.slice(0, targetIndex + 1).map((l) => l.id).filter((id) => !(id in taught));
+    if (ids.length) void saveTaught(ids, true);
   };
 
   const allLessons = subject?.units.flatMap(u => u.lessons) || [];
@@ -92,11 +115,21 @@ export default function WhereWeReachedPage({
   const examinedCount = allLessons.filter(l => lessonStatuses[l.id] === 'examined').length;
   const progressPercent = allLessons.length > 0 ? Math.round((taughtCount / allLessons.length) * 100) : 0;
 
-  // Average group mastery for examined lessons
-  const examinedLessons = allLessons.filter(l => lessonStatuses[l.id] === 'examined');
-  const avgMastery = examinedLessons.length > 0
-    ? Math.round(examinedLessons.reduce((acc, l) => acc + (l.avgMastery || 80), 0) / examinedLessons.length)
-    : null;
+  // Average group mastery for examined lessons that have graded papers
+  const graded = allLessons.map(l => masteryOf(l.id)).filter((m): m is number => m !== null);
+  const avgMastery = graded.length > 0 ? Math.round(graded.reduce((acc, m) => acc + m, 0) / graded.length) : null;
+
+  if (groupsQ.loading && !groups.length) {
+    return <div className="py-24 text-center text-sm text-slate-500">جاري التحميل...</div>;
+  }
+  if (!groups.length) {
+    return (
+      <div className="py-24 text-center space-y-3">
+        <p className="text-sm text-slate-600">أنشئ مجموعة أولاً واربطها بصف ومادة، ثم علّم هنا الدروس التي شرحتها.</p>
+        <button onClick={() => onNavigate?.('B2')} className="bg-[#1E3A5F] text-white px-4 py-2 rounded-lg text-xs font-bold cursor-pointer">المجموعات والطلاب</button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -129,7 +162,7 @@ export default function WhereWeReachedPage({
               aria-label="اختر المجموعة التعليمية"
               className="bg-white text-sm font-bold text-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]/20"
             >
-              {MOCK_GROUPS.map(g => (
+              {groups.map(g => (
                 <option key={g.id} value={g.id}>{g.name} ({g.gradeName})</option>
               ))}
             </select>
@@ -180,7 +213,7 @@ export default function WhereWeReachedPage({
       {/* Units & Lessons Interactive Tree */}
       <div className="space-y-4">
         {subject?.units.map((unit) => {
-          const isExpanded = expandedUnits[unit.id] ?? true;
+          const isExpanded = !collapsedUnits[unit.id];
           const unitLessons = unit.lessons;
           const unitTaught = unitLessons.filter(l => lessonStatuses[l.id] === 'taught' || lessonStatuses[l.id] === 'examined').length;
 
@@ -240,9 +273,9 @@ export default function WhereWeReachedPage({
                               {/* Mastery Tag if examined */}
                               {status === 'examined' && (
                                 <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
-                                  (lesson.avgMastery || 80) >= 80 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                                  (masteryOf(lesson.id) ?? 0) >= 80 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                                 }`}>
-                                  إتقان: {lesson.avgMastery || 82}%
+                                  {masteryOf(lesson.id) === null ? 'لم يُصحَّح بعد' : `إتقان: ${masteryOf(lesson.id)}%`}
                                 </span>
                               )}
                             </div>

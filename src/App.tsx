@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { pathForScreen, roleForPath, screenForPath } from './routes';
 import { UserRole, ScreenId, Entity } from './types';
+import { DataProvider } from './data/DataContext';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileBottomNav } from './components/MobileBottomNav';
@@ -380,7 +381,9 @@ export default function App() {
           {isReal && roleForPath(location.pathname) !== 'visitor' && roleForPath(location.pathname) !== 'student' && auth.status !== 'signed_in' ? (
             <div className="py-24 text-center text-sm text-slate-500">جاري التحميل...</div>
           ) : (
-            renderScreen()
+            <DataProvider orgId={activeEntity.id} real={isReal}>
+              {renderScreen()}
+            </DataProvider>
           )}
         </main>
 
