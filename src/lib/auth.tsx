@@ -46,7 +46,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 const ENTITY_TYPES: EntityType[] = ['individual_teacher', 'school', 'learning_center'];
 
-function toEntity(org: { id: string; name: string; kind: string; region: string | null }, role: string, ownerName: string): Entity {
+type OrgRow = { id: string; name: string; kind: string; region: string | null; status?: string | null; status_note?: string | null };
+
+function toEntity(org: OrgRow, role: string, ownerName: string): Entity {
   const type = ENTITY_TYPES.includes(org.kind as EntityType) ? (org.kind as EntityType) : 'individual_teacher';
   const isTutor = type === 'individual_teacher';
   return {
@@ -61,6 +63,8 @@ function toEntity(org: { id: string; name: string; kind: string; region: string 
     activeStudentsCount: 0,
     region: org.region ?? '',
     principalOrOwnerName: ownerName,
+    status: org.status === 'pending' || org.status === 'disabled' ? org.status : 'active',
+    statusNote: org.status_note ?? '',
   };
 }
 
@@ -101,15 +105,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await supabase.rpc('accept_my_invitations').then(() => undefined, () => undefined);
     // Platform admins are kept in their own table and checked by a server function,
     // so nobody can make themselves admin by editing their own profile.
-    const [profileRes, membershipsRes, adminRes] = await Promise.all([
+    const memberships = (cols: string) => supabase!.from('memberships').select(`role, organizations(${cols})`).eq('user_id', userId).eq('status', 'active');
+    const [profileRes, firstMemberships, adminRes] = await Promise.all([
       supabase.from('profiles').select('id, full_name, phone').eq('id', userId).maybeSingle(),
-      supabase
-        .from('memberships')
-        .select('role, organizations(id, name, kind, region)')
-        .eq('user_id', userId)
-        .eq('status', 'active'),
+      memberships('id, name, kind, region, status, status_note'),
       supabase.rpc('is_platform_admin'),
     ]);
+    // Until the database update with organization status is applied, read without it.
+    const membershipsRes = firstMemberships.error ? await memberships('id, name, kind, region') : firstMemberships;
 
     const p = profileRes.data as { id: string; full_name: string | null; phone: string | null } | null;
     const fullName = p?.full_name ?? null;
@@ -120,9 +123,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isPlatformAdmin: adminRes.data === true,
     });
 
-    type Org = { id: string; name: string; kind: string; region: string | null };
-    type Row = { role: string; organizations: Org | Org[] | null };
-    const rows = (membershipsRes.data ?? []) as Row[];
+    type Row = { role: string; organizations: OrgRow | OrgRow[] | null };
+    const rows = (membershipsRes.data ?? []) as unknown as Row[];
     setEntities(
       rows.flatMap((row) => {
         const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations;

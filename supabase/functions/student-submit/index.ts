@@ -38,9 +38,12 @@ Deno.serve(async (req) => {
     if (!/^[a-z0-9]{6,20}$/i.test(code)) return null;
     const { data } = await admin
       .from('assessments')
-      .select('id, organization_id, group_id, title, kind, submission_open, submission_mode, organizations(name)')
+      .select('id, organization_id, group_id, title, kind, submission_open, submission_mode, organizations(name, status)')
       .eq('submission_code', code.toLowerCase())
       .maybeSingle();
+    // A disabled (or not yet approved) organization's links stop working.
+    const org = data && (Array.isArray(data.organizations) ? data.organizations[0] : data.organizations);
+    if (data && org?.status && org.status !== 'active') return null;
     return data;
   };
 
