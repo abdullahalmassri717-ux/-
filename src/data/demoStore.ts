@@ -124,6 +124,26 @@ export function createDemoStore(): DataStore {
   return {
     mode: 'demo',
     listCurricula: () => wait(CURRICULA_DATA),
+    getDashboard: () => {
+      const st = s();
+      const review = st.submissions.filter((x) => x.status === 'needs_review');
+      return wait({
+        groupsCount: st.groups.length,
+        studentsCount: st.students.length,
+        papersThisWeek: st.submissions.length,
+        answersAwaitingReview: review.reduce((n, x) => n + x.lowConfidenceUnreviewed, 0),
+        papersAwaitingReview: review.length,
+        avgPct: st.students.length ? Math.round((st.students.reduce((n, x) => n + x.latestScore, 0) / st.students.length) * 10) / 10 : null,
+        avgPctChange: 3.2,
+        reportsSent: Object.values(st.reports).filter((r) => r === 'sent').length,
+        weakLessons: [
+          { lesson: 'الاشتقاق الضمني', mastery: 40, commonMiss: 'توحيد المقامات في المشتقة الثانية' },
+          { lesson: 'النهايات المثلثية', mastery: 55, commonMiss: 'تطبيق متطابقات جا وجتا' },
+          { lesson: 'المعدلات المرتبطة بالزمن', mastery: 61, commonMiss: 'العلاقة الهندسية المساعدة' },
+        ],
+        tuition: { collected: 23150, remaining: 4350, unpaidStudents: 32, pct: 84.2 },
+      });
+    },
 
     listGroups: () =>
       wait(

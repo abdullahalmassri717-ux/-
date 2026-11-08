@@ -110,11 +110,26 @@ export interface StudentHistory {
   lessons: { lesson: string; mastery: number }[];
 }
 
+export interface DashboardSummary {
+  groupsCount: number;
+  studentsCount: number;
+  papersThisWeek: number;
+  answersAwaitingReview: number;
+  papersAwaitingReview: number;
+  avgPct: number | null;
+  avgPctChange: number | null;
+  reportsSent: number;
+  weakLessons: { lesson: string; mastery: number; commonMiss: string | null }[];
+  /** Tuition for the current month (owners only; null for teachers). */
+  tuition: { collected: number; remaining: number; unpaidStudents: number; pct: number } | null;
+}
+
 /** One lesson's state in «وين وصلنا» for a group. */
 export type TaughtLessons = Record<string, string>; // lessonId -> taught_at ISO
 
 export interface DataStore {
   readonly mode: 'demo' | 'real';
+  getDashboard(): Promise<DashboardSummary>;
   // Curriculum (read-only for teachers)
   listCurricula(): Promise<Curriculum[]>;
   // Groups

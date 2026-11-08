@@ -1,6 +1,9 @@
 import React from 'react';
 import { ScreenId } from '../../types';
-import { CURRENT_TEACHER, MOCK_EXAMS, MOCK_GROUPS } from '../../mockData';
+import { useActiveOrg, useLoad } from '../../data/DataContext';
+import { setSelected } from '../../data/selection';
+import { useAuth } from '../../lib/auth';
+import { PLATFORM_CONFIG, CURRENT_TEACHER } from '../../mockData';
 import {
   UploadCloud,
   CheckCircle2,
@@ -25,6 +28,18 @@ interface TeacherDashboardProps {
 }
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, onOpenAI }) => {
+  const auth = useAuth();
+  const org = useActiveOrg();
+  const dashQ = useLoad((st) => st.getDashboard());
+  const examsQ = useLoad((st) => st.listAssessments());
+  const d = dashQ.data;
+  const recentExams = (examsQ.data ?? []).slice(0, 5);
+  const teacherName = auth.mode === 'real' ? auth.profile?.fullName || org.principalOrOwnerName || '' : CURRENT_TEACHER.name;
+  const money = (n: number) => `${Math.round(n).toLocaleString('en-US')} ${PLATFORM_CONFIG.currencySymbol}`;
+  const open = (examId: string, screen: ScreenId) => {
+    setSelected('exam', examId);
+    onNavigate(screen);
+  };
   return (
     <div className="space-y-6">
       {/* Top Banner / Greeting + Prominent CTA (PDF requirement) */}
@@ -35,13 +50,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
               لوحة المتابعة اليومية
             </span>
             <span className="text-xs text-slate-400">·</span>
-            <span className="text-xs text-slate-500">منهاج التوجيهي (غزة، فلسطين)</span>
+            <span className="text-xs text-slate-500">{org.name}</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-[#1E3A5F] mt-1">
-            مرحباً بك، {CURRENT_TEACHER.name} 👋
+            مرحباً بك{teacherName ? `، ${teacherName}` : ''} 👋
           </h1>
           <p className="text-xs text-slate-600 mt-0.5">
-            لديك <strong>4 مجموعات تعليمية</strong> تضم <strong>180 طالباً</strong> في مبحث الرياضيات.
+            لديك <strong>{d?.groupsCount ?? '…'} مجموعات</strong> تضم <strong>{d?.studentsCount ?? '…'} طالباً</strong>.
           </p>
         </div>
 
@@ -86,8 +101,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
             <span>أوراق هذا الأسبوع</span>
             <FileText className="w-4 h-4 text-blue-600" />
           </div>
-          <div className="text-2xl font-black text-[#1E3A5F] tabular-nums">180</div>
-          <p className="text-[11px] text-slate-500">من 4 مجموعات مختلفة</p>
+          <div className="text-2xl font-black text-[#1E3A5F] tabular-nums">{d?.papersThisWeek ?? '…'}</div>
+          <p className="text-[11px] text-slate-500">ورقة رُفعت خلال 7 أيام</p>
         </div>
 
         {/* Card 2: Awaiting Review in Amber (#D97706) */}
@@ -99,8 +114,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
             <span>بانتظار مراجعتك</span>
             <Clock className="w-4 h-4 text-[#D97706]" />
           </div>
-          <div className="text-2xl font-black text-[#D97706] tabular-nums">12 إجابة</div>
-          <p className="text-[11px] text-amber-800 font-medium">إجابات منخفضة الثقة تحتاج قرارك</p>
+          <div className="text-2xl font-black text-[#D97706] tabular-nums">{d?.answersAwaitingReview ?? '…'} إجابة</div>
+          <p className="text-[11px] text-amber-800 font-medium">في {d?.papersAwaitingReview ?? 0} ورقة بانتظار اعتمادك</p>
         </div>
 
         {/* Card 3 */}
@@ -109,8 +124,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
             <span>متوسط درجات الطلاب</span>
             <TrendingUp className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="text-2xl font-black text-[#1E3A5F] tabular-nums">84.5%</div>
-          <p className="text-[11px] text-emerald-700 font-medium">+3.2% مقارنة بالشهر السابق</p>
+          <div className="text-2xl font-black text-[#1E3A5F] tabular-nums">{d?.avgPct != null ? `${d.avgPct}%` : '—'}</div>
+          <p className={`text-[11px] font-medium ${d?.avgPctChange != null && d.avgPctChange < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+            {d?.avgPctChange != null ? `${d.avgPctChange > 0 ? '+' : ''}${d.avgPctChange}% مقارنة بالشهر السابق` : 'آخر 30 يوماً'}
+          </p>
         </div>
 
         {/* Card 4 */}
@@ -119,12 +136,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
             <span>تقارير أُرسلت للأهالي</span>
             <Send className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="text-2xl font-black text-[#1E3A5F] tabular-nums">146 تقرير</div>
+          <div className="text-2xl font-black text-[#1E3A5F] tabular-nums">{d?.reportsSent ?? '…'} تقرير</div>
           <p className="text-[11px] text-slate-500">عبر رسائل واتساب المباشرة</p>
         </div>
       </div>
 
-      {/* Teacher's Financial Ledger & Tuition Quick Bar (User Request 2) */}
+      {/* Tuition quick bar (owners only) */}
+      {d?.tuition && (
       <div className="bg-gradient-to-r from-[#1E3A5F] via-slate-900 to-emerald-950 text-white rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
@@ -132,13 +150,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
               <Wallet className="w-3 h-3" />
               <span>نظام المعلم المالي ورسوم الطلاب</span>
             </span>
-            <span className="text-emerald-400 font-mono text-xs font-bold">نسبة التحصيل: 84.2%</span>
+            <span className="text-emerald-400 font-mono text-xs font-bold">نسبة التحصيل: {d.tuition.pct}%</span>
           </div>
           <h3 className="font-extrabold text-sm sm:text-base">
-            تم تحصيل 23,150 ₪ من رسوم طلاب التوجيهي لشهر نوفمبر
+            تم تحصيل {money(d.tuition.collected)} من رسوم الطلاب لهذا الشهر
           </h3>
           <p className="text-xs text-slate-300">
-            متبقي 4,350 ₪ (32 طالباً) • صافي أرباحك المقدرة بعد اشتراك دقة: <strong>26,600 ₪</strong>
+            متبقي {money(d.tuition.remaining)} ({d.tuition.unpaidStudents} طالباً)
           </p>
         </div>
 
@@ -152,6 +170,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
           </button>
         </div>
       </div>
+
+      )}
 
       {/* Main Grid: Recent Exams List + Weakest Lessons Card */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -168,7 +188,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
           </div>
 
           <div className="divide-y divide-slate-100">
-            {MOCK_EXAMS.map((exam) => (
+            {recentExams.length === 0 && !examsQ.loading && (
+              <p className="py-6 text-center text-xs text-slate-500">لا توجد امتحانات بعد. ابدأ بإنشاء أول امتحان.</p>
+            )}
+            {recentExams.map((exam) => (
               <div
                 key={exam.id}
                 className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/60 rounded-lg px-2 transition-colors"
@@ -193,7 +216,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
                   {/* Status Badge */}
                   {exam.status === 'needs_review' && (
                     <button
-                      onClick={() => onNavigate('B8')}
+                      onClick={() => open(exam.id, 'B8')}
                       className="bg-amber-100 hover:bg-amber-200 text-amber-900 px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors"
                     >
                       يحتاج مراجعة
@@ -201,7 +224,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
                   )}
                   {exam.status === 'completed' && (
                     <button
-                      onClick={() => onNavigate('B9')}
+                      onClick={() => open(exam.id, 'B9')}
                       className="bg-blue-100 hover:bg-blue-200 text-blue-900 px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors"
                     >
                       مكتمل · عرض النتائج
@@ -215,7 +238,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
                   )}
                   {exam.status === 'awaiting_papers' && (
                     <button
-                      onClick={() => onNavigate('B7')}
+                      onClick={() => open(exam.id, 'B7')}
                       className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer"
                     >
                       بانتظار الأوراق
@@ -238,41 +261,21 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
             </div>
 
             <div className="space-y-3.5 text-xs">
-              {/* Lesson 1 */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-800">1. الاشتقاق الضمني</span>
-                  <span className="font-mono text-red-600 font-bold tabular-nums">40% إتقان</span>
+              {(d?.weakLessons ?? []).length === 0 && (
+                <p className="text-slate-500">تظهر هنا أضعف الدروس بعد اعتماد أول امتحان مربوط بدروس المنهج.</p>
+              )}
+              {(d?.weakLessons ?? []).map((l, i) => (
+                <div key={l.lesson} className="space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-slate-800 min-w-0 break-words">{i + 1}. {l.lesson}</span>
+                    <span className={`font-mono font-bold tabular-nums shrink-0 ${l.mastery < 50 ? 'text-red-600' : 'text-amber-600'}`}>{l.mastery}% إتقان</span>
+                  </div>
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div className={`${l.mastery < 50 ? 'bg-red-500' : 'bg-amber-500'} h-full rounded-full`} style={{ width: `${l.mastery}%` }} />
+                  </div>
+                  {l.commonMiss && <p className="text-[10px] text-slate-500 break-words">أشيع خطأ: {l.commonMiss}</p>}
                 </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div className="bg-red-500 h-full rounded-full" style={{ width: '40%' }} />
-                </div>
-                <p className="text-[10px] text-slate-500">أشيع خطأ: توحيد المقامات وتطبيق المشتقة الثانية</p>
-              </div>
-
-              {/* Lesson 2 */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-800">2. النهايات المثلثية والدائرية</span>
-                  <span className="font-mono text-amber-600 font-bold tabular-nums">55% إتقان</span>
-                </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div className="bg-amber-500 h-full rounded-full" style={{ width: '55%' }} />
-                </div>
-                <p className="text-[10px] text-slate-500">صعوبة في تطبيق متطابقات جيب وجتا الزاوية</p>
-              </div>
-
-              {/* Lesson 3 */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-800">3. المعدلات المرتبطة بالزمن</span>
-                  <span className="font-mono text-amber-600 font-bold tabular-nums">61% إتقان</span>
-                </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div className="bg-amber-500 h-full rounded-full" style={{ width: '61%' }} />
-                </div>
-                <p className="text-[10px] text-slate-500">صياغة العلاقة الهندسية المساعدة</p>
-              </div>
+              ))}
             </div>
           </div>
 

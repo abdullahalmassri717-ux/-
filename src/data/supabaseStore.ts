@@ -8,6 +8,7 @@ import { PLATFORM_CONFIG } from '../mockData';
 import type {
   AssessmentDetail,
   AssessmentRow,
+  DashboardSummary,
   DataStore,
   NewAssessmentInput,
   NewGroupInput,
@@ -311,6 +312,105 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
   return {
     mode: 'real',
     listCurricula,
+
+    async getDashboard() {
+      const now = Date.now();
+      const weekAgo = new Date(now - 7 * 86400000).toISOString();
+      const monthAgo = new Date(now - 30 * 86400000).toISOString();
+      const twoMonthsAgo = new Date(now - 60 * 86400000).toISOString();
+      const month = new Date();
+      const monthStart = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-01`;
+      const [groups, students, week, review, recent, reports, lessonGrades, tuition] = await Promise.all([
+        db.from('groups').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).is('archived_at', null),
+        db.from('students').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).eq('status', 'active'),
+        db.from('submissions').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).gte('submitted_at', weekAgo),
+        db.from('submissions').select('id').eq('organization_id', orgId).eq('status', 'needs_review'),
+        db
+          .from('submissions')
+          .select('id, approved_at, assessments(assessment_totals(total_score))')
+          .eq('organization_id', orgId)
+          .eq('status', 'approved')
+          .gte('approved_at', twoMonthsAgo),
+        db.from('reports').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).eq('status', 'sent'),
+        db
+          .from('question_grades')
+          .select('final_score, ai_criteria, questions!inner(max_score, lessons!inner(title)), submissions!inner(status)')
+          .eq('organization_id', orgId)
+          .eq('submissions.status', 'approved')
+          .limit(5000),
+        db.from('tuition_balances').select('student_id, amount_due, paid_amount, status').eq('organization_id', orgId).eq('period_month', monthStart),
+      ]);
+
+      const reviewIds = (review.data ?? []).map((r) => r.id as string);
+      let answersAwaitingReview = 0;
+      const recentRows = (recent.data ?? []) as unknown as { id: string; approved_at: string; assessments: { assessment_totals: { total_score: number } | { total_score: number }[] | null } | null }[];
+      const scoreIds = [...reviewIds, ...recentRows.map((r) => r.id)];
+      const { data: scores } = scoreIds.length
+        ? await db.from('submission_scores').select('submission_id, total_score, low_confidence_unreviewed').in('submission_id', scoreIds)
+        : { data: [] };
+      const scoreOf = new Map((scores ?? []).map((x) => [x.submission_id as string, x]));
+      for (const id of reviewIds) answersAwaitingReview += Number(scoreOf.get(id)?.low_confidence_unreviewed ?? 0);
+      const pctList = (from: string, to: string) =>
+        recentRows
+          .filter((r) => r.approved_at >= from && r.approved_at < to)
+          .map((r) => {
+            const total = Number(one(one(r.assessments)?.assessment_totals)?.total_score ?? 0);
+            return total ? (Number(scoreOf.get(r.id)?.total_score ?? 0) / total) * 100 : null;
+          })
+          .filter((x): x is number => x !== null);
+      const avg = (xs: number[]) => (xs.length ? Math.round((xs.reduce((n, x) => n + x, 0) / xs.length) * 10) / 10 : null);
+      const nowIso = new Date(now + 1000).toISOString();
+      const avgPct = avg(pctList(monthAgo, nowIso));
+      const prevPct = avg(pctList(twoMonthsAgo, monthAgo));
+
+      const lessonMap = new Map<string, { got: number; max: number; miss: Map<string, number> }>();
+      for (const g of (lessonGrades.data ?? []) as unknown as {
+        final_score: number | null; ai_criteria: { criterion: string; met: boolean }[] | null;
+        questions: { max_score: number; lessons: { title: string } | null } | null;
+      }[]) {
+        const q = one(g.questions);
+        const title = one(q?.lessons)?.title;
+        if (!q || !title) continue;
+        const t = lessonMap.get(title) ?? { got: 0, max: 0, miss: new Map() };
+        t.got += Number(g.final_score ?? 0);
+        t.max += Number(q.max_score);
+        for (const c of g.ai_criteria ?? []) if (!c.met) t.miss.set(c.criterion, (t.miss.get(c.criterion) ?? 0) + 1);
+        lessonMap.set(title, t);
+      }
+      const weakLessons = [...lessonMap.entries()]
+        .map(([lesson, t]) => ({
+          lesson,
+          mastery: t.max ? Math.round((t.got / t.max) * 100) : 0,
+          commonMiss: [...t.miss.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
+        }))
+        .sort((a, b) => a.mastery - b.mastery)
+        .slice(0, 3);
+
+      let tuitionSummary: DashboardSummary['tuition'] = null;
+      if (!tuition.error && tuition.data && tuition.data.length) {
+        const due = tuition.data.reduce((n, r) => n + Number(r.amount_due), 0);
+        const paid = tuition.data.reduce((n, r) => n + Math.min(Number(r.paid_amount), Number(r.amount_due)), 0);
+        tuitionSummary = {
+          collected: paid,
+          remaining: Math.max(0, due - paid),
+          unpaidStudents: tuition.data.filter((r) => r.status !== 'paid').length,
+          pct: due ? Math.round((paid / due) * 1000) / 10 : 100,
+        };
+      }
+
+      return {
+        groupsCount: groups.count ?? 0,
+        studentsCount: students.count ?? 0,
+        papersThisWeek: week.count ?? 0,
+        answersAwaitingReview,
+        papersAwaitingReview: reviewIds.length,
+        avgPct,
+        avgPctChange: avgPct !== null && prevPct !== null ? Math.round((avgPct - prevPct) * 10) / 10 : null,
+        reportsSent: reports.count ?? 0,
+        weakLessons,
+        tuition: tuitionSummary,
+      };
+    },
 
     async listGroups() {
       const { data, error } = await db
