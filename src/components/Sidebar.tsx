@@ -54,7 +54,7 @@ export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity): N
       { id: 'B15' as ScreenId, label: 'تشخيص طلابي (افهم طلابك)', icon: Target, badge: 'تحليل ذكي', highlight: true },
       { id: 'B4' as ScreenId, label: 'الامتحانات والواجبات', icon: FileText },
       { id: 'B7' as ScreenId, label: 'رفع وتصوير الأوراق', icon: UploadCloud },
-      { id: 'B8' as ScreenId, label: 'مراجعة التصحيح', icon: CheckSquare, badge: '12 متبقية' },
+      { id: 'B8' as ScreenId, label: 'مراجعة التصحيح', icon: CheckSquare },
       { id: 'B9' as ScreenId, label: 'نتائج الامتحان والتحليل', icon: BarChart3 },
       { id: 'B10' as ScreenId, label: 'تقارير واتساب للأهالي', icon: Send },
       { id: 'B12' as ScreenId, label: 'معاينة الورقة المصححة', icon: FileCheck2 },
@@ -67,7 +67,6 @@ export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity): N
         id: 'B11' as ScreenId,
         label: 'رسوم الطلاب والمالية',
         icon: Wallet,
-        badge: '84% تحصيل'
       });
     }
 
@@ -84,9 +83,9 @@ export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity): N
   if (currentRole === 'school_principal' || currentRole === 'school_admin') {
     return [
       { id: 'D1' as ScreenId, label: 'لوحة إدارة المدرسة', icon: Building2 },
-      { id: 'D2' as ScreenId, label: 'المعلمون والصفوف (1 - 9)', icon: GraduationCap },
-      { id: 'D3' as ScreenId, label: 'تقرير الفاقد التعليمي الشامل', icon: BarChart3 },
-      { id: 'D4' as ScreenId, label: 'مقارنة المعلمين والمجموعات', icon: Users, tag: 'قريباً' },
+      { id: 'D2' as ScreenId, label: 'المعلمون والصفوف', icon: GraduationCap },
+      { id: 'D3' as ScreenId, label: 'تقرير المدرسة', icon: BarChart3 },
+      { id: 'D4' as ScreenId, label: 'مقارنة المعلمين والصفوف', icon: Users },
       { id: 'B8' as ScreenId, label: 'مراقبة جودة التصحيح', icon: CheckSquare },
       { id: 'B11' as ScreenId, label: 'عقد واشتراك المدرسة', icon: Wallet },
       { id: 'SUPPORT' as ScreenId, label: 'الدعم الفني للمدرسة', icon: Headphones },
@@ -100,7 +99,7 @@ export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity): N
       { id: 'E2' as ScreenId, label: 'العملاء والفواتير والتحويلات', icon: CreditCard },
       { id: 'E3' as ScreenId, label: 'جودة التصحيح وتكلفة AI', icon: BrainCircuit, alertBadge: 'تنبيه فيزياء' },
       { id: 'E4' as ScreenId, label: 'إدارة المناهج والكتب', icon: BookOpen, badge: 'جديد' },
-      { id: 'E5' as ScreenId, label: 'إدارة الدعم الفني والتذاكر', icon: Headphones, badge: '3 جديدة' },
+      { id: 'E5' as ScreenId, label: 'إدارة الدعم الفني والتذاكر', icon: Headphones },
     ];
   }
 

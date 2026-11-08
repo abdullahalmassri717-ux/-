@@ -6,6 +6,7 @@ import type { Curriculum, Exam, Group } from '../types';
 import { toInternationalPhone } from '../lib/phone';
 import { PLATFORM_CONFIG } from '../mockData';
 import { createSupabaseBilling } from './billing';
+import { createSupabaseSchool, type SchoolStore } from './school';
 import type {
   AssessmentDetail,
   AssessmentRow,
@@ -310,7 +311,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       .sort((a, b) => a.questionNumber - b.questionNumber);
   }
 
-  return {
+  const base: Omit<DataStore, keyof SchoolStore> = {
     ...createSupabaseBilling(db, orgId),
     mode: 'real',
     listCurricula,
@@ -318,7 +319,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     async listDiagnosticRows(groupId) {
       let q = db
         .from('question_grades')
-        .select('submission_id, final_score, ai_criteria, questions!inner(number, max_score, lessons(title)), submissions!inner(student_id, status, assessments!inner(title, group_id))')
+        .select('submission_id, final_score, ai_criteria, questions!inner(number, max_score, lessons(title)), submissions!inner(student_id, status, submitted_at, assessments!inner(title, group_id))')
         .eq('organization_id', orgId)
         .eq('submissions.status', 'approved')
         .not('submissions.student_id', 'is', null)
@@ -329,7 +330,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       type Row = {
         submission_id: string; final_score: number | null; ai_criteria: { criterion: string; met: boolean }[] | null;
         questions: { number: number; max_score: number; lessons: { title: string } | null } | null;
-        submissions: { student_id: string; assessments: { title: string; group_id: string } | null } | null;
+        submissions: { student_id: string; submitted_at: string; assessments: { title: string; group_id: string } | null } | null;
       };
       return ((data ?? []) as unknown as Row[]).map((r) => {
         const q2 = one(r.questions);
@@ -340,6 +341,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
           studentId: sub?.student_id ?? '',
           groupId: a?.group_id ?? '',
           assessmentTitle: a?.title ?? '',
+          submittedAt: sub?.submitted_at ?? '',
           questionNumber: q2?.number ?? 0,
           lesson: one(q2?.lessons)?.title ?? '',
           finalScore: Number(r.final_score ?? 0),
@@ -934,4 +936,5 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       if (error) fail(error, 'تعذّر اعتماد الورقة.');
     },
   };
+  return { ...base, ...createSupabaseSchool(db, orgId, base) };
 }

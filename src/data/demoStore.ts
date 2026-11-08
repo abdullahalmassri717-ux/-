@@ -13,6 +13,7 @@ import {
 import type { Group } from '../types';
 import { requestGrading } from '../lib/gradingApi';
 import { createDemoBilling } from './billing';
+import { createDemoSchool, type SchoolStore } from './school';
 import type {
   AssessmentDetail,
   AssessmentRow,
@@ -122,7 +123,7 @@ function summary(a: AssessmentDetail): AssessmentRow {
 }
 
 export function createDemoStore(): DataStore {
-  return {
+  const base: Omit<DataStore, keyof SchoolStore> = {
     ...createDemoBilling(),
     mode: 'demo',
     listCurricula: () => wait(CURRICULA_DATA),
@@ -138,6 +139,7 @@ export function createDemoStore(): DataStore {
             const score = Math.round(level * 10);
             return {
               submissionId: `demo_${st.id}`, studentId: st.id, groupId: st.groupId, assessmentTitle: 'امتحان الشهر الأول',
+              submittedAt: new Date(Date.now() - (st.latestScore % 2 ? 10 : 40) * 86400000).toISOString(),
               questionNumber: i + 1, lesson, finalScore: score, maxScore: 10,
               criteria: [{ criterion: misses[i], met: score >= 7 }, { criterion: 'كتابة القانون الصحيح', met: score >= 4 }],
             };
@@ -474,4 +476,5 @@ export function createDemoStore(): DataStore {
       return wait(undefined);
     },
   };
+  return { ...base, ...createDemoSchool(base) };
 }
