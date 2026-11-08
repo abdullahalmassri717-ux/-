@@ -83,9 +83,13 @@ type CurriculumRow = {
 const bySort = <T extends { sort_order: number }>(a: T, b: T) => a.sort_order - b.sort_order;
 
 export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStore {
+  // Short-lived cache: the admin may publish a subject while a teacher screen is open.
   let curriculaCache: Promise<Curriculum[]> | null = null;
+  let curriculaCachedAt = 0;
 
   const listCurricula = (): Promise<Curriculum[]> => {
+    if (Date.now() - curriculaCachedAt > 30_000) curriculaCache = null;
+    if (!curriculaCache) curriculaCachedAt = Date.now();
     curriculaCache ??= (async () => {
       const { data, error } = await db
         .from('curricula')
