@@ -8,3 +8,6 @@ coverage/
 !.env.example
 node_modules
 dist
+
+# Real student papers for the accuracy test (private, minors)
+grading-test/

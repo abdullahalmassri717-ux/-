@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ScreenId, GradingItem } from '../../types';
-import { MOCK_GRADING_ITEMS } from '../../mockData';
+import { CURRENT_TEACHER, MOCK_GRADING_ITEMS } from '../../mockData';
+import { recordScoreEdit, updateLiveItems, useGradingSession } from '../../lib/gradingSession';
 import {
   CheckCircle2,
   XCircle,
@@ -31,7 +32,13 @@ export const GradingReviewPage: React.FC<GradingReviewPageProps> = ({ onNavigate
   const [filterMode, setFilterMode] = useState<'suspicious_only' | 'all'>('suspicious_only');
   const [reviewMode, setReviewMode] = useState<'student_by_student' | 'cluster'>('student_by_student');
   const [currentIndex, setCurrentIndex] = useState<number>(0);
-  const [items, setItems] = useState<GradingItem[]>(MOCK_GRADING_ITEMS);
+  const [mockItems, setMockItems] = useState<GradingItem[]>(MOCK_GRADING_ITEMS);
+  // Papers graded by the real AI (trial) replace the demo items when present.
+  const { items: liveItems } = useGradingSession();
+  const usingLive = liveItems.length > 0;
+  const items = usingLive ? liveItems : mockItems;
+  const setItems = (update: (prev: GradingItem[]) => GradingItem[]) =>
+    usingLive ? updateLiveItems(update) : setMockItems(update);
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [bulkApproved, setBulkApproved] = useState(false);
 
@@ -43,6 +50,21 @@ export const GradingReviewPage: React.FC<GradingReviewPageProps> = ({ onNavigate
   const currentItem = displayItems[currentIndex] || displayItems[0] || items[0];
 
   const handleScoreAdjust = (delta: number) => {
+    const before = currentItem.teacherScore;
+    const after = Math.max(0, Math.min(currentItem.maxScore, before + delta));
+    if (usingLive && after !== before) {
+      // Every change to an AI grade is kept (before/after/who/when) to improve accuracy later.
+      recordScoreEdit({
+        itemId: currentItem.id,
+        paperId: currentItem.id.replace(/^live-/, '').replace(/-q\d+$/, ''),
+        questionNumber: currentItem.questionNumber,
+        aiScore: currentItem.aiSuggestedScore,
+        before,
+        after,
+        editedBy: CURRENT_TEACHER.name,
+        editedAt: new Date().toISOString(),
+      });
+    }
     setItems(prev => prev.map(it => {
       if (it.id === currentItem.id) {
         const newScore = Math.max(0, Math.min(it.maxScore, it.teacherScore + delta));
@@ -205,7 +227,9 @@ export const GradingReviewPage: React.FC<GradingReviewPageProps> = ({ onNavigate
           </div>
 
           {/* Scanned Paper Canvas / Visual Representation */}
-          <div className="flex-1 min-h-[360px] bg-[#FAF9F6] border-2 border-slate-300 rounded-xl p-6 overflow-hidden flex items-center justify-center relative shadow-inner">
+          <div className={`flex-1 min-h-[360px] bg-[#FAF9F6] border-2 border-slate-300 rounded-xl p-6 relative shadow-inner ${
+            currentItem.studentAnswerImage.startsWith('data:') ? 'overflow-auto max-h-[70vh]' : 'overflow-hidden flex items-center justify-center'
+          }`}>
             <div
               className="w-full transition-transform duration-200 text-right space-y-4 font-mono select-none"
               style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'top right' }}
@@ -215,8 +239,25 @@ export const GradingReviewPage: React.FC<GradingReviewPageProps> = ({ onNavigate
                 <span>سؤال {currentItem.questionNumber} ({currentItem.lesson})</span>
               </div>
 
-              {/* Simulated Student Handwriting Math / English Essay */}
-              {currentItem.subjectType === 'english_writing' ? (
+              {/* Real paper photo (AI trial) or simulated handwriting (demo data) */}
+              {currentItem.studentAnswerImage.startsWith('data:') ? (
+                <div className="space-y-3 font-sans">
+                  <img
+                    src={currentItem.studentAnswerImage}
+                    alt={`ورقة الطالب ${currentItem.studentCode}`}
+                    className="w-full h-auto rounded-lg border border-slate-300 bg-white"
+                  />
+                  <div className="text-sm text-slate-900 bg-white/80 p-3 border border-dashed border-slate-300 rounded-lg">
+                    <p className="text-xs text-slate-500 mb-1">ما قرأه الذكاء الاصطناعي من الورقة:</p>
+                    <p className="whitespace-pre-wrap break-words leading-loose font-serif">{currentItem.aiTranscription || '—'}</p>
+                    {currentItem.handwrittenNote && (
+                      <p className="text-xs text-red-600 pt-2 mt-2 border-t border-slate-200">
+                        ملاحظة للطالب: <strong>{currentItem.handwrittenNote}</strong>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : currentItem.subjectType === 'english_writing' ? (
                 <div className="font-sans text-xs text-blue-950 p-4 bg-white/70 border border-slate-300 rounded leading-relaxed space-y-2">
                   <p className="font-serif text-sm">
                     "Solar energy is very important for people in Gaza because electricity is cut everyday. Many families puts solar panels on roofs to have light and charge phones. In addition, solar energy is clean and do not make smoke. Goverment must help schools to install panels."
@@ -346,6 +387,12 @@ export const GradingReviewPage: React.FC<GradingReviewPageProps> = ({ onNavigate
                     </div>
                   ))}
                 </div>
+                {currentItem.aiReason && (
+                  <div className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-100 text-[11px] text-blue-950 leading-relaxed">
+                    <strong className="block mb-0.5">سبب الدرجة (للمعلم فقط):</strong>
+                    <span className="break-words">{currentItem.aiReason}</span>
+                  </div>
+                )}
               </div>
             )}
 
