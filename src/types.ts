@@ -243,6 +243,8 @@ export interface GradingItem {
     points: number;
   }[];
   handwrittenNote: string;
+  /** Why the AI gave this score (shown to the teacher only). */
+  aiReason?: string;
   subjectType?: 'math' | 'science' | 'english_writing';
   writingFeedback?: {
     grammarErrors: { text: string; correction: string; note: string }[];

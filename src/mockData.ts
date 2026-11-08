@@ -24,6 +24,8 @@ export const PLATFORM_CONFIG = {
   currency: 'شيكل',
   currencySymbol: '₪',
   currencyCode: 'ILS',
+  // Approximate local-currency value of 1 US dollar, used to show AI grading cost.
+  usdExchangeRate: 3.7,
   pricing: {
     tutorMonthlyPerStudent: 5, // 5 ILS per student per month
     schoolYearlyPerStudent: 50, // 50 ILS per student per year

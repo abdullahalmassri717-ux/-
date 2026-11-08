@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { ScreenId } from '../../types';
-import { MOCK_EXAMS, MOCK_STUDENTS } from '../../mockData';
+import { MOCK_EXAMS, PLATFORM_CONFIG } from '../../mockData';
 import {
   Camera,
   Upload,
@@ -13,9 +13,23 @@ import {
   QrCode,
   WifiOff,
   Clock,
-  ArrowRight
+  ArrowRight,
+  Loader2,
+  XCircle
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
+import { prepareImageForGrading } from '../../lib/imageResize';
+import { requestGrading } from '../../lib/gradingApi';
+import {
+  addGradingPaper,
+  completeGradingPaper,
+  examForGrading,
+  failGradingPaper,
+  useGradingSession,
+} from '../../lib/gradingSession';
+
+const formatCost = (usd: number) =>
+  `${(usd * PLATFORM_CONFIG.usdExchangeRate).toFixed(3)} ${PLATFORM_CONFIG.currencySymbol}`;
 
 interface UploadPapersPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -32,8 +46,9 @@ interface ScannedSheet {
 export const UploadPapersPage: React.FC<UploadPapersPageProps> = ({ onNavigate }) => {
   const [selectedExamId, setSelectedExamId] = useState<string>('ex1');
   const [activeTab, setActiveTab] = useState<'scanned' | 'student_submissions'>('scanned');
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(100);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const filesInputRef = useRef<HTMLInputElement>(null);
+  const { papers: livePapers } = useGradingSession();
 
   const [sheets, setSheets] = useState<ScannedSheet[]>([
     { id: 'sh1', studentName: 'أحمد محمود المصري', studentCode: '1042', status: 'recognized' },
@@ -46,22 +61,40 @@ export const UploadPapersPage: React.FC<UploadPapersPageProps> = ({ onNavigate }
 
   const selectedExam = MOCK_EXAMS.find(e => e.id === selectedExamId) || MOCK_EXAMS[0];
 
-  const handleCapture = () => {
-    setIsUploading(true);
-    setUploadProgress(40);
-    setTimeout(() => {
-      setUploadProgress(100);
-      setIsUploading(false);
-      setSheets(prev => [
-        ...prev,
-        {
-          id: `sh${Date.now()}`,
-          studentName: 'رزان كمال الدلو',
-          studentCode: '1044',
-          status: 'recognized'
+  const examPapers = livePapers.filter((p) => p.examId === selectedExamId);
+  const gradingCount = examPapers.filter((p) => p.status === 'grading').length;
+  const uploadProgress = examPapers.length
+    ? Math.round(((examPapers.length - gradingCount) / examPapers.length) * 100)
+    : 100;
+  const trialExam = examForGrading(selectedExamId);
+
+  // Each photo is one student's paper: shrink it, then send it for real AI grading.
+  const handleFiles = async (fileList: FileList | null) => {
+    const files = Array.from(fileList ?? []);
+    if (!files.length) return;
+    const images = files.filter((f) => f.type.startsWith('image/'));
+    if (images.length < files.length) {
+      notify('ملفات PDF غير مدعومة بعد في التجربة. صوّر الورقة أو ارفعها كصورة.', 'warning');
+    }
+    await Promise.all(
+      images.map(async (file) => {
+        const id = `p${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        let prepared;
+        try {
+          prepared = await prepareImageForGrading(file);
+        } catch {
+          notify(`تعذّرت قراءة الصورة ${file.name}`, 'warning');
+          return;
         }
-      ]);
-    }, 1000);
+        addGradingPaper({ id, examId: selectedExamId, fileName: file.name, imageDataUrl: prepared.dataUrl });
+        try {
+          const result = await requestGrading(examForGrading(selectedExamId), [prepared]);
+          completeGradingPaper(id, result);
+        } catch (error) {
+          failGradingPaper(id, error instanceof Error ? error.message : 'حدث خطأ أثناء التصحيح.');
+        }
+      })
+    );
   };
 
   return (
@@ -86,12 +119,12 @@ export const UploadPapersPage: React.FC<UploadPapersPageProps> = ({ onNavigate }
 
       {/* Select Exam Dropdown */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <span className="font-bold text-slate-700 shrink-0">اختر الامتحان المستهدف:</span>
           <select
             value={selectedExamId}
             onChange={(e) => setSelectedExamId(e.target.value)}
-            className="p-2 bg-[#F7F8FA] border border-slate-300 rounded-lg font-bold text-slate-900"
+            className="min-w-0 flex-1 truncate p-2 bg-[#F7F8FA] border border-slate-300 rounded-lg font-bold text-slate-900"
           >
             {MOCK_EXAMS.map((ex) => (
               <option key={ex.id} value={ex.id}>
@@ -108,8 +141,30 @@ export const UploadPapersPage: React.FC<UploadPapersPageProps> = ({ onNavigate }
 
       {/* 2 Big Action Buttons (Camera & Upload) - PDF requirement */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => {
+            void handleFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
+        <input
+          ref={filesInputRef}
+          type="file"
+          accept="image/*,application/pdf"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            void handleFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
         <button
-          onClick={handleCapture}
+          onClick={() => cameraInputRef.current?.click()}
           className="bg-[#1E3A5F] hover:bg-[#152a45] text-white p-6 rounded-2xl flex flex-col items-center justify-center gap-2.5 shadow-sm transition-all active:scale-98 cursor-pointer"
         >
           <Camera className="w-8 h-8 text-emerald-400" />
@@ -120,7 +175,7 @@ export const UploadPapersPage: React.FC<UploadPapersPageProps> = ({ onNavigate }
         </button>
 
         <button
-          onClick={handleCapture}
+          onClick={() => filesInputRef.current?.click()}
           className="bg-white hover:bg-slate-50 border-2 border-dashed border-slate-300 text-slate-800 p-6 rounded-2xl flex flex-col items-center justify-center gap-2.5 shadow-2xs transition-all active:scale-98 cursor-pointer"
         >
           <Upload className="w-8 h-8 text-blue-600" />
@@ -130,6 +185,79 @@ export const UploadPapersPage: React.FC<UploadPapersPageProps> = ({ onNavigate }
           </span>
         </button>
       </div>
+
+      {/* Real AI grading (trial): what to write on a test paper */}
+      <details className="bg-violet-50 border border-violet-200 rounded-xl p-3 text-xs text-violet-950">
+        <summary className="font-bold cursor-pointer flex items-center gap-1.5">
+          <Sparkles className="w-4 h-4 text-violet-600 shrink-0" />
+          <span>تجربة التصحيح الحقيقي: ما الأسئلة التي يصحّحها الذكاء الاصطناعي الآن؟</span>
+        </summary>
+        <div className="pt-2 space-y-2 leading-relaxed">
+          <p>
+            في هذه المرحلة يُصحَّح كل امتحان حسب أسئلة ومعايير الامتحان التجريبي التالية. اكتب حلاً بخط اليد
+            (اكتب رمز الطالب أعلى الورقة)، صوّره، وارفعه هنا. صورة واحدة = ورقة طالب واحد.
+          </p>
+          <ol className="list-decimal pr-5 space-y-1">
+            {trialExam.questions.map((q) => (
+              <li key={q.questionNumber} className="break-words">
+                {q.text} <span className="text-violet-700 font-bold">({q.maxScore} علامة)</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </details>
+
+      {examPapers.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-bold text-sm text-[#1E3A5F]">أوراق صُحّحت بالذكاء الاصطناعي ({examPapers.length})</h3>
+            <span className="text-[11px] text-slate-500 tabular-nums">
+              التكلفة الإجمالية: {formatCost(examPapers.reduce((s, p) => s + (p.result?.totalCostUsd ?? 0), 0))}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {examPapers.map((p) => (
+              <div
+                key={p.id}
+                className={`border rounded-xl p-2 space-y-1.5 text-xs min-w-0 ${
+                  p.status === 'error' ? 'border-red-300 bg-red-50/40' : 'border-slate-200'
+                }`}
+              >
+                <div className="h-28 rounded-lg overflow-hidden bg-slate-100 relative">
+                  <img src={p.imageDataUrl} alt={`ورقة ${p.fileName}`} className="w-full h-full object-cover" />
+                  {p.status === 'grading' && (
+                    <div className="absolute inset-0 bg-white/70 flex items-center justify-center gap-1 font-bold text-[#1E3A5F]">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>يصحّح الآن…</span>
+                    </div>
+                  )}
+                </div>
+                {p.status === 'done' && p.result && (
+                  <>
+                    <div className="font-bold text-slate-900 truncate">{p.studentName}</div>
+                    <div className="flex items-center justify-between text-[11px] tabular-nums">
+                      <span className="font-mono text-slate-500">رمز {p.studentCode}</span>
+                      <span className="font-extrabold text-[#1E3A5F]">
+                        {p.result.totalScore} / {p.result.totalMaxScore}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 truncate" title={p.result.model}>
+                      {p.result.attempts.length > 1 ? 'أُعيد بنموذج أقوى · ' : ''}
+                      {formatCost(p.result.totalCostUsd)}
+                    </div>
+                  </>
+                )}
+                {p.status === 'error' && (
+                  <div className="text-[11px] text-red-700 flex items-start gap-1">
+                    <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span className="break-words">{p.error}</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Progress & Offline Resilience Banner (PDF requirement) */}
       <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-2 text-xs">
