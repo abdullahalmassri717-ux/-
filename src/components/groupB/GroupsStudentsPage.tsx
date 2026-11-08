@@ -16,6 +16,7 @@ import {
   Smartphone,
   BookOpen
 } from 'lucide-react';
+import { notify } from '../../lib/notify';
 
 interface GroupsStudentsPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -50,7 +51,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
 
   const handleCreateGroup = () => {
     if (!newGroupName.trim()) {
-      alert('يرجى إدخال اسم المجموعة');
+      notify('يرجى إدخال اسم المجموعة');
       return;
     }
     const curr = CURRICULA_DATA.find(c => c.id === newGroupCurriculumId);
@@ -361,7 +362,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
             <div className="flex items-center gap-2 pt-2">
               <button
                 onClick={() => {
-                  alert('تمت إضافة الطالب وتوليد رمز QR الخاص بورقة إجابته بنجاح!');
+                  notify('تمت إضافة الطالب وتوليد رمز QR الخاص بورقة إجابته بنجاح!');
                   setShowAddModal(false);
                 }}
                 className="flex-1 bg-[#1E3A5F] text-white py-2 rounded-lg font-bold text-xs cursor-pointer"
@@ -397,7 +398,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
             <div className="flex items-center gap-2 pt-2">
               <button
                 onClick={() => {
-                  alert('تم استيراد 48 طالباً بنجاح وتوزيعهم على المجموعات.');
+                  notify('تم استيراد 48 طالباً بنجاح وتوزيعهم على المجموعات.');
                   setShowExcelModal(false);
                 }}
                 className="flex-1 bg-emerald-700 text-white py-2 rounded-lg font-bold text-xs cursor-pointer"

@@ -19,6 +19,7 @@ import {
   Check,
   AlertCircle
 } from 'lucide-react';
+import { notify } from '../../lib/notify';
 
 interface CreateExamPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -190,7 +191,7 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
 
           <button
             onClick={() => {
-              alert('تم حفظ الامتحان ومعايير تصحيحه بنجاح! تم تجهيز نماذج أوراق الإجابة.');
+              notify('تم حفظ الامتحان ومعايير تصحيحه بنجاح! تم تجهيز نماذج أوراق الإجابة.');
               onNavigate('B6');
             }}
             className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-5 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-2xs"
@@ -623,14 +624,14 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
                   </span>
                   <div className="flex items-center gap-2">
                     <button 
-                      onClick={() => alert('تم تفعيل الفلاش والإضاءة المعززة للورقة')} 
+                      onClick={() => notify('تم تفعيل الفلاش والإضاءة المعززة للورقة')} 
                       className="bg-black/60 hover:bg-black/80 px-2 py-1 rounded-full text-[10px] border border-white/10 cursor-pointer"
                       title="فلاش الكاميرا"
                     >
                       ⚡ فلاش تلقائي
                     </button>
                     <button 
-                      onClick={() => alert('تم التبديل بين الكاميرا الخلفية والأمامية')}
+                      onClick={() => notify('تم التبديل بين الكاميرا الخلفية والأمامية')}
                       className="bg-black/60 hover:bg-black/80 p-1.5 rounded-full border border-white/10 cursor-pointer"
                       title="تبديل الكاميرا"
                     >

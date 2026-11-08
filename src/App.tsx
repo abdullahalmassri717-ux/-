@@ -27,10 +27,12 @@ import { ParentReportPage } from './components/groupB/ParentReportPage';
 import { SubscriptionPage } from './components/groupB/SubscriptionPage';
 import { CorrectedPaperViewPage } from './components/groupB/CorrectedPaperViewPage';
 import WhereWeReachedPage from './components/groupB/WhereWeReachedPage';
+import { AssistantsTeamPage } from './components/groupB/AssistantsTeamPage';
 import { TeacherDiagnosticAnalyticsPage } from './components/groupB/TeacherDiagnosticAnalyticsPage';
 
 // Common Components
 import { TechnicalSupportPage } from './components/common/TechnicalSupportPage';
+import { Toaster } from './components/common/Toaster';
 
 // Group C Components
 import { AIToolsHubPage } from './components/groupC/AIToolsHubPage';
@@ -50,23 +52,33 @@ import { CurriculumManagementPage } from './components/groupE/CurriculumManageme
 
 // Floating AI trigger icon
 import { Sparkles } from 'lucide-react';
+import { notify } from './lib/notify';
 
 export default function App() {
   // Production default: starts on Landing Page as visitor
-  const [currentRole, setCurrentRole] = useState<UserRole>('visitor');
-  const [currentScreen, setCurrentScreen] = useState<ScreenId>('A1');
+  // Dev-only shortcut for previews: ?screen=B8&role=teacher&entity=e_tutor_1
+  const devParams = import.meta.env.DEV ? new URLSearchParams(window.location.search) : null;
+  const [currentRole, setCurrentRole] = useState<UserRole>((devParams?.get('role') as UserRole) || 'visitor');
+  const [currentScreen, setCurrentScreen] = useState<ScreenId>((devParams?.get('screen') as ScreenId) || 'A1');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('s1');
   const [isEnglish, setIsEnglish] = useState<boolean>(false);
   const [isAIOpen, setIsAIOpen] = useState<boolean>(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState<boolean>(false);
 
   // Active Entity state for multi-tenancy & account switcher
-  const [activeEntity, setActiveEntity] = useState<Entity>(MOCK_ENTITIES[0]);
+  const [activeEntity, setActiveEntity] = useState<Entity>(
+    MOCK_ENTITIES.find((e) => e.id === devParams?.get('entity')) || MOCK_ENTITIES[0]
+  );
 
   const handleNavigate = (screen: ScreenId) => {
     // School teachers cannot navigate to B11 (Subscriptions & Invoices)
-    if (screen === 'B11' && activeEntity.type === 'school' && activeEntity.role === 'teacher') {
-      alert('إدارة الاشتراكات والفواتير خاصة بإدارة المدرسة فقط وغير متاحة لمعلمي المدرسة.');
+    if ((screen === 'B11' || screen === 'B13') && activeEntity.type === 'school' && activeEntity.role === 'teacher') {
+      notify(
+        screen === 'B11'
+          ? 'إدارة الاشتراكات والفواتير خاصة بإدارة المدرسة فقط وغير متاحة لمعلمي المدرسة.'
+          : 'إدارة الفريق خاصة بإدارة المدرسة فقط.',
+        'warning'
+      );
       return;
     }
     setCurrentScreen(screen);
@@ -105,7 +117,7 @@ export default function App() {
     switch (currentScreen) {
       // Group A
       case 'A1':
-        return <LandingPage onNavigate={handleNavigate} onOpenAI={() => setIsAIOpen(true)} currentRole={currentRole} />;
+        return <LandingPage onNavigate={handleNavigate} onOpenAI={() => setIsAIOpen(true)} />;
       case 'A2':
         return <PricingPage onNavigate={handleNavigate} />;
       case 'A3':
@@ -145,6 +157,8 @@ export default function App() {
         return <SubscriptionPage onNavigate={handleNavigate} activeEntity={activeEntity} />;
       case 'B12':
         return <CorrectedPaperViewPage onNavigate={handleNavigate} />;
+      case 'B13':
+        return <AssistantsTeamPage onNavigate={handleNavigate} />;
       case 'B14':
         return (
           <WhereWeReachedPage 
@@ -208,7 +222,7 @@ export default function App() {
         return <TechnicalSupportPage onNavigate={handleNavigate} activeEntity={activeEntity} />;
 
       default:
-        return <LandingPage onNavigate={handleNavigate} onOpenAI={() => setIsAIOpen(true)} currentRole={currentRole} />;
+        return <LandingPage onNavigate={handleNavigate} onOpenAI={() => setIsAIOpen(true)} />;
     }
   };
 
@@ -262,7 +276,8 @@ export default function App() {
         onOpenDrawer={() => setIsMobileDrawerOpen(true)}
       />
 
-      {/* 4. Global Floating AI Assistant Button */}
+      {/* 4. Global Floating AI Assistant Button (signed-in users only) */}
+      {currentRole !== 'visitor' && currentRole !== 'student' && (
       <button
         onClick={() => setIsAIOpen(true)}
         className="fixed bottom-20 lg:bottom-6 left-5 z-40 bg-[#1E3A5F] hover:bg-[#152a45] text-white p-3 sm:p-3.5 rounded-full shadow-2xl flex items-center gap-2 cursor-pointer transition-all active:scale-95 group border-2 border-emerald-400"
@@ -271,6 +286,9 @@ export default function App() {
         <Sparkles className="w-5 h-5 text-emerald-400 animate-pulse" />
         <span className="hidden sm:inline font-bold text-xs pr-1">مساعد دِقّـة الذكي</span>
       </button>
+      )}
+
+      <Toaster />
 
       {/* 5. Contextual AI Drawer */}
       <AIAssistantDrawer

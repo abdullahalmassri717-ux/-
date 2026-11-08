@@ -9,9 +9,7 @@ import {
   AlertTriangle,
   WifiOff,
   Clock,
-  Search,
   Check,
-  ChevronDown,
   ArrowUp,
   ArrowDown
 } from 'lucide-react';
@@ -28,10 +26,8 @@ interface PageImage {
 }
 
 export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ onNavigate }) => {
-  const [selectedStudentId, setSelectedStudentId] = useState<string>('s1');
-  const [studentCodeInput, setStudentCodeInput] = useState<string>('1042');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
+  // The student types a private 4-digit code. The page never lists other students' names.
+  const [studentCodeInput, setStudentCodeInput] = useState<string>('');
   const [pages, setPages] = useState<PageImage[]>([
     {
       id: 'p1',
@@ -50,11 +46,9 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ on
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
 
-  const selectedStudent = MOCK_STUDENTS.find(s => s.id === selectedStudentId) || MOCK_STUDENTS[0];
-
-  const filteredStudents = MOCK_STUDENTS.filter(s =>
-    s.name.includes(searchQuery) || s.studentCode.includes(searchQuery)
-  );
+  const codeComplete = studentCodeInput.length === 4;
+  const selectedStudent = codeComplete ? MOCK_STUDENTS.find(s => s.studentCode === studentCodeInput) : undefined;
+  const codeNotFound = codeComplete && !selectedStudent;
 
   const handleAddPage = () => {
     const newPageNum = pages.length + 1;
@@ -86,6 +80,7 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ on
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedStudent) return;
     setIsSubmitting(true);
     setTimeout(() => {
       setIsSubmitting(false);
@@ -102,7 +97,7 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ on
           </div>
           <h2 className="text-2xl font-black text-[#1E3A5F]">وصلت ورقتك بنجاح ✓</h2>
           <p className="text-xs text-slate-600 leading-relaxed">
-            تم استلام <strong>{pages.length} صفحات</strong> للطالب <strong>{selectedStudent.name}</strong> في امتحان <strong>التفاضل والاشتقاق الضمني</strong> بنجاح.
+            تم استلام <strong>{pages.length} صفحات</strong> للطالب <strong>{selectedStudent?.name}</strong> في امتحان <strong>التفاضل والاشتقاق الضمني</strong> بنجاح.
           </p>
 
           <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs text-right space-y-1">
@@ -110,7 +105,7 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ on
               <span>ماذا بعد التسليم؟</span>
             </div>
             <p className="text-[11px] text-emerald-800 leading-normal">
-              يقوم أ. محمد بمراجعة التصحيح واعتماده، وستصلك ورقتك الأصلية محبرة بالقلم الأحمر مع تفاصيل درجاتك عبر رسالة واتساب على رقم هاتفك المسجل فوراً.
+              يراجع {CURRENT_TEACHER.name} التصحيح ويعتمده، وستصلك ورقتك الأصلية محبرة بالقلم الأحمر مع تفاصيل درجاتك عبر رسالة واتساب على رقم هاتفك المسجل فوراً.
             </p>
           </div>
 
@@ -134,7 +129,7 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ on
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div>
             <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
-              رابط تسليم التوجيهي
+              رابط تسليم الواجب
             </span>
             <h1 className="font-extrabold text-base text-[#1E3A5F] mt-1">
               واجب منزلي: الاشتقاق الضمني والمعادلات
@@ -179,78 +174,46 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ on
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Step 1: Select student name or enter 4-digit code */}
+        {/* Step 1: Student enters their private 4-digit code */}
         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3">
-          <label className="block text-xs font-bold text-slate-800">
-            حدد اسمك من قائمة طلاب الأستاذ محمد:
+          <label htmlFor="student-code" className="block text-xs font-bold text-slate-800">
+            اكتب رمزك الخاص (4 أرقام):
           </label>
+          <p className="text-[11px] text-slate-500 -mt-1">
+            الرمز مطبوع على ورقة الإجابة، أو أرسله لك المدرّس على واتساب.
+          </p>
+          <input
+            id="student-code"
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={4}
+            value={studentCodeInput}
+            onChange={(e) => setStudentCodeInput(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
+            className="w-full p-3 text-center bg-[#F7F8FA] border border-slate-300 rounded-xl font-bold text-xl tracking-[0.5em] tabular-nums focus:bg-white focus:border-[#1E3A5F] focus:outline-none"
+            placeholder="••••"
+            dir="ltr"
+          />
 
-          {/* Student Selector Dropdown with search */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowDropdown(!showDropdown)}
-              className="w-full p-2.5 bg-[#F7F8FA] border border-slate-300 rounded-lg text-xs font-semibold text-right flex items-center justify-between cursor-pointer"
-            >
-              <div className="flex items-center gap-2">
-                <span>{selectedStudent.name}</span>
-                <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded font-mono tabular-nums">
-                  رمز: {selectedStudent.studentCode}
-                </span>
-              </div>
-              <ChevronDown className="w-4 h-4 text-slate-400" />
-            </button>
+          {selectedStudent && (
+            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>
+                أهلاً <strong>{selectedStudent.name}</strong>. إذا لم يكن هذا اسمك، تأكد من الرمز.
+              </span>
+            </div>
+          )}
 
-            {showDropdown && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-30 p-2 space-y-2 max-h-56 overflow-y-auto">
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="ابحث باسمك أو برقمك..."
-                    className="w-full p-1.5 pr-7 bg-slate-50 border border-slate-200 rounded-md text-xs"
-                  />
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute top-2 right-2" />
-                </div>
-                <div className="space-y-1">
-                  {filteredStudents.map((st) => (
-                    <button
-                      key={st.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedStudentId(st.id);
-                        setStudentCodeInput(st.studentCode);
-                        setShowDropdown(false);
-                      }}
-                      className={`w-full text-right p-2 rounded-lg text-xs flex items-center justify-between transition-colors ${
-                        selectedStudentId === st.id ? 'bg-[#E8F0F8] text-[#1E3A5F] font-bold' : 'hover:bg-slate-50 text-slate-700'
-                      }`}
-                    >
-                      <span>{st.name}</span>
-                      <span className="font-mono text-[10px] text-slate-500 tabular-nums">{st.studentCode}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          {codeNotFound && (
+            <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>هذا الرمز غير مسجّل في هذه المجموعة. تأكد منه أو اسأل المدرّس.</span>
+            </div>
+          )}
 
-          <div className="flex items-center gap-2 pt-1 text-[11px] text-slate-500">
-            <span>أو اكتب رمزك الخاص (4 أرقام):</span>
-            <input
-              type="text"
-              maxLength={4}
-              value={studentCodeInput}
-              onChange={(e) => {
-                const val = e.target.value;
-                setStudentCodeInput(val);
-                const found = MOCK_STUDENTS.find(s => s.studentCode === val);
-                if (found) setSelectedStudentId(found.id);
-              }}
-              className="w-16 p-1 text-center bg-[#F7F8FA] border border-slate-300 rounded font-mono font-bold text-xs tabular-nums"
-            />
-          </div>
+          {!codeComplete && (
+            <p className="text-[10px] text-slate-400">للتجربة: جرّب الرمز {MOCK_STUDENTS[0].studentCode}</p>
+          )}
         </div>
 
         {/* Step 2: Camera / Upload Pages */}
@@ -347,14 +310,14 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ on
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={pages.length === 0 || isSubmitting}
+          disabled={pages.length === 0 || isSubmitting || !selectedStudent}
           className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white py-3.5 rounded-xl font-bold text-sm transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"
         >
           {isSubmitting ? (
             <span>جارِ الرفع والتحقق...</span>
           ) : (
             <>
-              <span>إرسال الورقة للأستاذ محمد الآن</span>
+              <span>{selectedStudent ? `إرسال الورقة إلى ${CURRENT_TEACHER.name}` : 'اكتب رمزك أولاً'}</span>
               <Check className="w-4 h-4" />
             </>
           )}

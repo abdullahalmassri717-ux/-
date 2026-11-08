@@ -10,6 +10,7 @@ import {
   FileText,
   Users
 } from 'lucide-react';
+import { notify } from '../../lib/notify';
 
 interface PrintAnswerSheetsPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -40,7 +41,7 @@ export const PrintAnswerSheetsPage: React.FC<PrintAnswerSheetsPageProps> = ({ on
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => alert('تم تجهيز ملف PDF جاهز للطباعة لـ 52 طالباً في المجموعة!')}
+            onClick={() => notify('تم تجهيز ملف PDF جاهز للطباعة لـ 52 طالباً في المجموعة!')}
             className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-2 shadow-2xs"
           >
             <Download className="w-4 h-4" />

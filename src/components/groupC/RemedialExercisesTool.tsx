@@ -13,6 +13,7 @@ import {
   HelpCircle,
   Check
 } from 'lucide-react';
+import { notify } from '../../lib/notify';
 
 interface RemedialExercisesToolProps {
   onNavigate: (screen: ScreenId) => void;
@@ -275,7 +276,7 @@ export const RemedialExercisesTool: React.FC<RemedialExercisesToolProps> = ({ on
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => alert('تم تصدير ورقة التمارين العلاجية مع مفتاح الحل بصيغة PDF!')}
+            onClick={() => notify('تم تصدير ورقة التمارين العلاجية مع مفتاح الحل بصيغة PDF!')}
             className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 px-4 py-2 rounded-xl font-bold cursor-pointer flex items-center gap-1.5"
           >
             <Download className="w-4 h-4 text-blue-600" />

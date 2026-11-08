@@ -15,6 +15,7 @@ import {
   Clock,
   ArrowRight
 } from 'lucide-react';
+import { notify } from '../../lib/notify';
 
 interface UploadPapersPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -220,7 +221,7 @@ export const UploadPapersPage: React.FC<UploadPapersPageProps> = ({ onNavigate }
 
               {/* Remind non-submitters via WhatsApp button */}
               <button
-                onClick={() => alert('تم إرسال رسالة تذكيرية بنقرة واحدة عبر واتساب لجميع الطلاب المتأخرين وأولياء أمورهم!')}
+                onClick={() => notify('تم إرسال رسالة تذكيرية بنقرة واحدة عبر واتساب لجميع الطلاب المتأخرين وأولياء أمورهم!')}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <MessageCircle className="w-4 h-4" />

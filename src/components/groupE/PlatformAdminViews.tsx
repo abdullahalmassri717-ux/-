@@ -43,6 +43,7 @@ import {
   LayoutTemplate
 } from 'lucide-react';
 import { LandingPageCMS } from './LandingPageCMS';
+import { notify } from '../../lib/notify';
 
 export const PlatformAdminDashboard: React.FC<{ 
   onNavigate: (screen: ScreenId) => void;
@@ -529,7 +530,7 @@ export const PlatformAdminDashboard: React.FC<{
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => alert('معاينة صورة إيصال تحويل مدرسة الرواد الخاصة (بنك فلسطين)')}
+                    onClick={() => notify('معاينة صورة إيصال تحويل مدرسة الرواد الخاصة (بنك فلسطين)')}
                     className="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 px-3 py-2 rounded-xl font-bold cursor-pointer"
                   >
                     معاينة الإشعار
@@ -555,7 +556,7 @@ export const PlatformAdminDashboard: React.FC<{
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => alert('معاينة لقطة شاشة تحويل جوال باي - أ. حسام البطة')}
+                    onClick={() => notify('معاينة لقطة شاشة تحويل جوال باي - أ. حسام البطة')}
                     className="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 px-3 py-2 rounded-xl font-bold cursor-pointer"
                   >
                     معاينة الإشعار

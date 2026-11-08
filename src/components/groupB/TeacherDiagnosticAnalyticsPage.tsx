@@ -23,6 +23,7 @@ import {
   ThumbsUp,
   XCircle
 } from 'lucide-react';
+import { notify } from '../../lib/notify';
 
 interface TeacherDiagnosticAnalyticsPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -294,7 +295,7 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
                   مكمن الخلل: <strong className="text-slate-700">{st.weakPoint}</strong>
                 </div>
                 <button
-                  onClick={() => alert(`تم إرسال تمرين علاجي مقترح على واتساب الطالب ${st.name}`)}
+                  onClick={() => notify(`تم إرسال تمرين علاجي مقترح على واتساب الطالب ${st.name}`)}
                   className="w-full bg-white hover:bg-slate-100 border border-slate-300 text-[#1E3A5F] py-1 rounded-lg font-bold text-[11px] transition-colors"
                 >
                   إرسال تمرين تعزيز لواتساب الأهل

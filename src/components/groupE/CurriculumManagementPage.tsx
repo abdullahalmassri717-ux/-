@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { CURRICULA_DATA } from '../../mockData';
 import { Curriculum, Subject, Unit, Lesson, ScreenId } from '../../types';
+import { notify } from '../../lib/notify';
 
 interface CurriculumManagementPageProps {
   onNavigate?: (screenId: ScreenId) => void;
@@ -89,7 +90,7 @@ export const CurriculumManagementPage: React.FC<CurriculumManagementPageProps> =
   };
 
   const handleApproveExtraction = () => {
-    alert(`تم بنجاح اعتماد شجرة المنهج المستخرجة من كتاب الوزارة وتحديث وحدات ودروس «${currentSubject.name}».`);
+    notify(`تم بنجاح اعتماد شجرة المنهج المستخرجة من كتاب الوزارة وتحديث وحدات ودروس «${currentSubject.name}».`);
     setShowPdfImportModal(false);
     setExtractedPreview(null);
   };

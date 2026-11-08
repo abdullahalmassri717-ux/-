@@ -1,68 +1,104 @@
 import React, { useState } from 'react';
 import { ScreenId, UserRole } from '../../types';
-import { Mail, Lock, ArrowRight, ShieldCheck, UserCheck, Eye, EyeOff, Check, Sparkles } from 'lucide-react';
+import { ArrowRight, MessageCircle, ShieldCheck, Check, Sparkles, Phone, RotateCcw } from 'lucide-react';
 
 interface LoginPageProps {
   onNavigate: (screen: ScreenId) => void;
   onRoleChange: (role: UserRole) => void;
 }
 
+// Login is by WhatsApp number + a one-time code sent on WhatsApp (no passwords).
+// In this design prototype the code is not really sent; any 6 digits work.
+
+const CODE_LENGTH = 6;
+
+type DemoAccount = {
+  label: string;
+  phone: string;
+  role: UserRole;
+  roleName: string;
+  targetScreen: ScreenId;
+  welcome: string;
+};
+
+const DEMO_ACCOUNTS: DemoAccount[] = [
+  {
+    label: 'أ. محمد المصري',
+    phone: '0599123456',
+    role: 'teacher',
+    roleName: 'مدرّس خصوصي',
+    targetScreen: 'B1',
+    welcome: 'أهلاً بك أ. محمد المصري!',
+  },
+  {
+    label: 'مدرسة الأمل الخاصة',
+    phone: '0599000111',
+    role: 'school_principal',
+    roleName: 'مدير مدرسة',
+    targetScreen: 'D1',
+    welcome: 'أهلاً بك أ. سميرة عكيلة (مدرسة الأمل الخاصة)!',
+  },
+  {
+    label: 'إدارة المنصة',
+    phone: '0599999999',
+    role: 'platform_admin',
+    roleName: 'مدير المنصة',
+    targetScreen: 'E1',
+    welcome: 'أهلاً بك في لوحة إدارة منصة دقة.',
+  },
+];
+
+const normalizePhone = (value: string) => value.replace(/[^0-9+]/g, '');
+const isValidPhone = (value: string) => normalizePhone(value).replace('+', '').length >= 9;
+
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }) => {
-  const [emailOrUser, setEmailOrUser] = useState('teacher@daqqa.ps');
-  const [password, setPassword] = useState('123456');
-  const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
+  const [phone, setPhone] = useState(DEMO_ACCOUNTS[0].phone);
+  const [step, setStep] = useState<'phone' | 'code'>('phone');
+  const [code, setCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Quick preset accounts for demonstration (Tutors, Private Schools, Platform Admin)
-  const quickAccounts: { label: string; email: string; role: UserRole; roleName: string; targetScreen: ScreenId }[] = [
-    { label: 'أ. محمد المصري', email: 'teacher@daqqa.ps', role: 'teacher', roleName: 'معلم خصوصي (توجيهي)', targetScreen: 'B1' },
-    { label: 'مدرسة الأمل الخاصة', email: 'school@daqqa.ps', role: 'school_principal', roleName: 'مدير مدرسة (صفوف 1-9)', targetScreen: 'D1' },
-    { label: 'إدارة المنصة المركزية', email: 'admin@daqqa.ps', role: 'platform_admin', roleName: 'مدير المنصة', targetScreen: 'E1' },
-  ];
+  const account = DEMO_ACCOUNTS.find((a) => a.phone === normalizePhone(phone)) || DEMO_ACCOUNTS[0];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const sendCode = (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+    if (!isValidPhone(phone)) {
+      setError('اكتب رقم واتساب صحيحاً، مثال: 0599123456');
+      return;
+    }
     setIsLoading(true);
-
     setTimeout(() => {
       setIsLoading(false);
-      const emailLower = emailOrUser.toLowerCase().trim();
-
-      let targetRole: UserRole = 'teacher';
-      let targetScreen: ScreenId = 'B1';
-      let welcomeMsg = 'أهلاً بك أ. محمد المصري! تم تسجيل دخولك بنجاح.';
-
-      if (emailLower.includes('school')) {
-        targetRole = 'school_principal';
-        targetScreen = 'D1';
-        welcomeMsg = 'أهلاً بك أ. سميرة عكيلة (مدرسة الأمل الخاصة)! تم تسجيل الدخول بنجاح.';
-      } else if (emailLower.includes('admin')) {
-        targetRole = 'platform_admin';
-        targetScreen = 'E1';
-        welcomeMsg = 'تم تسجيل الدخول إلى لوحة إدارة منصة دقة المركزية.';
-      }
-
-      setLoginSuccess(welcomeMsg);
-      setTimeout(() => {
-        onRoleChange(targetRole);
-        onNavigate(targetScreen);
-      }, 700);
+      setStep('code');
+      setCode('');
     }, 600);
   };
 
-  const handleSelectQuickAccount = (acc: typeof quickAccounts[0]) => {
-    setEmailOrUser(acc.email);
-    setPassword('123456');
+  const verifyCode = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (code.length !== CODE_LENGTH) {
+      setError(`اكتب الرمز المكوّن من ${CODE_LENGTH} أرقام كما وصلك على واتساب.`);
+      return;
+    }
+    setIsLoading(true);
+    setTimeout(() => {
+      setIsLoading(false);
+      setLoginSuccess(account.welcome);
+      setTimeout(() => {
+        onRoleChange(account.role);
+        onNavigate(account.targetScreen);
+      }, 600);
+    }, 600);
   };
 
   return (
     <div className="max-w-md mx-auto px-4 py-8 sm:py-12">
       <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-md space-y-6 text-right">
-        {/* Brand / Header with official logo */}
         <div className="text-center space-y-2">
-          <div 
+          <div
             onClick={() => onNavigate('A1')}
             className="cursor-pointer inline-block mx-auto hover:opacity-90 transition-opacity"
             title="العودة إلى الصفحة الرئيسية"
@@ -71,41 +107,43 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-[#1E3A5F]">تسجيل الدخول إلى دِقّـة</h1>
           <p className="text-xs text-slate-500">
-            أدخل البريد الإلكتروني (الإيميل) أو اسم المستخدم وكلمة المرور
+            {step === 'phone'
+              ? 'ادخل برقم واتساب، وسيصلك رمز تحقق. لا حاجة لكلمة مرور.'
+              : 'أرسلنا رمز التحقق إلى واتساب. اكتبه هنا.'}
           </p>
         </div>
 
-        {/* Quick Demo Credentials Preset Bar */}
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2">
-          <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
-            <span className="flex items-center gap-1 text-[#1E3A5F]">
-              <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-              <span>حسابات تجريبية سريعة:</span>
-            </span>
-            <span className="text-[10px] text-slate-400">انقر للتعبئة الفورية</span>
+        {step === 'phone' && (
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2">
+            <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
+              <span className="flex items-center gap-1 text-[#1E3A5F]">
+                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                <span>حسابات تجريبية:</span>
+              </span>
+              <span className="text-[10px] text-slate-400">انقر للتعبئة</span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {DEMO_ACCOUNTS.map((acc) => {
+                const isActive = normalizePhone(phone) === acc.phone;
+                return (
+                  <button
+                    key={acc.phone}
+                    type="button"
+                    onClick={() => setPhone(acc.phone)}
+                    className={`p-2 rounded-xl text-right text-xs transition-all border cursor-pointer ${
+                      isActive
+                        ? 'bg-blue-50 border-blue-400 text-[#1E3A5F] font-bold'
+                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="text-[11px] font-bold truncate">{acc.label}</div>
+                    <div className="text-[9px] text-slate-400 truncate">{acc.roleName}</div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-
-          <div className="grid grid-cols-2 gap-1.5">
-            {quickAccounts.map((acc) => {
-              const isActive = emailOrUser === acc.email;
-              return (
-                <button
-                  key={acc.email}
-                  type="button"
-                  onClick={() => handleSelectQuickAccount(acc)}
-                  className={`p-2 rounded-xl text-right text-xs transition-all border cursor-pointer ${
-                    isActive
-                      ? 'bg-blue-50 border-blue-400 text-[#1E3A5F] font-bold shadow-2xs'
-                      : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                  }`}
-                >
-                  <div className="text-[11px] font-bold truncate">{acc.label}</div>
-                  <div className="text-[9px] text-slate-400 truncate">{acc.roleName}</div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        )}
 
         {loginSuccess && (
           <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 text-xs flex items-center gap-2">
@@ -114,88 +152,115 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
           </div>
         )}
 
-        {/* Login Form */}
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          <div>
-            <label className="block text-slate-700 font-bold mb-1.5">
-              البريد الإلكتروني (الإيميل) أو اسم المستخدم
+        {error && (
+          <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs">{error}</div>
+        )}
+
+        {step === 'phone' ? (
+          <form onSubmit={sendCode} className="space-y-4 text-xs">
+            <label className="block">
+              <span className="block text-slate-700 font-bold mb-1.5">رقم الواتساب</span>
+              <div className="relative">
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  dir="ltr"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full p-3 bg-[#F7F8FA] border border-slate-300 rounded-xl pl-9 text-left text-sm tabular-nums text-slate-800 focus:bg-white focus:border-[#1E3A5F] focus:outline-none transition-colors"
+                  placeholder="0599123456"
+                  required
+                />
+                <Phone className="w-4 h-4 text-slate-400 absolute top-3.5 left-3" />
+              </div>
             </label>
-            <div className="relative">
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full bg-[#1E3A5F] hover:bg-[#152a45] disabled:opacity-50 text-white py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+            >
+              {isLoading ? (
+                <span>جاري الإرسال...</span>
+              ) : (
+                <>
+                  <MessageCircle className="w-4 h-4" />
+                  <span>أرسل رمز التحقق على واتساب</span>
+                </>
+              )}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={verifyCode} className="space-y-4 text-xs">
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-950 flex items-center justify-between gap-2">
+              <span className="flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-[#1E3A5F]" />
+                <span>
+                  أُرسل الرمز إلى <span dir="ltr" className="font-bold tabular-nums">{normalizePhone(phone)}</span>
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setStep('phone');
+                  setError(null);
+                }}
+                className="text-[11px] text-[#1E3A5F] font-bold hover:underline cursor-pointer shrink-0"
+              >
+                تغيير الرقم
+              </button>
+            </div>
+
+            <label className="block">
+              <span className="block text-slate-700 font-bold mb-1.5">رمز التحقق ({CODE_LENGTH} أرقام)</span>
               <input
                 type="text"
-                value={emailOrUser}
-                onChange={(e) => setEmailOrUser(e.target.value)}
-                className="w-full p-2.5 bg-[#F7F8FA] border border-slate-300 rounded-xl pr-9 font-mono text-slate-800 text-xs focus:bg-white focus:border-[#1E3A5F] focus:outline-none transition-colors"
-                placeholder="teacher@daqqa.ps أو اسم المستخدم"
-                required
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                dir="ltr"
+                maxLength={CODE_LENGTH}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, CODE_LENGTH))}
+                className="w-full p-3 bg-[#F7F8FA] border border-slate-300 rounded-xl text-center text-xl font-bold tracking-[0.4em] tabular-nums focus:bg-white focus:border-[#1E3A5F] focus:outline-none"
+                placeholder="••••••"
+                autoFocus
               />
-              <Mail className="w-4 h-4 text-slate-400 absolute top-3 right-3" />
-            </div>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-slate-700 font-bold">كلمة المرور (الباسورد)</label>
-              <button
-                type="button"
-                onClick={() => alert('تم إرسال رابط استعادة كلمة المرور إلى بريدك الإلكتروني المسجل.')}
-                className="text-[11px] text-[#1E3A5F] hover:underline cursor-pointer"
-              >
-                نسيت كلمة المرور؟
-              </button>
-            </div>
-            <div className="relative">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full p-2.5 bg-[#F7F8FA] border border-slate-300 rounded-xl pr-9 pl-9 font-mono text-slate-800 text-xs focus:bg-white focus:border-[#1E3A5F] focus:outline-none transition-colors"
-                placeholder="••••••••"
-                required
-              />
-              <Lock className="w-4 h-4 text-slate-400 absolute top-3 right-3" />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute top-2.5 left-3 text-slate-400 hover:text-slate-600 cursor-pointer"
-                title={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between text-[11px] text-slate-600">
-            <label className="flex items-center gap-1.5 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="rounded text-[#1E3A5F] focus:ring-0 w-3.5 h-3.5"
-              />
-              <span>تذكر بيانات الدخول على هذا الجهاز</span>
+              <span className="block text-[10px] text-slate-400 mt-1">في النسخة التجريبية يكفي أي {CODE_LENGTH} أرقام.</span>
             </label>
-          </div>
 
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full bg-[#1E3A5F] hover:bg-[#152a45] disabled:opacity-50 text-white py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-sm"
-          >
-            {isLoading ? (
-              <span>جاري التحقق وتسجيل الدخول...</span>
-            ) : (
-              <>
-                <span>تسجيل الدخول</span>
-                <ArrowRight className="w-4 h-4 rtl:rotate-180" />
-              </>
-            )}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full bg-[#1E3A5F] hover:bg-[#152a45] disabled:opacity-50 text-white py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+            >
+              {isLoading ? (
+                <span>جاري التحقق...</span>
+              ) : (
+                <>
+                  <span>تسجيل الدخول</span>
+                  <ArrowRight className="w-4 h-4 rtl:rotate-180" />
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setCode('');
+                setError(null);
+              }}
+              className="w-full text-[11px] text-slate-500 hover:text-[#1E3A5F] flex items-center justify-center gap-1 cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>لم يصلك الرمز؟ أعد الإرسال</span>
+            </button>
+          </form>
+        )}
 
         <div className="border-t border-slate-100 pt-4 text-center space-y-2.5">
           <p className="text-xs text-slate-600">
-            ليس لديك حساب معتمد حتى الآن؟{' '}
+            ليس لديك حساب؟{' '}
             <button
               onClick={() => onNavigate('A3')}
               className="font-bold text-[#1E3A5F] hover:underline cursor-pointer"

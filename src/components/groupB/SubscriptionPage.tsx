@@ -29,6 +29,7 @@ import {
   Receipt,
   FileCheck
 } from 'lucide-react';
+import { notify } from '../../lib/notify';
 
 interface SubscriptionPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -129,7 +130,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
   const handleSendReminder = (student: StudentTuitionRecord) => {
     const dueAmount = student.monthlyFee - student.paidAmount;
     const message = `السلام عليكم ولي أمر الطالب ${student.studentName} المحترم،\nنذكركم بلطف بضرورة سداد قسط دورة التوجيهي لشهر نوفمبر المتبقي بقيمة (${dueAmount} شيكل). نسعد دائماً بتميزه معنا.\n— أ. محمد المصري`;
-    alert(`[محاكاة إرسال تذكير واتساب]\nتم تجهيز الرسالة إلى الرقم ${student.parentPhone}:\n\n${message}`);
+    notify(`[محاكاة إرسال تذكير واتساب]\nتم تجهيز الرسالة إلى الرقم ${student.parentPhone}:\n\n${message}`);
   };
 
   // If active entity is a school teacher, hide billing completely
@@ -314,7 +315,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
 
               <button
                 onClick={() => {
-                  alert('تم إرسال رسائل تذكير لطيفة عبر الواتساب لـ 16 ولي أمر لديهم رسوم متأخرة.');
+                  notify('تم إرسال رسائل تذكير لطيفة عبر الواتساب لـ 16 ولي أمر لديهم رسوم متأخرة.');
                 }}
                 className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3.5 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors flex items-center gap-1.5"
               >
@@ -323,7 +324,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
               </button>
 
               <button
-                onClick={() => alert('تم تصدير كشف الحساب المالي بصيغة Excel لكافة المجموعات')}
+                onClick={() => notify('تم تصدير كشف الحساب المالي بصيغة Excel لكافة المجموعات')}
                 className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors flex items-center gap-1.5"
               >
                 <Download className="w-4 h-4 text-slate-500" />
@@ -686,7 +687,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
                       </td>
                       <td className="p-3 text-center">
                         <button
-                          onClick={() => alert(`تحميل فاتورة ${inv.id} بصيغة PDF`)}
+                          onClick={() => notify(`تحميل فاتورة ${inv.id} بصيغة PDF`)}
                           className="text-blue-700 hover:underline font-bold cursor-pointer"
                         >
                           PDF
@@ -795,7 +796,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
               <button
                 onClick={() => {
-                  alert(`تم إرسال سند القبض ${selectedReceipt.receiptNumber} لولي الأمر على واتساب رقم: ${selectedReceipt.parentPhone}`);
+                  notify(`تم إرسال سند القبض ${selectedReceipt.receiptNumber} لولي الأمر على واتساب رقم: ${selectedReceipt.parentPhone}`);
                 }}
                 className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs"
               >
@@ -804,7 +805,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
               </button>
 
               <button
-                onClick={() => alert('تم إرسال أمر طباعة سند القبض')}
+                onClick={() => notify('تم إرسال أمر طباعة سند القبض')}
                 className="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer"
               >
                 <Printer className="w-4 h-4" />

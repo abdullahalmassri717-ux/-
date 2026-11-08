@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
+import { notify } from '../../lib/notify';
 
 interface CorrectedPaperViewPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -173,7 +174,7 @@ export const CorrectedPaperViewPage: React.FC<CorrectedPaperViewPageProps> = ({ 
           </button>
 
           <button
-            onClick={() => alert(`تم تحميل ورقة ${student.name} بصيغة PDF عالية الدقة!`)}
+            onClick={() => notify(`تم تحميل ورقة ${student.name} بصيغة PDF عالية الدقة!`)}
             className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
           >
             <Download className="w-4 h-4 text-blue-600" />
@@ -181,7 +182,7 @@ export const CorrectedPaperViewPage: React.FC<CorrectedPaperViewPageProps> = ({ 
           </button>
 
           <button
-            onClick={() => alert(`تم إرسال الورقة المصححة وملاحظات المعلم عبر واتساب للطالب (${student.parentPhone}) بنجاح!`)}
+            onClick={() => notify(`تم إرسال الورقة المصححة وملاحظات المعلم عبر واتساب للطالب (${student.parentPhone}) بنجاح!`)}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
           >
             <MessageCircle className="w-4 h-4" />

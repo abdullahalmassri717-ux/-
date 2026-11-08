@@ -164,7 +164,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
       <div className="px-3 sm:px-6 h-16 flex items-center justify-between gap-3">
         {/* Left: Mobile Hamburger Button + Brand Logo + Entity Switcher Dropdown */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
           {onOpenMobileMenu && (
             <button
               onClick={onOpenMobileMenu}
@@ -182,19 +182,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             <img
               src="/dequa-logo.png"
               alt="منصة دقة"
-              className="h-9 sm:h-11 w-auto object-contain"
+              className="h-7 sm:h-11 w-auto object-contain"
             />
           </div>
 
           {/* Entity Switcher (مبدّل الحسابات والجهات) */}
           {currentRole !== 'platform_admin' && (
-            <div className="relative border-r border-slate-200 pr-2 mr-1">
+            <div className="relative border-r border-slate-200 pr-1.5 sm:pr-2 mr-0.5 sm:mr-1 min-w-0">
               <button
                 onClick={() => setShowEntityDropdown(!showEntityDropdown)}
-                className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl hover:bg-slate-100 border border-slate-200/80 transition-all cursor-pointer text-right group"
+                className="flex items-center gap-1.5 sm:gap-2 px-1.5 sm:px-2.5 py-1.5 rounded-xl hover:bg-slate-100 border border-slate-200/80 transition-all cursor-pointer text-right group min-w-0 max-w-full"
                 title="التبديل بين الحسابات والجهات المسجلة"
               >
-                <div className="w-7 h-7 rounded-lg bg-blue-50 text-[#1E3A5F] flex items-center justify-center font-bold text-xs shrink-0">
+                <div className="hidden sm:flex w-7 h-7 rounded-lg bg-blue-50 text-[#1E3A5F] items-center justify-center font-bold text-xs shrink-0">
                   {activeEntity.type === 'school' ? (
                     <Building2 className="w-4 h-4 text-emerald-600" />
                   ) : activeEntity.type === 'learning_center' ? (
@@ -203,9 +203,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <GraduationCap className="w-4 h-4 text-blue-600" />
                   )}
                 </div>
-                <div className="text-right">
+                <div className="text-right min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-xs text-slate-900 group-hover:text-[#1E3A5F] max-w-[140px] sm:max-w-[200px] truncate">
+                    <span className="font-bold text-xs text-slate-900 group-hover:text-[#1E3A5F] max-w-[110px] sm:max-w-[200px] truncate">
                       {activeEntity.name}
                     </span>
                     <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" />
@@ -224,7 +224,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
               {/* Entity Dropdown Menu */}
               {showEntityDropdown && (
-                <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 text-right text-xs space-y-1">
+                <div className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-1.5rem))] bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 text-right text-xs space-y-1">
                   <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between">
                     <span className="font-bold text-slate-700 text-xs">حساباتك وجهاتك التعليمية</span>
                     <span className="text-[10px] text-slate-400">بيانات منفصلة بالكامل</span>
@@ -303,7 +303,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Right side: Technical Support + AI Quick Assistant trigger + Logout */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <button
             onClick={() => onNavigate(currentRole === 'platform_admin' ? 'E5' : 'SUPPORT')}
             className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer shadow-2xs ${
@@ -319,7 +319,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <button
             onClick={onOpenAI}
-            className="flex items-center gap-1.5 bg-[#E8F0F8] hover:bg-[#d8e6f4] text-[#1E3A5F] px-3 py-1.5 rounded-xl text-xs font-bold transition-all border border-blue-200 cursor-pointer shadow-2xs"
+            className="hidden sm:flex items-center gap-1.5 bg-[#E8F0F8] hover:bg-[#d8e6f4] text-[#1E3A5F] px-3 py-1.5 rounded-xl text-xs font-bold transition-all border border-blue-200 cursor-pointer shadow-2xs"
             title="المساعد الذكي لمنصة دقة"
           >
             <Sparkles className="w-3.5 h-3.5 text-blue-600" />
@@ -329,7 +329,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {currentRole === 'teacher' && (
             <button
               onClick={() => onNavigate('B7')}
-              className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-3 sm:px-4 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5"
+              className="hidden sm:flex bg-[#1E3A5F] hover:bg-[#152a45] text-white px-3 sm:px-4 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer items-center gap-1.5"
             >
               <span>رفع أوراق</span>
             </button>
@@ -338,7 +338,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {currentRole === 'school_principal' && (
             <button
               onClick={() => onNavigate('D3')}
-              className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-3 sm:px-4 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+              className="hidden sm:block bg-[#1E3A5F] hover:bg-[#152a45] text-white px-3 sm:px-4 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer"
             >
               <span>التقرير الشامل</span>
             </button>

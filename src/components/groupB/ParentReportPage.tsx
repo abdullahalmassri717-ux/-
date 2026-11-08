@@ -16,6 +16,7 @@ import {
   TrendingUp,
   Award
 } from 'lucide-react';
+import { notify } from '../../lib/notify';
 
 interface ParentReportPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -317,7 +318,7 @@ export const ParentReportPage: React.FC<ParentReportPageProps> = ({ onNavigate }
                 <span>نص رسالة الواتساب التي ستصل هاتف ولي الأمر ({currentStudent.parentPhone})</span>
               </span>
               <button
-                onClick={() => alert('تم نسخ نص الرسالة إلى الحافظة!')}
+                onClick={() => notify('تم نسخ نص الرسالة إلى الحافظة!')}
                 className="text-[11px] text-emerald-800 hover:underline flex items-center gap-1 cursor-pointer"
               >
                 <Copy className="w-3.5 h-3.5" />

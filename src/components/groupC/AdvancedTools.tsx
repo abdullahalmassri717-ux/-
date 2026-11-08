@@ -18,6 +18,7 @@ import {
   Clock,
   BookOpen
 } from 'lucide-react';
+import { notify } from '../../lib/notify';
 
 // C7: Study Plan & Flashcards [قريباً]
 export const StudyPlanTool: React.FC<{ onNavigate: (screen: ScreenId) => void }> = ({ onNavigate }) => {
@@ -59,14 +60,14 @@ export const StudyPlanTool: React.FC<{ onNavigate: (screen: ScreenId) => void }>
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => alert('تم تصدير خطة المذاكرة وبطاقات المراجعة بصيغة PDF!')}
+            onClick={() => notify('تم تصدير خطة المذاكرة وبطاقات المراجعة بصيغة PDF!')}
             className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1.5"
           >
             <Download className="w-4 h-4 text-blue-600" />
             <span>تحميل PDF</span>
           </button>
           <button
-            onClick={() => alert(`تم إرسال خطة المذاكرة الأسبوعية للطالب ${selectedStudent.name} عبر واتساب!`)}
+            onClick={() => notify(`تم إرسال خطة المذاكرة الأسبوعية للطالب ${selectedStudent.name} عبر واتساب!`)}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-2xs"
           >
             <MessageCircle className="w-4 h-4" />
@@ -341,7 +342,7 @@ export const AtRiskStudentsTool: React.FC<{ onNavigate: (screen: ScreenId) => vo
                   أرسل تمارين علاجية
                 </button>
                 <button
-                  onClick={() => alert(`تم فتح محادثة واتساب مع ولي أمر الطالب ${item.studentName} (${item.phone})!`)}
+                  onClick={() => notify(`تم فتح محادثة واتساب مع ولي أمر الطالب ${item.studentName} (${item.phone})!`)}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-lg font-bold cursor-pointer transition-colors flex items-center gap-1"
                 >
                   <MessageCircle className="w-3.5 h-3.5" />
@@ -350,7 +351,7 @@ export const AtRiskStudentsTool: React.FC<{ onNavigate: (screen: ScreenId) => vo
               </div>
 
               <button
-                onClick={() => alert('تم تجاهل التنبيه لهذا الأسبوع')}
+                onClick={() => notify('تم تجاهل التنبيه لهذا الأسبوع')}
                 className="text-slate-400 hover:text-slate-600 text-[11px] cursor-pointer"
               >
                 تجاهل مؤقتاً
@@ -508,7 +509,7 @@ export const ParentAutoReplyTool: React.FC<{ onNavigate: (screen: ScreenId) => v
                 "أستاذ محمد، هل يمكن تأجيل تسليم واجب النهايات إلى يوم الجمعة لظروف انقطاع الكهرباء؟"
               </p>
               <button
-                onClick={() => alert('فتح محادثة واتساب للرد على ولي الأمر')}
+                onClick={() => notify('فتح محادثة واتساب للرد على ولي الأمر')}
                 className="bg-[#1E3A5F] text-white px-3 py-1 rounded-md text-[11px] font-bold cursor-pointer"
               >
                 رد الآن على واتساب

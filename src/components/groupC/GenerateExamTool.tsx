@@ -15,6 +15,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { CURRICULA_DATA, MOCK_GROUPS, MOCK_TEACHER_FILES } from '../../mockData';
+import { notify } from '../../lib/notify';
 
 interface GenerateExamToolProps {
   onNavigate: (screen: ScreenId) => void;
@@ -111,14 +112,14 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({
   // Handle "خارج المنهج" button: deletes question and alerts system
   const handleMarkOutOfSyllabus = (questionId: string, qText: string) => {
     setQuestions(questions.filter(q => q.id !== questionId));
-    alert(`[تم تسجيل الإبلاغ ونقل السؤال للمراجعة]
+    notify(`[تم تسجيل الإبلاغ ونقل السؤال للمراجعة]
 حُذف السؤال فوراً من الامتحان.
 تم توثيق ملاحظتك في سجل تدريب الذكاء الاصطناعي لضمان عدم تكرار الخروج عن سياق درسك.`);
   };
 
   const handleGenerate = () => {
     if (selectedLessons.length === 0) {
-      alert('يرجى اختيار درس واحد على الأقل من المنهاج');
+      notify('يرجى اختيار درس واحد على الأقل من المنهاج');
       return;
     }
 

@@ -11,6 +11,7 @@ import {
   Check,
   Plus
 } from 'lucide-react';
+import { notify } from '../../lib/notify';
 
 interface ConvertOldExamToolProps {
   onNavigate: (screen: ScreenId) => void;
@@ -43,7 +44,7 @@ export const ConvertOldExamTool: React.FC<ConvertOldExamToolProps> = ({ onNaviga
     setIsProcessing(true);
     setTimeout(() => {
       setIsProcessing(false);
-      alert('تم استخراج الأسئلة وتحديد الدروس والدرجات المقترحة بنجاح من ورقة الامتحان القديمة!');
+      notify('تم استخراج الأسئلة وتحديد الدروس والدرجات المقترحة بنجاح من ورقة الامتحان القديمة!');
     }, 1200);
   };
 
@@ -69,7 +70,7 @@ export const ConvertOldExamTool: React.FC<ConvertOldExamToolProps> = ({ onNaviga
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => alert('تمت إضافة الأسئلة المستخرجة إلى بنك الأسئلة بنجاح!')}
+            onClick={() => notify('تمت إضافة الأسئلة المستخرجة إلى بنك الأسئلة بنجاح!')}
             className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer"
           >
             + أضف لبنك الأسئلة
@@ -285,7 +286,7 @@ export const ClusterGradingTool: React.FC<{ onNavigate: (screen: ScreenId) => vo
                 </button>
 
                 <button
-                  onClick={() => alert('تم فصل هذه الإجابة وتخصيصها لمجموعة مراجعة منفصلة.')}
+                  onClick={() => notify('تم فصل هذه الإجابة وتخصيصها لمجموعة مراجعة منفصلة.')}
                   className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 px-3 py-2 rounded-xl font-bold cursor-pointer"
                 >
                   افصل إجابة

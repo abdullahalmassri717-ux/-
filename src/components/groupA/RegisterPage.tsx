@@ -42,7 +42,6 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
   const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>(['math_scientific']);
   const [teacherName, setTeacherName] = useState('أ. محمد المصري');
   const [teacherPhone, setTeacherPhone] = useState('0599123456');
-  const [teacherPassword, setTeacherPassword] = useState('••••••••');
 
   // School / Center Form State
   const [orgName, setOrgName] = useState('مدرسة الأمل الخاصة');
@@ -390,23 +389,18 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">رقم الهاتف (الواتساب للتواصل)</label>
+                <label className="block font-bold text-slate-700 mb-1">رقم الواتساب</label>
                 <input
-                  type="text"
+                  type="tel"
+                  inputMode="tel"
+                  dir="ltr"
                   value={teacherPhone}
                   onChange={(e) => setTeacherPhone(e.target.value)}
-                  className="w-full p-2.5 bg-[#F7F8FA] border border-slate-300 rounded-xl font-mono text-slate-900"
+                  className="w-full p-2.5 bg-[#F7F8FA] border border-slate-300 rounded-xl text-left tabular-nums text-slate-900"
                 />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">كلمة المرور</label>
-                <input
-                  type="password"
-                  value={teacherPassword}
-                  onChange={(e) => setTeacherPassword(e.target.value)}
-                  className="w-full p-2.5 bg-[#F7F8FA] border border-slate-300 rounded-xl text-slate-900"
-                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  تدخل لاحقاً بهذا الرقم ورمز تحقق يصلك على واتساب، بدون كلمة مرور.
+                </p>
               </div>
 
               {/* Confirmation badge */}

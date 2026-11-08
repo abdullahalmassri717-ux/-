@@ -95,6 +95,7 @@ export const CURRICULA_DATA: Curriculum[] = [
     country: 'فلسطين',
     currency: 'شيكل',
     currencySymbol: '₪',
+    isAvailable: true,
     grades: [
       {
         id: 'grade_12',

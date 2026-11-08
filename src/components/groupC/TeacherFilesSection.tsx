@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { MOCK_TEACHER_FILES, CURRICULA_DATA } from '../../mockData';
 import { TeacherFile } from '../../types';
+import { notify } from '../../lib/notify';
 
 interface TeacherFilesSectionProps {
   onOpenExamGenWithFiles?: (fileIds: string[]) => void;
@@ -43,7 +44,7 @@ export const TeacherFilesSection: React.FC<TeacherFilesSectionProps> = ({
   const handleUpload = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) {
-      alert('يرجى إدخال عنوان الملف');
+      notify('يرجى إدخال عنوان الملف');
       return;
     }
 
@@ -66,7 +67,7 @@ export const TeacherFilesSection: React.FC<TeacherFilesSectionProps> = ({
     setFiles([newFile, ...files]);
     setShowUploadModal(false);
     setNewTitle('');
-    alert('تم رفع الملف وربطه بالدرس بنجاح! سيتم اعتماده كمرجع عند توليد الأسئلة.');
+    notify('تم رفع الملف وربطه بالدرس بنجاح! سيتم اعتماده كمرجع عند توليد الأسئلة.');
   };
 
   const handleDelete = (id: string) => {
@@ -180,7 +181,7 @@ export const TeacherFilesSection: React.FC<TeacherFilesSectionProps> = ({
               <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => alert(`معاينة الملف: ${file.title}`)}
+                    onClick={() => notify(`معاينة الملف: ${file.title}`)}
                     className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
                     title="معاينة"
                   >
@@ -200,7 +201,7 @@ export const TeacherFilesSection: React.FC<TeacherFilesSectionProps> = ({
                     if (onOpenExamGenWithFiles) {
                       onOpenExamGenWithFiles([file.id]);
                     } else {
-                      alert(`تم اختيار "${file.title}" كمرجع مباشر لتوليد الامتحان.`);
+                      notify(`تم اختيار "${file.title}" كمرجع مباشر لتوليد الامتحان.`);
                     }
                   }}
                   className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors"

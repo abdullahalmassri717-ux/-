@@ -23,6 +23,7 @@ import {
   ArrowRight,
   Sparkles
 } from 'lucide-react';
+import { notify } from '../../lib/notify';
 
 // D1: School Principal Dashboard
 export const SchoolDashboard: React.FC<{ onNavigate: (screen: ScreenId) => void }> = ({ onNavigate }) => {
@@ -221,7 +222,7 @@ export const TeachersClassesPage: React.FC<{ onNavigate: (screen: ScreenId) => v
         <div className="flex items-center gap-2">
           {tab === 'teachers' ? (
             <button
-              onClick={() => alert('تم إرسال رابط دعوة المعلم للانضمام لكادر المدرسة عبر واتساب!')}
+              onClick={() => notify('تم إرسال رابط دعوة المعلم للانضمام لكادر المدرسة عبر واتساب!')}
               className="bg-[#1E3A5F] text-white px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1.5"
             >
               <MessageCircle className="w-4 h-4 text-emerald-400" />
@@ -229,7 +230,7 @@ export const TeachersClassesPage: React.FC<{ onNavigate: (screen: ScreenId) => v
             </button>
           ) : (
             <button
-              onClick={() => alert('نافذة استيراد قوائم طلاب الصفوف من ملف Excel')}
+              onClick={() => notify('نافذة استيراد قوائم طلاب الصفوف من ملف Excel')}
               className="bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1.5"
             >
               <FileSpreadsheet className="w-4 h-4" />
@@ -289,7 +290,7 @@ export const TeachersClassesPage: React.FC<{ onNavigate: (screen: ScreenId) => v
                   </td>
                   <td className="p-3.5 text-center">
                     <button
-                      onClick={() => alert(`مراسلة المعلم ${tc.name} عبر واتساب`)}
+                      onClick={() => notify(`مراسلة المعلم ${tc.name} عبر واتساب`)}
                       className="text-blue-700 hover:underline font-bold cursor-pointer"
                     >
                       مراسلة واتساب
@@ -386,7 +387,7 @@ export const SchoolReportPage: React.FC<{ onNavigate: (screen: ScreenId) => void
         {/* Buttons: إرسال التقارير الشهرية لكل الأهالي PDF، وزر تحميل تقرير الإدارة (PDF requirement) */}
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => alert('تم تحميل التقرير الإداري الشامل للمدرسة بصيغة PDF!')}
+            onClick={() => notify('تم تحميل التقرير الإداري الشامل للمدرسة بصيغة PDF!')}
             className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1.5"
           >
             <Download className="w-4 h-4 text-blue-600" />
@@ -394,7 +395,7 @@ export const SchoolReportPage: React.FC<{ onNavigate: (screen: ScreenId) => void
           </button>
 
           <button
-            onClick={() => alert('تم إرسال التقارير الشهرية PDF تلقائياً لجميع أولياء أمور طلاب المدرسة (264 ولي أمر) عبر واتساب!')}
+            onClick={() => notify('تم إرسال التقارير الشهرية PDF تلقائياً لجميع أولياء أمور طلاب المدرسة (264 ولي أمر) عبر واتساب!')}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-2xs"
           >
             <Send className="w-4 h-4" />

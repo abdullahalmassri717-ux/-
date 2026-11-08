@@ -20,6 +20,7 @@ import {
   ArrowRight,
   ShieldCheck
 } from 'lucide-react';
+import { notify } from '../../lib/notify';
 
 interface TechnicalSupportPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -489,7 +490,7 @@ export const TechnicalSupportPage: React.FC<TechnicalSupportPageProps> = ({
             </p>
             <div className="pt-2">
               <button
-                onClick={() => alert('تم حجز موعد جلسة تدريبية لكادر المدرسة وسيتواصل معك منسق التدريب.')}
+                onClick={() => notify('تم حجز موعد جلسة تدريبية لكادر المدرسة وسيتواصل معك منسق التدريب.')}
                 className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer"
               >
                 حجز جلسة تدريب الكادر

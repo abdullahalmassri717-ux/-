@@ -15,6 +15,7 @@ import {
   ExternalLink,
   ShieldAlert
 } from 'lucide-react';
+import { notify } from '../../lib/notify';
 
 interface ExamAnalyticsPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -54,7 +55,7 @@ export const ExamAnalyticsPage: React.FC<ExamAnalyticsPageProps> = ({ onNavigate
 
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => alert('تم تصدير سجل درجات طلاب المجموعة إلى ملف Excel بنجاح!')}
+            onClick={() => notify('تم تصدير سجل درجات طلاب المجموعة إلى ملف Excel بنجاح!')}
             className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
