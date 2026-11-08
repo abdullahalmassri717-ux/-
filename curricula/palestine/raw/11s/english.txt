@@ -1,0 +1,24 @@
+#subject|اللغة الإنجليزية
+#sem|1
+#book|c11_11s_en11s
+U|Unit 1: Learning styles
+O|Fixed expressions with make and do; both, either, neither
+O|Reading about studying techniques; discussing study techniques and a diagram
+O|Completing an enquiry form
+U|Unit 2: Education for success
+O|wish and hope; conditional sentences without if (as long as, provided that, unless)
+O|Prefixes pre-, post- and ex-
+O|Reading about and comparing education systems; writing a CV
+U|Unit 3: Take care!
+O|Expressing obligation and lack of obligation
+O|Fixed preposition + noun phrases; fixed 2-word noun phrases
+O|Reading about accidents in the home and safety regulations; analysing a pie chart
+O|Using information from charts and graphs to write a paragraph
+U|Unit 4: Going places
+O|Verb / noun / adjective changes; prefer and would rather; well + past participle
+O|Reading about being a tourist guide and eco-tourism; note taking
+O|Completing a visa application form and a job application form
+U|Unit 5: Let's go for a walk
+O|Negative prefixes for adjectives; giving informal and formal suggestions
+O|Giving advice and warnings using had better; changing a verb to an adjective using -ing
+O|Writing an online review of a holiday or a book

@@ -1,0 +1,24 @@
+#subject|اللغة الإنجليزية
+#sem|2
+#book|c4_en4-p2
+U|Unit 10: Visiting Palestine
+O|Talking about places in Palestine
+O|Saying what you're going to do
+U|Unit 11: Let's make a cake
+O|Talking about items in the kitchen
+O|Giving and understanding instructions
+U|Unit 12: It's 7:30
+O|Saying the time
+O|Saying when something starts and finishes
+U|Unit 13: Good habits
+O|Talking about your daily habits
+O|Saying how often you do things
+U|Unit 15: I can do it!
+O|Talking about activities
+O|Saying what you can and can't do
+U|Unit 16: In my street
+O|Talking about shops
+O|Saying what you did in the past
+U|Unit 17: On the farm
+O|Talking about farm animals
+O|Saying what you did in the past

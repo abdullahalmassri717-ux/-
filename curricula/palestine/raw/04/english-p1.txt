@@ -1,0 +1,24 @@
+#subject|اللغة الإنجليزية
+#sem|1
+#book|c4_en4-p1
+U|Unit 1: A new friend
+O|Talking about yourself
+O|Finding out about other people
+U|Unit 2: Our house
+O|Talking about your house
+O|Saying what someone is doing/not doing
+U|Unit 3: Lost!
+O|Talking about items in a house
+O|Saying who things belong to
+U|Unit 4: Shopping list
+O|Talking about quantities
+O|Buying things in a shop
+U|Unit 6: On Sundays I ...
+O|Talking about school subjects
+O|Talking about what you do/don't do on different days of the week
+U|Unit 7: At the restaurant
+O|Asking for things in a restaurant
+O|Ordering food and drinks in a restaurant
+U|Unit 8: My favourite season
+O|Talking about the seasons
+O|Saying what you like/don't like to do

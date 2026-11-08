@@ -1,0 +1,23 @@
+#subject|اللغة الإنجليزية
+#sem|1
+#book|c12_12ri_en12ri
+U|Unit 1: A new start
+O|Present simple / perfect; present continuous; 'stative' verbs; be / get used to
+O|Reading for gist and for specific information; discussing interests and comfort zones
+O|Completing a university application form
+U|Unit 2: Under pressure
+O|Infinitives and -ing forms; compound noun phrases with on
+O|Predicting content; identifying the main point; assessing a personal statement
+O|Planning and drafting a personal statement
+U|Unit 3: A funny thing happened
+O|Past tenses; using prefixes co- and mis-
+O|Using time phrases and pronouns for cohesion
+O|Writing a story about a coincidence or misunderstanding
+U|Unit 4: The shrinking world
+O|Modal verbs of probability and possibility; future statements using will; other forms of the future
+O|Comparing texts about communication; predicting and analysing opinions
+O|Planning, writing and conducting a questionnaire
+U|Unit 5: Making friends
+O|Using -ing forms and participles as adjectives; 'reduced' relative clauses
+O|Phrasal verbs with on and out
+O|Planning and writing an essay about communication methods

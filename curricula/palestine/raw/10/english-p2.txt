@@ -1,0 +1,27 @@
+#subject|اللغة الإنجليزية
+#sem|2
+#book|c10_en10-p2
+U|Unit 7: Palestine: Holy Land to the world
+O|narrating past events; requesting and giving directions
+O|planning a visit and writing a letter to explain the plan
+O|Structure: transitive and intransitive verbs; present, past and perfect passive
+U|Unit 8: Good news from the doctors
+O|reporting what others say and said
+O|summarizing changes in modern medicine; giving and writing down phone messages
+O|Structure: reported statements, requests and questions
+U|Unit 9: Which way at 16?
+O|expressing what might have happened differently
+O|describing alternative courses of action now; completing a personal statement
+O|Structure: Type 0, 1, 2 and 3 conditionals
+U|Unit 10: Healthy eating – healthy body
+O|talking about healthier life choices; expressing preferences
+O|introducing a Palestinian dish to a visitor
+O|Structure: countable and uncountable nouns; purpose with (in order / so as) to, so that
+U|Unit 11: Strange events
+O|describing possible actions in imaginary situations
+O|noting and checking details on the phone
+O|Structure: defining and non-defining relative clauses
+U|Unit 12: Talking about tomorrow's world
+O|predicting the future; stating plans, making reports about the future
+O|presenting an important problem
+O|Structure: passive with mixed tenses, future passive and passive with modal verbs

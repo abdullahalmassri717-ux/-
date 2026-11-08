@@ -1,0 +1,23 @@
+#subject|اللغة الإنجليزية
+#sem|1
+#book|c5_en5-p1
+U|Unit 1: New friends
+O|Greetings and introductions
+O|Saying what you like doing
+U|Unit 2: Our country
+O|Using the present continuous
+O|Talking about places
+U|Unit 3: Mini-Olympics
+O|Talking about positions using ordinal numbers
+O|Talking about sports and positions in races
+U|Unit 4: Holidays in Palestine
+O|Linking months of the year to seasons
+O|Linking weather to months of the year and seasons
+U|Unit 6: Basketball
+O|Describing objects
+O|Comparing two objects
+U|Unit 7: Things around us
+O|Comparing more than two objects
+O|Describing weather and objects
+U|Unit 8: What I like doing and why
+O|Comparing more than two activities

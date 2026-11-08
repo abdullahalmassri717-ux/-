@@ -1,0 +1,24 @@
+#subject|اللغة الإنجليزية
+#sem|2
+#book|c2_en2-p2
+U|Unit 10: My hobbies
+O|Talking about the activities you like
+O|Saying what other people like doing
+U|Unit 11: Transport
+O|Talking about transport
+O|Distinguishing items using this and these
+U|Unit 12: Let's find out!
+O|Talking about classroom items
+O|Saying where things are
+U|Unit 13: Let's go shopping!
+O|Asking for clothes in a shop
+O|Describing clothes using colours
+U|Unit 15: Guess who?
+O|Talking about your extended family
+O|Describing what people look like
+U|Unit 16: My country
+O|Talking about where people come from
+O|Describing your country and town
+U|Unit 17: Happy birthday!
+O|Talking about birthdays
+O|Saying how you feel

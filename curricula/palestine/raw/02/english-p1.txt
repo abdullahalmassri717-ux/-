@@ -1,0 +1,23 @@
+#subject|اللغة الإنجليزية
+#sem|1
+#book|c2_en2-p1
+U|Unit 1: Hi, I'm ...
+O|Saying your name and age
+O|Finding out about other people
+U|Unit 2: In the kitchen
+O|Talking about food likes
+O|Using numbers (11–13)
+U|Unit 3: In the garden
+O|Talking about things in the garden
+O|Using numbers (14–16)
+U|Unit 4: My body
+O|Talking about parts of the body
+O|Using numbers (17–20)
+U|Unit 6: Jump!
+O|Giving and following instructions
+U|Unit 7: My home
+O|Talking about things in your living room
+O|Saying where things are
+U|Unit 8: My town
+O|Talking about your town
+O|Saying where places are

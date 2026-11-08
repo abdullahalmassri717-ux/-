@@ -99,7 +99,7 @@ export const CurriculumManagementPage: React.FC<CurriculumManagementPageProps> =
             const id = await api.add(level, parentId, name, order);
             setAdding(null);
             select?.(id);
-            if (level === 'lesson') setLesson({ id, title: name, content: '', outcomes: [], terms: [], symbols: [] });
+            if (level === 'lesson') setLesson({ id, title: name, content: '', hasContent: false, outcomes: [], terms: [], symbols: [] });
           })
         }
       />
@@ -249,8 +249,8 @@ export const CurriculumManagementPage: React.FC<CurriculumManagementPageProps> =
                           className={`w-full text-right p-2 rounded-lg text-xs flex items-center justify-between gap-2 ${lesson?.id === l.id ? 'bg-blue-50 text-[#1E3A5F] font-bold' : 'hover:bg-slate-50'}`}
                         >
                           <span className="truncate">{l.title}</span>
-                          <span className={`text-[10px] shrink-0 ${l.content ? 'text-emerald-600' : 'text-amber-600'}`}>
-                            {l.outcomes.length} نواتج{l.content ? '' : ' · بلا محتوى'}
+                          <span className={`text-[10px] shrink-0 ${l.hasContent ? 'text-emerald-600' : 'text-amber-600'}`}>
+                            {l.outcomes.length} نواتج{l.hasContent ? '' : ' · بلا محتوى'}
                           </span>
                         </button>
                       ))}
@@ -292,6 +292,23 @@ const lines = (s: string) => s.split('\n').map((x) => x.trim()).filter(Boolean);
 const LessonEditor: React.FC<{ lesson: CLesson; busy: boolean; onSave: (l: CLesson) => void; onDelete: () => void }> = ({ lesson, busy, onSave, onDelete }) => {
   const [title, setTitle] = useState(lesson.title);
   const [content, setContent] = useState(lesson.content);
+  // The tree comes without lesson text; fetch it when the lesson is opened.
+  const [contentReady, setContentReady] = useState(!lesson.hasContent);
+  useEffect(() => {
+    if (!lesson.hasContent) return;
+    let live = true;
+    api
+      .getLessonContent(lesson.id)
+      .then((c) => {
+        if (!live) return;
+        setContent(c);
+        setContentReady(true);
+      })
+      .catch(() => notify('تعذّر تحميل محتوى الدرس.', 'warning'));
+    return () => {
+      live = false;
+    };
+  }, [lesson.id, lesson.hasContent]);
   const [outcomes, setOutcomes] = useState(lesson.outcomes.join('\n'));
   const [terms, setTerms] = useState(lesson.terms.join('\n'));
   const [symbols, setSymbols] = useState(lesson.symbols.join('\n'));
@@ -306,7 +323,7 @@ const LessonEditor: React.FC<{ lesson: CLesson; busy: boolean; onSave: (l: CLess
       <label className="block space-y-1">
         <span className="font-bold">محتوى الدرس</span>
         <span className="block text-[11px] text-slate-500">هذا ما يُرسل للذكاء الاصطناعي عند توليد أسئلة من هذا الدرس فقط.</span>
-        <textarea rows={8} value={content} onChange={(e) => setContent(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg leading-relaxed" />
+        <textarea rows={8} value={contentReady ? content : 'جارٍ تحميل المحتوى…'} disabled={!contentReady} onChange={(e) => setContent(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg leading-relaxed" />
       </label>
       <label className="block space-y-1">
         <span className="font-bold">نواتج التعلّم (سطر لكل ناتج)</span>
@@ -324,8 +341,8 @@ const LessonEditor: React.FC<{ lesson: CLesson; busy: boolean; onSave: (l: CLess
       </div>
       <div className="flex items-center justify-between gap-2 pt-2">
         <button
-          disabled={busy || !title.trim()}
-          onClick={() => onSave({ id: lesson.id, title, content, outcomes: lines(outcomes), terms: lines(terms), symbols: lines(symbols) })}
+          disabled={busy || !title.trim() || !contentReady}
+          onClick={() => onSave({ id: lesson.id, title, content, hasContent: !!content.trim(), outcomes: lines(outcomes), terms: lines(terms), symbols: lines(symbols) })}
           className="bg-[#1E3A5F] text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-1.5 disabled:opacity-50"
         >
           <Save className="w-4 h-4" /> حفظ الدرس
