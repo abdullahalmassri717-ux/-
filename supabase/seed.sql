@@ -374,7 +374,8 @@ insert into public.subscription_plans (slug, name, target, billing_cycle, price_
   ('plan_relief_initiative', 'باقة الإسناد لمدارس ومراكز غزة المتضررة', 'enterprise', 'yearly', 0, null, 2, '["استخدام مجاني بالكامل بدون أي رسوم","تغطية تكاليف الذكاء الاصطناعي بدعم من منصة دقة","مساندة مراكز الإيواء والمخيمات التعليمية البديلة"]'::jsonb, true, false, 'مبادرة دعم التعليم المستمر في فلسطين', 11)
 on conflict (slug) do nothing;
 
--- الاشتراكات والفواتير
+-- الاشتراكات والفواتير (نحذف الاشتراكات التجريبية التلقائية ونضع اشتراكات معروفة)
+delete from public.subscriptions;
 insert into public.subscriptions (id, organization_id, plan_id, status, price_per_student, started_on, current_period_start, current_period_end)
 select 'b0357e0b-7bb8-42cd-82fd-3c2a20fcf2ac', '2cca55e7-c01f-4b73-861a-ac3e5b0c2f37', id, 'active', 5, '2026-09-01', '2026-11-01', '2026-11-30' from public.subscription_plans where slug = 'teacher_monthly';
 insert into public.subscriptions (id, organization_id, plan_id, status, price_per_student, started_on, current_period_start, current_period_end)

@@ -175,6 +175,26 @@ select tests.eq((select count(*) from public.organizations), 3::bigint, 'الم�
 select tests.eq((select count(*) from public.invoices), 3::bigint, 'المدير: يرى كل الفواتير');
 select tests.eq((select count(*) from public.students), 0::bigint, 'المدير: لا يرى بيانات الطلاب (قاصرون)');
 select tests.eq((select count(*) from public.subjects where status = 'draft'), 1::bigint, 'المدير: يرى المواد المسودة');
+select tests.eq((select count(*) from public.admin_organizations()), 3::bigint, 'المدير: ملخص الجهات');
+select tests.eq((public.admin_grading_quality(30) ? 'runs'), true, 'المدير: ملخص جودة التصحيح');
+select tests.eq(public.admin_issue_invoice(tests.org('individual_teacher')) is not null, true, 'المدير: أصدر فاتورة');
+select tests.eq((select count(*) from public.invoices), 4::bigint, 'المدير: الفاتورة الجديدة محفوظة');
+rollback;
+
+begin;
+select tests.login('+970590000011');
+set local role authenticated;
+select tests.throws($$select public.admin_organizations()$$, 'المعلم: لا يصل لملخص الجهات');
+select tests.throws($$select public.admin_issue_invoice(tests.org('school'))$$, 'المعلم: لا يصدر فواتير');
+insert into public.support_tickets (subject) values ('مشكلة في رفع الأوراق');
+insert into public.support_messages (ticket_id, body, from_admin) select id, 'الصور لا ترفع', true from public.support_tickets;
+select tests.eq((select from_admin from public.support_messages limit 1), false, 'الدعم: المعلم لا يستطيع انتحال رد الدعم');
+select tests.login('+970590000012');
+select tests.eq((select count(*) from public.support_tickets), 0::bigint, 'الدعم: معلم آخر لا يرى التذكرة');
+select tests.login('+970590000099');
+select tests.eq((select count(*) from public.support_tickets), 1::bigint, 'الدعم: المدير يرى التذكرة');
+insert into public.support_messages (ticket_id, body) select id, 'جرّب مرة أخرى' from public.support_tickets;
+select tests.eq((select count(*) from public.support_messages where from_admin), 1::bigint, 'الدعم: رد المدير مُعلَّم');
 rollback;
 
 -- ---------------------------------------------------------------- تسجيل مستخدم جديد
@@ -190,6 +210,7 @@ set local role authenticated;
 select tests.eq((select count(*) from public.organizations), 0::bigint, 'مستخدم جديد: لا يرى أي جهة قبل إنشاء جهته');
 select tests.eq((select public.create_organization('أكاديمية تجريبية', 'individual_teacher', 'أ. تجربة')) is not null, true, 'مستخدم جديد: أنشأ جهته');
 select tests.eq((select role::text from public.memberships where user_id = auth.uid()), 'owner', 'مستخدم جديد: صار مالكاً');
+select tests.eq((select status::text from public.subscriptions where organization_id = (select organization_id from public.memberships where user_id = auth.uid())), 'trial', 'مستخدم جديد: اشتراك تجريبي تلقائي');
 select tests.eq((select full_name from public.profiles where id = auth.uid()), 'أ. تجربة', 'مستخدم جديد: حُفظ اسمه');
 select tests.eq((select count(*) from public.students), 0::bigint, 'مستخدم جديد: لا يرى طلاب غيره');
 select tests.throws($$insert into public.organizations (name, kind) values ('x', 'school')$$, 'مستخدم جديد: الإنشاء عبر الدالة فقط');
