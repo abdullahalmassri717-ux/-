@@ -1,0 +1,31 @@
+#subject|اللغة الإنجليزية
+#sem|2
+#book|c1_en1-p2
+U|Unit 10: Let's play!
+L|Let's play!
+O|Talking about toys
+O|Showing where something is
+U|Unit 11: Transport
+L|Transport
+O|Talking about transport
+O|Talking about quantities
+U|Unit 12: Colours
+L|Colours
+O|Identifying colours
+O|Saying what colour something is
+U|Unit 13: My clothes
+L|My clothes
+O|Identifying clothes
+O|Describing clothes using colours
+U|Unit 15: My bedroom
+L|My bedroom
+O|Talking about your bedroom
+O|Saying where things are
+U|Unit 16: In my country
+L|In my country
+O|Talking about things that grow in Palestine
+O|Describing size
+U|Unit 17: My friends
+L|My friends
+O|Introducing and describing a friend
+O|Using simple instructions

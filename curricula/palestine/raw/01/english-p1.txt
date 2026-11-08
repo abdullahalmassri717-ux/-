@@ -1,0 +1,31 @@
+#subject|اللغة الإنجليزية
+#sem|1
+#book|c1_en1-p1
+U|Unit 1: Hello!
+L|Hello!
+O|Greeting people
+O|Saying your name
+U|Unit 2: Let's eat!
+L|Let's eat!
+O|Talking about food
+O|Using numbers (1, 2, 3)
+U|Unit 3: Animals
+L|Animals
+O|Talking about animals
+O|Using numbers (4, 5, 6)
+U|Unit 4: My body
+L|My body
+O|Talking about parts of the body
+O|Using numbers (7–10)
+U|Unit 6: My classroom
+L|My classroom
+O|Talking about classroom items
+O|Saying what things are
+U|Unit 7: My family
+L|My family
+O|Talking about family
+O|Saying who someone is
+U|Unit 8: Let's drink!
+L|Let's drink!
+O|Talking about drinks
+O|Saying what things are
