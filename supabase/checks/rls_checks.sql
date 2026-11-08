@@ -222,7 +222,11 @@ set local role authenticated;
 select tests.eq((select count(*) from public.organizations), 0::bigint, 'مستخدم جديد: لا يرى أي جهة قبل إنشاء جهته');
 select tests.eq((select public.create_organization('أكاديمية تجريبية', 'individual_teacher', 'أ. تجربة')) is not null, true, 'مستخدم جديد: أنشأ جهته');
 select tests.eq((select role::text from public.memberships where user_id = auth.uid()), 'owner', 'مستخدم جديد: صار مالكاً');
-select tests.eq((select status::text from public.subscriptions where organization_id = (select organization_id from public.memberships where user_id = auth.uid())), 'trial', 'مستخدم جديد: اشتراك تجريبي تلقائي');
+select tests.eq((select status::text from public.organizations where id = (select organization_id from public.memberships where user_id = auth.uid())), 'pending', 'مستخدم جديد: جهته بانتظار موافقة مدير المنصة');
+select tests.eq((select count(*) from public.subscriptions), 0::bigint, 'مستخدم جديد: لا يصل لبيانات جهته قبل الموافقة');
+reset role;
+select tests.eq((select status::text from public.subscriptions where organization_id = (select organization_id from public.memberships where user_id = '22222222-2222-4222-8222-222222222222')), 'trial', 'مستخدم جديد: اشتراك تجريبي تلقائي');
+set local role authenticated;
 select tests.eq((select full_name from public.profiles where id = auth.uid()), 'أ. تجربة', 'مستخدم جديد: حُفظ اسمه');
 select tests.eq((select count(*) from public.students), 0::bigint, 'مستخدم جديد: لا يرى طلاب غيره');
 select tests.throws($$insert into public.organizations (name, kind) values ('x', 'school')$$, 'مستخدم جديد: الإنشاء عبر الدالة فقط');
@@ -234,6 +238,57 @@ select tests.eq((select count(*) from public.memberships where user_id = auth.ui
 select tests.eq(public.accept_my_invitations(), 1, 'دعوة: قُبلت عند الدخول');
 select tests.eq((select count(*) from public.memberships where user_id = auth.uid()), 2::bigint, 'دعوة: صار عضواً في المدرسة أيضاً');
 select tests.eq(public.accept_my_invitations(), 0, 'دعوة: لا تُقبل مرتين');
+rollback;
+
+-- ---------------------------------------------------------------- إدارة الجهات والفواتير (مدير المنصة)
+begin;
+select tests.login('+970590000099');
+set local role authenticated;
+-- تعطيل جهة المدرّس: أعضاؤها لا يصلون لبياناتها.
+select public.admin_set_org_status(tests.org('individual_teacher'), 'disabled', 'تأخر الدفع');
+select tests.login('+970590000001');
+select tests.eq((select count(*) from public.students where organization_id = tests.org('individual_teacher')), 0::bigint, 'جهة معطّلة: المالك لا يرى طلابها');
+select tests.eq((select count(*) from public.organizations where status = 'disabled'), 1::bigint, 'جهة معطّلة: المالك يرى حالتها فقط');
+select tests.throws($$update public.organizations set status = 'active'$$, 'جهة معطّلة: المالك لا يفعّلها بنفسه');
+select tests.login('+970590000099');
+select public.admin_set_org_status(tests.org('individual_teacher'), 'active', null);
+select tests.login('+970590000001');
+select tests.eq((select count(*) > 0 from public.students where organization_id = tests.org('individual_teacher')), true, 'إعادة التفعيل: عادت البيانات');
+select tests.throws($$select public.admin_set_org_status(tests.org('school'), 'disabled', null)$$, 'المالك: لا يغيّر حالة الجهات');
+select tests.throws($$select public.admin_delete_org(tests.org('school'), 'x')$$, 'المالك: لا يحذف الجهات');
+select tests.login('+970590000099');
+-- تعديل وتغيير الباقة
+select public.admin_update_org(tests.org('learning_center'), 'مركز معدّل', 'learning_center', 'خانيونس');
+select tests.eq((select region from public.organizations where id = tests.org('learning_center')), 'خانيونس', 'المدير: عدّل الجهة');
+select public.admin_change_plan(tests.org('learning_center'), (select id from public.subscription_plans where slug = 'teacher_monthly'));
+select tests.eq((select p.slug from public.subscriptions s join public.subscription_plans p on p.id = s.plan_id
+                  where s.organization_id = tests.org('learning_center') and s.status in ('trial','active','past_due')), 'teacher_monthly', 'المدير: غيّر الباقة');
+-- معاينة وإصدار فاتورة حسب الاستخدام (لكل طالب، بلا حد أدنى)
+select tests.eq((public.admin_invoice_preview(tests.org('individual_teacher')) ->> 'amount')::numeric
+                = (public.admin_invoice_preview(tests.org('individual_teacher')) ->> 'units')::int * 5, true, 'التسعير: عدد الطلاب × السعر بلا حد أدنى');
+-- تسعير لكل ورقة مع شرائح
+update public.subscription_plans set pricing_model = 'per_paper', tiers = '[{"up_to": 1, "price": 2}, {"up_to": null, "price": 1}]'
+ where slug = 'teacher_monthly';
+select tests.eq((public.admin_invoice_preview(tests.org('individual_teacher')) ->> 'pricing_model'), 'per_paper', 'التسعير: لكل ورقة');
+update public.subscription_plans set pricing_model = 'per_student', tiers = '[]' where slug = 'teacher_monthly';
+-- فاتورة يدوية ثم دفعة جزئية ثم كاملة
+select public.admin_create_invoice(tests.org('individual_teacher'), 100, 'فاتورة يدوية', null);
+select public.admin_record_payment((select id from public.invoices where notes = 'فاتورة يدوية'), 40, 'cash', null, null);
+select tests.eq((select status::text from public.invoices where notes = 'فاتورة يدوية'), 'issued', 'دفعة جزئية: الفاتورة ما زالت مستحقة');
+select public.admin_record_payment((select id from public.invoices where notes = 'فاتورة يدوية'), 60, 'e_wallet', 'W-1', null);
+select tests.eq((select status::text from public.invoices where notes = 'فاتورة يدوية'), 'paid', 'دفعة كاملة: الفاتورة مدفوعة');
+select tests.eq((select paid_at is not null from public.invoices where notes = 'فاتورة يدوية'), true, 'دفعة كاملة: وقت الدفع محفوظ');
+update public.invoices set status = 'overdue' where notes = 'فاتورة يدوية';
+select tests.eq((select paid_at is null from public.invoices where notes = 'فاتورة يدوية'), true, 'تغيير الحالة يدوياً: يزيل وقت الدفع');
+-- إضافة جهة من المدير بمالك ليس له حساب: دعوة مالك
+select public.admin_create_org('مدرسة الأمل', 'school', 'غزة', '+970590000777', 'أ. أمل', null);
+select tests.eq((select status::text from public.organizations where name = 'مدرسة الأمل'), 'active', 'المدير: الجهة التي يضيفها نشطة مباشرة');
+select tests.eq((select owner_invited from public.admin_organizations() where name = 'مدرسة الأمل'), true, 'المدير: المالك مدعو حتى يسجّل');
+select tests.eq(public.admin_issue_invoices_bulk('individual_teacher') >= 0, true, 'المدير: إصدار جماعي');
+-- حذف نهائي يشترط الاسم
+select tests.throws($$select public.admin_delete_org(tests.org('learning_center'), 'اسم خطأ')$$, 'الحذف: يرفض اسماً غير مطابق');
+select public.admin_delete_org(tests.org('learning_center'), 'مركز معدّل');
+select tests.eq((select count(*) from public.organizations where name = 'مركز معدّل'), 0::bigint, 'الحذف: حُذفت الجهة');
 rollback;
 
 \echo 'كل الفحوص نجحت ✓'

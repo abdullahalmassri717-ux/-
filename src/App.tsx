@@ -37,6 +37,7 @@ import { TeacherDiagnosticAnalyticsPage } from './components/groupB/TeacherDiagn
 // Common Components
 import { TechnicalSupportPage } from './components/common/TechnicalSupportPage';
 import { Toaster } from './components/common/Toaster';
+import { OrgStatusGate } from './components/common/OrgStatusGate';
 
 // Group C Components
 import { AIToolsHubPage } from './components/groupC/AIToolsHubPage';
@@ -387,6 +388,12 @@ export default function App() {
         <main className={currentScreen === 'A1' ? 'flex-1 min-w-0' : 'flex-1 p-3 sm:p-6 lg:p-8 min-w-0'}>
           {isReal && roleForPath(location.pathname) !== 'visitor' && roleForPath(location.pathname) !== 'student' && auth.status !== 'signed_in' ? (
             <div className="py-24 text-center text-sm text-slate-500">جاري التحميل...</div>
+          ) : isReal &&
+            activeEntity.id &&
+            activeEntity.status &&
+            activeEntity.status !== 'active' &&
+            (roleForPath(location.pathname) === 'teacher' || roleForPath(location.pathname) === 'school_principal') ? (
+            <OrgStatusGate entity={activeEntity} onRefresh={auth.refresh} />
           ) : (
             <DataProvider org={activeEntity} real={isReal}>
               {renderScreen()}

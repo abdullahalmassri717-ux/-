@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ScreenId } from '../../types';
-import { adminApi, type AdminPlan } from '../../data/admin';
+import { adminApi, unitPriceFor, type AdminPlan } from '../../data/admin';
+import { tiersText } from '../groupE/AdminPlansTab';
 import { usePublicSetting } from '../../lib/settings';
 import type { PaymentAccount } from '../../data/billing';
 import { PLATFORM_CONFIG } from '../../mockData';
@@ -15,7 +16,7 @@ interface PricingPageProps {
 export const PricingPage: React.FC<PricingPageProps> = ({ onNavigate }) => {
   const [plans, setPlans] = useState<AdminPlan[] | null>(null);
   const [tab, setTab] = useState<'teacher' | 'school' | 'all'>('teacher');
-  const [studentCount, setStudentCount] = useState<number>(60);
+  const [studentCount, setStudentCount] = useState<number>(30);
   const currency = usePublicSetting<{ symbol?: string }>('currency', { symbol: PLATFORM_CONFIG.currencySymbol });
   const trial = usePublicSetting<{ days?: number }>('trial', { days: 14 });
   const payment = usePublicSetting<{ accounts?: PaymentAccount[] }>('payment_accounts', {
@@ -40,12 +41,15 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onNavigate }) => {
     return true;
   });
 
-  // The calculator uses the first public teacher plan.
-  const tutorPlan = (plans ?? []).find((p) => p.target === 'teachers' && p.billingCycle === 'monthly');
-  const perStudent = tutorPlan?.pricePerStudent ?? 0;
-  const minimum = tutorPlan?.minimumCharge ?? 0;
-  const calculatedCost = Math.max(minimum, studentCount * perStudent);
-  const belowMinimum = minimum > 0 && studentCount * perStudent < minimum;
+  // The calculator uses the chosen public teacher plan (the first one by default).
+  const teacherPlans = (plans ?? []).filter((p) => p.target === 'teachers');
+  const [calcPlanId, setCalcPlanId] = useState<string | null>(null);
+  const tutorPlan = teacherPlans.find((p) => p.id === calcPlanId) ?? teacherPlans[0];
+  const unit = tutorPlan?.pricingModel === 'per_paper' ? 'ورقة' : 'طالب';
+  const perUnit = tutorPlan ? unitPriceFor(tutorPlan.tiers, tutorPlan.pricePerStudent, studentCount) : 0;
+  const calculatedCost = Math.round(studentCount * perUnit * 100) / 100;
+  const unitLabel = (p: AdminPlan) => (p.pricingModel === 'per_paper' ? 'ورقة مصحّحة' : 'طالب مسجّل');
+  const cycleLabel = (p: AdminPlan) => (p.billingCycle === 'yearly' ? 'سنوياً' : 'شهرياً');
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-8 text-right">
@@ -101,30 +105,54 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onNavigate }) => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Calculator className="w-5 h-5 text-[#1E3A5F]" />
-              <span className="text-xs font-bold text-slate-800">حاسبة الاشتراك الشهري للمدرّس ({perStudent} {sym}/طالب):</span>
+              <span className="text-xs font-bold text-slate-800">احسب اشتراكك: تدفع حسب استخدامك الفعلي، بدون حد أدنى</span>
             </div>
-            <div className="bg-blue-50 border border-blue-200 px-3 py-1 rounded-lg text-sm font-bold text-[#1E3A5F] tabular-nums font-mono">
-              {studentCount} طالب نشط
+            <div className="bg-blue-50 border border-blue-200 px-3 py-1 rounded-lg text-sm font-bold text-[#1E3A5F] tabular-nums whitespace-nowrap shrink-0">
+              {studentCount} {unit}
             </div>
           </div>
 
-          <input
-            type="range"
-            min="10"
-            max="300"
-            step="5"
-            value={studentCount}
-            onChange={(e) => setStudentCount(Number(e.target.value))}
-            className="w-full accent-[#1E3A5F] cursor-pointer"
-          />
+          {teacherPlans.length > 1 && (
+            <div className="flex flex-wrap gap-2 text-xs">
+              {teacherPlans.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setCalcPlanId(p.id)}
+                  className={`px-3 py-1.5 rounded-lg font-bold border ${p.id === tutorPlan.id ? 'bg-[#1E3A5F] text-white border-[#1E3A5F]' : 'bg-white text-slate-600 border-slate-200'}`}
+                >
+                  {p.name} · لكل {unitLabel(p)}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min="1"
+              max="1000"
+              step="1"
+              value={studentCount}
+              onChange={(e) => setStudentCount(Number(e.target.value))}
+              className="flex-1 min-w-0 accent-[#1E3A5F] cursor-pointer"
+            />
+            <input
+              type="number"
+              min={1}
+              value={studentCount}
+              onChange={(e) => setStudentCount(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+              className="w-24 p-1.5 border border-slate-300 rounded-lg text-xs font-mono text-center"
+              aria-label="العدد"
+            />
+          </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs pt-1 border-t border-slate-100 text-slate-600">
             <span>
-              {belowMinimum ? `يطبّق الحد الأدنى للاشتراك (${minimum} ${sym} شهرياً)` : `حساب مباشر: ${studentCount} طالب × ${perStudent} ${sym}`}
+              {studentCount} {unit} × {perUnit} {sym}
             </span>
             <div className="text-left">
-              <span className="text-sm font-black text-[#1E3A5F] font-mono tabular-nums">
-                المبلغ الشهري المستحق: {calculatedCost} {sym}
+              <span className="text-sm font-black text-[#1E3A5F] tabular-nums">
+                المبلغ {cycleLabel(tutorPlan)}: {calculatedCost} {sym}
               </span>
             </div>
           </div>
@@ -168,14 +196,13 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onNavigate }) => {
                     {plan.pricePerStudent === 0 ? 'مجاناً' : `${plan.pricePerStudent} ${sym}`}
                   </span>
                   <span className="text-xs text-slate-500 font-medium">
-                    {plan.pricePerStudent === 0 ? 'بدون رسوم' : plan.billingCycle === 'yearly' ? 'لكل طالب / سنوياً' : 'لكل طالب / شهرياً'}
+                    {plan.pricePerStudent === 0 ? 'بدون رسوم' : `لكل ${unitLabel(plan)} / ${cycleLabel(plan)}`}
                   </span>
                 </div>
-                {plan.minimumCharge > 0 && (
-                  <span className="text-[10px] text-slate-400 block mt-1">
-                    الحد الأدنى: {plan.minimumCharge} {sym}
-                  </span>
+                {plan.tiers.length > 0 && (
+                  <span className="text-[10px] text-slate-500 block mt-1">{tiersText(plan.tiers, plan.pricingModel === 'per_paper' ? 'ورقة' : 'طالب')}</span>
                 )}
+                {plan.pricePerStudent > 0 && <span className="text-[10px] text-slate-400 block mt-1">من {unitLabel(plan) === 'ورقة مصحّحة' ? 'ورقة' : 'طالب'} واحد، بدون حد أدنى</span>}
               </div>
 
               {/* Features List */}

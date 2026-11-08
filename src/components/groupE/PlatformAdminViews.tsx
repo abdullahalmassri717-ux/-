@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ScreenId, SupportTicket } from '../../types';
-import { adminApi, type AdminPlan, type AdminReceipt } from '../../data/admin';
+import { adminApi } from '../../data/admin';
+import { AdminOrgsTab } from './AdminOrgsTab';
+import { AdminFinanceTab } from './AdminFinanceTab';
+import { AdminPlansTab } from './AdminPlansTab';
+import { useAsync, Spinner, ErrorBox, Card, fmt, dateLabel, errText, KIND_LABEL, SUB_LABEL, ORG_STATUS } from './adminUi';
 import { supportApi } from '../../data/support';
 import { getPublicSetting, savePlatformSetting } from '../../lib/settings';
 import { PLATFORM_CONFIG } from '../../mockData';
@@ -9,20 +13,14 @@ import {
   ShieldCheck,
   Building2,
   DollarSign,
-  CheckCircle2,
-  XCircle,
-  Eye,
   Sliders,
   BarChart3,
   Plus,
-  Edit,
   Headphones,
   Send,
   LayoutTemplate,
-  Loader2,
   Settings,
   Trash2,
-  FileText,
 } from 'lucide-react';
 import { LandingPageCMS } from './LandingPageCMS';
 import { notify } from '../../lib/notify';
@@ -30,59 +28,6 @@ import { notify } from '../../lib/notify';
 type Tab = 'overview' | 'financials' | 'analytics' | 'plans' | 'clients' | 'support' | 'landing' | 'settings';
 
 const api = adminApi();
-const fmt = (n: number, d = 0) => n.toLocaleString('en-US', { maximumFractionDigits: d });
-const dateLabel = (d: string | null) => {
-  if (!d) return '—';
-  try {
-    return new Date(d.length === 10 ? `${d}T00:00:00` : d).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short', year: 'numeric' });
-  } catch {
-    return d;
-  }
-};
-const errText = (e: unknown, fallback: string) => (e instanceof Error && /[؀-ۿ]/.test(e.message) ? e.message : fallback);
-
-/** Small loader hook for admin data (not tied to an organization). */
-function useAsync<T>(fn: () => Promise<T>, deps: React.DependencyList = []) {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let alive = true;
-    setError(null);
-    fn()
-      .then((v) => alive && setData(v))
-      .catch((e) => alive && setError(errText(e, 'تعذّر تحميل البيانات.')));
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick, ...deps]);
-  return { data, error, loading: data === null && !error, reload: () => setTick((t) => t + 1) };
-}
-
-const Spinner = () => (
-  <div className="py-12 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
-    <Loader2 className="w-4 h-4 animate-spin" /> جارٍ التحميل…
-  </div>
-);
-const ErrorBox: React.FC<{ text: string }> = ({ text }) => <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800">{text}</div>;
-const Card: React.FC<{ title: string; value: React.ReactNode; hint?: React.ReactNode; tone?: string }> = ({ title, value, hint, tone = 'text-[#1E3A5F]' }) => (
-  <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs space-y-1">
-    <span className="text-xs text-slate-500 font-bold">{title}</span>
-    <div className={`text-2xl font-black font-mono tabular-nums ${tone}`}>{value}</div>
-    {hint && <div className="text-[11px] text-slate-500">{hint}</div>}
-  </div>
-);
-
-const KIND_LABEL = { individual_teacher: 'مدرّس', school: 'مدرسة', learning_center: 'مركز' } as const;
-const SUB_LABEL: Record<string, string> = { trial: 'تجريبي', active: 'نشط', past_due: 'متأخر' };
-const INVOICE_LABEL: Record<string, { t: string; c: string }> = {
-  issued: { t: 'بانتظار الدفع', c: 'bg-amber-100 text-amber-800' },
-  overdue: { t: 'متأخرة', c: 'bg-rose-100 text-rose-800' },
-  pending_confirmation: { t: 'إيصال بانتظار التأكيد', c: 'bg-blue-100 text-blue-800' },
-  paid: { t: 'مدفوعة', c: 'bg-emerald-100 text-emerald-800' },
-  void: { t: 'ملغاة', c: 'bg-slate-100 text-slate-500' },
-};
 
 export const PlatformAdminDashboard: React.FC<{
   onNavigate: (screen: ScreenId) => void;
@@ -132,9 +77,9 @@ export const PlatformAdminDashboard: React.FC<{
       </div>
 
       {activeTab === 'overview' && <OverviewTab go={setActiveTab} />}
-      {activeTab === 'financials' && <FinancialsTab />}
-      {activeTab === 'clients' && <ClientsTab />}
-      {activeTab === 'plans' && <PlansTab />}
+      {activeTab === 'financials' && <AdminFinanceTab />}
+      {activeTab === 'clients' && <AdminOrgsTab />}
+      {activeTab === 'plans' && <AdminPlansTab />}
       {activeTab === 'analytics' && <QualityTab />}
       {activeTab === 'support' && <SupportTab />}
       {activeTab === 'landing' && <LandingPageCMS onNavigate={onNavigate} />}
@@ -157,9 +102,23 @@ const OverviewTab: React.FC<{ go: (t: Tab) => void }> = ({ go }) => {
   const papers = list.reduce((n, o) => n + o.papers30d, 0);
   const unpaid = list.reduce((n, o) => n + o.unpaidAmount, 0);
   const trials = list.filter((o) => o.subscriptionStatus === 'trial');
+  const pending = list.filter((o) => o.status === 'pending');
 
   return (
     <div className="space-y-6">
+      {pending.length > 0 && (
+        <button
+          onClick={() => go('clients')}
+          className="w-full p-4 bg-amber-50 border border-amber-300 rounded-2xl text-right text-xs text-amber-900 flex items-center justify-between gap-3"
+        >
+          <span>
+            <strong className="text-sm block">{pending.length} {pending.length === 1 ? 'جهة جديدة تنتظر' : 'جهات جديدة تنتظر'} موافقتك</strong>
+            {pending.slice(0, 3).map((o) => o.name).join('، ')}
+            {pending.length > 3 ? '…' : ''}
+          </span>
+          <span className="font-bold shrink-0">راجعها ←</span>
+        </button>
+      )}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card title="المدرّسون" value={tutors.length} hint={`${trials.length} في الفترة التجريبية`} />
         <Card title="المدارس والمراكز" value={schools.length} />
@@ -199,483 +158,14 @@ const OverviewTab: React.FC<{ go: (t: Tab) => void }> = ({ go }) => {
                     {KIND_LABEL[o.kind]} · {o.activeStudents} طالب · {dateLabel(o.createdAt)}
                   </span>
                 </div>
-                <span className="text-[11px] font-bold shrink-0 text-slate-600">{o.subscriptionStatus ? SUB_LABEL[o.subscriptionStatus] : 'بلا اشتراك'}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ---------------------------------------------------------------- Financials
-const FinancialsTab: React.FC = () => {
-  const [scope, setScope] = useState<'pending' | 'all'>('pending');
-  const receipts = useAsync(() => api.listReceipts(scope), [scope]);
-  const invoices = useAsync(() => api.listInvoices());
-  const [review, setReview] = useState<{ r: AdminReceipt; url: string | null; note: string } | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const open = async (r: AdminReceipt) => {
-    const url = r.storagePath ? await api.receiptUrl(r.storagePath) : null;
-    setReview({ r, url, note: '' });
-  };
-  const decide = async (status: 'confirmed' | 'rejected') => {
-    if (!review) return;
-    if (status === 'rejected' && !review.note.trim()) return notify('اكتب سبب الرفض ليراه صاحب الحساب.');
-    setBusy(true);
-    try {
-      await api.reviewReceipt(review.r.id, status, review.note);
-      setReview(null);
-      receipts.reload();
-      invoices.reload();
-      notify(status === 'confirmed' ? 'تم تأكيد الدفع، والفاتورة الآن مدفوعة.' : 'تم رفض الإيصال.');
-    } catch (e) {
-      notify(errText(e, 'تعذّر الحفظ.'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-extrabold text-[#1E3A5F] text-sm">إيصالات التحويل</h3>
-          <div className="flex gap-1 bg-slate-100 p-1 rounded-xl text-xs">
-            {(['pending', 'all'] as const).map((s) => (
-              <button key={s} onClick={() => setScope(s)} className={`px-3 py-1 rounded-lg font-bold ${scope === s ? 'bg-white shadow-2xs' : 'text-slate-600'}`}>
-                {s === 'pending' ? 'بانتظار التأكيد' : 'الكل'}
-              </button>
-            ))}
-          </div>
-        </div>
-        {receipts.error ? (
-          <ErrorBox text={receipts.error} />
-        ) : !receipts.data ? (
-          <Spinner />
-        ) : !receipts.data.length ? (
-          <p className="text-xs text-slate-500">لا توجد إيصالات {scope === 'pending' ? 'بانتظار التأكيد' : ''}.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs min-w-[640px]">
-              <thead className="bg-[#F7F8FA] text-slate-700 font-bold">
-                <tr>
-                  <th className="p-3">الجهة</th>
-                  <th className="p-3">الفاتورة</th>
-                  <th className="p-3 text-center">المبلغ المحوّل</th>
-                  <th className="p-3">الطريقة / المرجع</th>
-                  <th className="p-3 text-center">الحالة</th>
-                  <th className="p-3 text-center">إجراء</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {receipts.data.map((r) => (
-                  <tr key={r.id}>
-                    <td className="p-3 font-bold text-slate-900">{r.orgName}</td>
-                    <td className="p-3 font-mono">
-                      {r.invoiceNumber}
-                      <span className="block text-[10px] text-slate-500">
-                        {fmt(r.invoiceAmount, 2)} {PLATFORM_CONFIG.currencySymbol}
-                      </span>
-                    </td>
-                    <td className={`p-3 text-center font-mono font-bold ${r.amount < r.invoiceAmount ? 'text-rose-600' : 'text-emerald-700'}`}>
-                      {fmt(r.amount, 2)} {PLATFORM_CONFIG.currencySymbol}
-                    </td>
-                    <td className="p-3 text-slate-600">
-                      {r.method === 'bank_transfer' ? 'حوالة بنكية' : 'محفظة'}
-                      {r.reference && <span className="block font-mono text-[10px]">{r.reference}</span>}
-                    </td>
-                    <td className="p-3 text-center">
-                      {r.status === 'pending' ? 'بانتظار التأكيد' : r.status === 'confirmed' ? 'مؤكد' : 'مرفوض'}
-                    </td>
-                    <td className="p-3 text-center">
-                      <button onClick={() => open(r)} className="text-blue-700 font-bold hover:underline inline-flex items-center gap-1">
-                        <Eye className="w-3.5 h-3.5" /> {r.status === 'pending' ? 'مراجعة' : 'عرض'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4">
-        <h3 className="font-extrabold text-[#1E3A5F] text-sm">الفواتير</h3>
-        {invoices.error ? (
-          <ErrorBox text={invoices.error} />
-        ) : !invoices.data ? (
-          <Spinner />
-        ) : !invoices.data.length ? (
-          <p className="text-xs text-slate-500">لا توجد فواتير. أصدرها من تبويب «الجهات».</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs min-w-[640px]">
-              <thead className="bg-[#F7F8FA] text-slate-700 font-bold">
-                <tr>
-                  <th className="p-3">الرقم</th>
-                  <th className="p-3">الجهة</th>
-                  <th className="p-3">من</th>
-                  <th className="p-3 text-center">المبلغ</th>
-                  <th className="p-3 text-center">الحالة</th>
-                  <th className="p-3 text-center">إجراء</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {invoices.data.map((i) => (
-                  <tr key={i.id}>
-                    <td className="p-3 font-mono font-bold">{i.number}</td>
-                    <td className="p-3">{i.orgName}</td>
-                    <td className="p-3">{dateLabel(i.periodStart)}</td>
-                    <td className="p-3 text-center font-mono font-bold">
-                      {fmt(i.amount, 2)} {PLATFORM_CONFIG.currencySymbol}
-                    </td>
-                    <td className="p-3 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${INVOICE_LABEL[i.status].c}`}>{INVOICE_LABEL[i.status].t}</span>
-                    </td>
-                    <td className="p-3 text-center">
-                      {(i.status === 'issued' || i.status === 'overdue') && (
-                        <div className="flex justify-center gap-3">
-                          {i.status === 'issued' && (
-                            <button
-                              onClick={() => api.setInvoiceStatus(i.id, 'overdue').then(invoices.reload, (e) => notify(errText(e, 'تعذّر الحفظ.')))}
-                              className="text-amber-700 font-bold hover:underline"
-                            >
-                              متأخرة
-                            </button>
-                          )}
-                          <button
-                            onClick={() => api.setInvoiceStatus(i.id, 'void').then(invoices.reload, (e) => notify(errText(e, 'تعذّر الحفظ.')))}
-                            className="text-slate-500 font-bold hover:underline"
-                          >
-                            إلغاء
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {review && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 text-right space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="font-bold text-base text-[#1E3A5F]">
-              إيصال {review.r.orgName} · {review.r.invoiceNumber}
-            </h3>
-            {review.url ? (
-              review.r.storagePath?.endsWith('.pdf') ? (
-                <a href={review.url} target="_blank" rel="noreferrer" className="text-blue-700 font-bold text-xs flex items-center gap-1">
-                  <FileText className="w-4 h-4" /> فتح ملف الإيصال (PDF)
-                </a>
-              ) : (
-                <img src={review.url} alt="صورة الإيصال" className="w-full rounded-xl border border-slate-200" />
-              )
-            ) : (
-              <p className="text-xs text-slate-500">لا توجد صورة متاحة.</p>
-            )}
-            <div className="text-xs space-y-1">
-              <div>
-                المبلغ المحوّل: <strong className="font-mono">{fmt(review.r.amount, 2)}</strong> من أصل{' '}
-                <strong className="font-mono">{fmt(review.r.invoiceAmount, 2)}</strong> {PLATFORM_CONFIG.currencySymbol}
-              </div>
-              {review.r.reference && <div>المرجع: {review.r.reference}</div>}
-            </div>
-            {review.r.status === 'pending' && (
-              <>
-                <input
-                  value={review.note}
-                  onChange={(e) => setReview({ ...review, note: e.target.value })}
-                  placeholder="ملاحظة (مطلوبة عند الرفض)"
-                  className="w-full p-2.5 border border-slate-300 rounded-xl text-xs"
-                />
-                <div className="flex gap-2">
-                  <button
-                    disabled={busy}
-                    onClick={() => decide('confirmed')}
-                    className="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-60"
-                  >
-                    <CheckCircle2 className="w-4 h-4" /> تأكيد الدفع
-                  </button>
-                  <button
-                    disabled={busy}
-                    onClick={() => decide('rejected')}
-                    className="flex-1 bg-rose-50 text-rose-700 border border-rose-200 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-60"
-                  >
-                    <XCircle className="w-4 h-4" /> رفض
-                  </button>
-                </div>
-              </>
-            )}
-            <button onClick={() => setReview(null)} className="w-full bg-slate-100 text-slate-700 py-2.5 rounded-xl text-xs font-bold">
-              إغلاق
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ---------------------------------------------------------------- Clients
-const ClientsTab: React.FC = () => {
-  const orgs = useAsync(() => api.listOrganizations());
-  const [q, setQ] = useState('');
-  const [kind, setKind] = useState<'all' | 'individual_teacher' | 'school'>('all');
-  if (orgs.error) return <ErrorBox text={orgs.error} />;
-  if (!orgs.data) return <Spinner />;
-  const list = orgs.data.filter(
-    (o) =>
-      (kind === 'all' || (kind === 'school' ? o.kind !== 'individual_teacher' : o.kind === kind)) &&
-      (!q || o.name.includes(q) || o.ownerName.includes(q) || o.ownerPhone.includes(q)),
-  );
-  const issue = async (id: string, name: string) => {
-    try {
-      await api.issueInvoice(id);
-      orgs.reload();
-      notify(`صدرت فاتورة لـ «${name}». تظهر له في شاشة الاشتراك.`);
-    } catch (e) {
-      notify(errText(e, 'تعذّر إصدار الفاتورة.'));
-    }
-  };
-
-  return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث بالاسم أو الرقم" className="px-3 py-1.5 border border-slate-300 rounded-xl text-xs w-56 max-w-full" />
-        <div className="flex gap-1 bg-slate-100 p-1 rounded-xl text-xs">
-          {(
-            [
-              ['all', 'الكل'],
-              ['individual_teacher', 'مدرّسون'],
-              ['school', 'مدارس ومراكز'],
-            ] as const
-          ).map(([k, l]) => (
-            <button key={k} onClick={() => setKind(k)} className={`px-3 py-1 rounded-lg font-bold ${kind === k ? 'bg-white shadow-2xs' : 'text-slate-600'}`}>
-              {l}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-right text-xs min-w-[860px]">
-          <thead className="bg-[#F7F8FA] text-slate-700 font-bold">
-            <tr>
-              <th className="p-3">الجهة</th>
-              <th className="p-3">المالك</th>
-              <th className="p-3 text-center">الطلاب</th>
-              <th className="p-3">الباقة</th>
-              <th className="p-3 text-center">أوراق 30 يوماً</th>
-              <th className="p-3 text-center">تكلفة AI</th>
-              <th className="p-3 text-center">غير مسدد</th>
-              <th className="p-3 text-center">إجراء</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {list.map((o) => (
-              <tr key={o.id}>
-                <td className="p-3">
-                  <strong className="block text-slate-900">{o.name}</strong>
-                  <span className="text-[11px] text-slate-500">
-                    {KIND_LABEL[o.kind]}
-                    {o.region ? ` · ${o.region}` : ''}
-                    {o.teachers ? ` · ${o.teachers} معلم` : ''}
-                  </span>
-                </td>
-                <td className="p-3">
-                  {o.ownerName}
-                  <span className="block font-mono text-[11px] text-slate-500" dir="ltr">
-                    {o.ownerPhone}
-                  </span>
-                </td>
-                <td className="p-3 text-center font-mono">{o.activeStudents}</td>
-                <td className="p-3">
-                  {o.planName || '—'}
-                  <span className="block text-[11px] text-slate-500">
-                    {o.subscriptionStatus ? SUB_LABEL[o.subscriptionStatus] : 'بلا اشتراك'}
-                    {o.subscriptionStatus === 'trial' && o.trialEndsOn ? ` حتى ${dateLabel(o.trialEndsOn)}` : ''}
-                  </span>
-                </td>
-                <td className="p-3 text-center font-mono">{o.papers30d}</td>
-                <td className="p-3 text-center font-mono">${fmt(o.gradingCost30d, 2)}</td>
-                <td className={`p-3 text-center font-mono font-bold ${o.unpaidAmount ? 'text-amber-700' : 'text-slate-400'}`}>{fmt(o.unpaidAmount)}</td>
-                <td className="p-3 text-center">
-                  {o.subscriptionStatus && (
-                    <button onClick={() => issue(o.id, o.name)} className="text-blue-700 font-bold hover:underline whitespace-nowrap">
-                      إصدار فاتورة
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-// ---------------------------------------------------------------- Plans
-const emptyPlan = (): Omit<AdminPlan, 'id'> & { id?: string } => ({
-  slug: null,
-  name: '',
-  target: 'teachers',
-  billingCycle: 'monthly',
-  pricePerStudent: 0,
-  minimumCharge: 0,
-  installments: 1,
-  features: [],
-  isActive: true,
-  isPublic: true,
-  isPopular: false,
-  notes: '',
-});
-
-const PlansTab: React.FC = () => {
-  const plans = useAsync(() => api.listPlans());
-  const [edit, setEdit] = useState<(Omit<AdminPlan, 'id'> & { id?: string }) | null>(null);
-  const [featuresText, setFeaturesText] = useState('');
-  const [busy, setBusy] = useState(false);
-  if (plans.error) return <ErrorBox text={plans.error} />;
-  if (!plans.data) return <Spinner />;
-
-  const startEdit = (p: Omit<AdminPlan, 'id'> & { id?: string }) => {
-    setEdit(p);
-    setFeaturesText(p.features.join('\n'));
-  };
-  const save = async () => {
-    if (!edit) return;
-    if (!edit.name.trim()) return notify('اكتب اسم الباقة.');
-    setBusy(true);
-    try {
-      await api.savePlan({ ...edit, features: featuresText.split('\n').map((f) => f.trim()).filter(Boolean) });
-      setEdit(null);
-      plans.reload();
-      notify('حُفظت الباقة. الأسعار الجديدة تُطبَّق على الاشتراكات الجديدة.');
-    } catch (e) {
-      notify(errText(e, 'تعذّر الحفظ.'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <p className="text-xs text-slate-500">الأسعار هنا بيانات: تظهر في صفحة الأسعار وتُستخدم في الفواتير.</p>
-        <button onClick={() => startEdit(emptyPlan())} className="bg-[#1E3A5F] text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5">
-          <Plus className="w-4 h-4" /> باقة جديدة
-        </button>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {plans.data.map((p) => (
-          <div key={p.id} className={`bg-white border rounded-2xl p-5 shadow-2xs space-y-2 ${p.isActive ? 'border-slate-200' : 'border-dashed border-slate-300 opacity-70'}`}>
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <h3 className="font-black text-[#1E3A5F]">{p.name}</h3>
-                <span className="text-[11px] text-slate-500">
-                  {p.target === 'teachers' ? 'للمدرّسين' : p.target === 'schools' ? 'للمدارس' : 'مؤسسات'} · {p.billingCycle === 'monthly' ? 'شهري' : 'سنوي'}
-                  {p.isPopular ? ' · الأكثر طلباً' : ''}
-                  {!p.isActive ? ' · موقوفة' : !p.isPublic ? ' · مخفية' : ''}
+                <span className={`text-[11px] font-bold shrink-0 px-2 py-0.5 rounded-full ${o.status === 'active' ? 'text-slate-600' : ORG_STATUS[o.status].c}`}>
+                  {o.status === 'active' ? (o.subscriptionStatus ? SUB_LABEL[o.subscriptionStatus] : 'بلا اشتراك') : ORG_STATUS[o.status].t}
                 </span>
               </div>
-              <button onClick={() => startEdit(p)} className="text-blue-700">
-                <Edit className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="text-2xl font-black font-mono text-[#1E3A5F]">
-              {fmt(p.pricePerStudent, 2)} <span className="text-xs">{PLATFORM_CONFIG.currencySymbol} / طالب</span>
-            </div>
-            <div className="text-[11px] text-slate-500">
-              {p.minimumCharge ? `حد أدنى ${fmt(p.minimumCharge)} · ` : ''}
-              {p.installments > 1 ? `${p.installments} دفعات` : 'دفعة واحدة'}
-            </div>
-            <ul className="text-xs text-slate-700 space-y-1 list-disc pr-4">
-              {p.features.map((f, i) => (
-                <li key={i}>{f}</li>
-              ))}
-            </ul>
+            ))}
           </div>
-        ))}
+        )}
       </div>
-
-      {edit && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 text-right space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto text-xs">
-            <h3 className="font-bold text-base text-[#1E3A5F]">{edit.id ? 'تعديل الباقة' : 'باقة جديدة'}</h3>
-            <label className="block space-y-1">
-              <span className="font-bold">الاسم</span>
-              <input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} className="w-full p-2 border border-slate-300 rounded-lg" />
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="space-y-1">
-                <span className="font-bold">لمن</span>
-                <select value={edit.target} onChange={(e) => setEdit({ ...edit, target: e.target.value as AdminPlan['target'] })} className="w-full p-2 border border-slate-300 rounded-lg">
-                  <option value="teachers">المدرّسين</option>
-                  <option value="schools">المدارس والمراكز</option>
-                  <option value="enterprise">مؤسسات</option>
-                </select>
-              </label>
-              <label className="space-y-1">
-                <span className="font-bold">الدورة</span>
-                <select value={edit.billingCycle} onChange={(e) => setEdit({ ...edit, billingCycle: e.target.value as AdminPlan['billingCycle'] })} className="w-full p-2 border border-slate-300 rounded-lg">
-                  <option value="monthly">شهري</option>
-                  <option value="yearly">سنوي</option>
-                </select>
-              </label>
-              <label className="space-y-1">
-                <span className="font-bold">السعر لكل طالب</span>
-                <input type="number" min={0} value={edit.pricePerStudent} onChange={(e) => setEdit({ ...edit, pricePerStudent: Number(e.target.value) })} className="w-full p-2 border border-slate-300 rounded-lg font-mono" />
-              </label>
-              <label className="space-y-1">
-                <span className="font-bold">الحد الأدنى</span>
-                <input type="number" min={0} value={edit.minimumCharge} onChange={(e) => setEdit({ ...edit, minimumCharge: Number(e.target.value) })} className="w-full p-2 border border-slate-300 rounded-lg font-mono" />
-              </label>
-              <label className="space-y-1">
-                <span className="font-bold">عدد الدفعات</span>
-                <input type="number" min={1} value={edit.installments} onChange={(e) => setEdit({ ...edit, installments: Math.max(1, Number(e.target.value)) })} className="w-full p-2 border border-slate-300 rounded-lg font-mono" />
-              </label>
-            </div>
-            <label className="block space-y-1">
-              <span className="font-bold">المزايا (سطر لكل ميزة)</span>
-              <textarea rows={4} value={featuresText} onChange={(e) => setFeaturesText(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg" />
-            </label>
-            <label className="block space-y-1">
-              <span className="font-bold">ملاحظة تظهر تحت السعر</span>
-              <input value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} className="w-full p-2 border border-slate-300 rounded-lg" />
-            </label>
-            <div className="flex flex-wrap gap-4">
-              {(
-                [
-                  ['isActive', 'مفعّلة'],
-                  ['isPublic', 'تظهر في صفحة الأسعار'],
-                  ['isPopular', 'الأكثر طلباً'],
-                ] as const
-              ).map(([k, l]) => (
-                <label key={k} className="flex items-center gap-1.5">
-                  <input type="checkbox" checked={edit[k]} onChange={(e) => setEdit({ ...edit, [k]: e.target.checked })} />
-                  {l}
-                </label>
-              ))}
-            </div>
-            <div className="flex gap-2 pt-2">
-              <button disabled={busy} onClick={save} className="flex-1 bg-[#1E3A5F] text-white py-2.5 rounded-xl font-bold disabled:opacity-60">
-                حفظ
-              </button>
-              <button onClick={() => setEdit(null)} className="bg-slate-100 text-slate-700 py-2.5 px-4 rounded-xl">
-                إلغاء
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -21,6 +21,9 @@ export interface Entity {
   activeStudentsCount: number;
   region: string;
   principalOrOwnerName: string;
+  /** Real mode: new sign-ups wait for platform-admin approval; an admin can disable an organization. */
+  status?: 'pending' | 'active' | 'disabled';
+  statusNote?: string;
 }
 
 export type ScreenId = 
