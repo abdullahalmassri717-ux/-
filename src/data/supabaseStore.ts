@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Curriculum, Exam, Group } from '../types';
 import { toInternationalPhone } from '../lib/phone';
 import { PLATFORM_CONFIG } from '../mockData';
+import { createSupabaseBilling } from './billing';
 import type {
   AssessmentDetail,
   AssessmentRow,
@@ -310,6 +311,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
   }
 
   return {
+    ...createSupabaseBilling(db, orgId),
     mode: 'real',
     listCurricula,
 

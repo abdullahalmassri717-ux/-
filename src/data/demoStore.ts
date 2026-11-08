@@ -12,6 +12,7 @@ import {
 } from '../mockData';
 import type { Group } from '../types';
 import { requestGrading } from '../lib/gradingApi';
+import { createDemoBilling } from './billing';
 import type {
   AssessmentDetail,
   AssessmentRow,
@@ -122,6 +123,7 @@ function summary(a: AssessmentDetail): AssessmentRow {
 
 export function createDemoStore(): DataStore {
   return {
+    ...createDemoBilling(),
     mode: 'demo',
     listCurricula: () => wait(CURRICULA_DATA),
     listDiagnosticRows: (groupId) => {
