@@ -13,6 +13,7 @@ import {
 import type { Group } from '../types';
 import { requestGrading } from '../lib/gradingApi';
 import { createDemoBilling } from './billing';
+import { createDemoAi } from './ai';
 import { createDemoSchool, type SchoolStore } from './school';
 import type {
   AssessmentDetail,
@@ -33,6 +34,14 @@ function findSubject(subjectId: string | null) {
   for (const c of CURRICULA_DATA)
     for (const g of c.grades)
       for (const s of g.subjects) if (s.id === subjectId) return { c, g, s };
+  return null;
+}
+
+function demoLessonId(title: string): string | null {
+  for (const c of CURRICULA_DATA)
+    for (const g of c.grades)
+      for (const s of g.subjects)
+        for (const u of s.units) for (const l of u.lessons) if (l.title === title || title.includes(l.title)) return l.id;
   return null;
 }
 
@@ -125,6 +134,7 @@ function summary(a: AssessmentDetail): AssessmentRow {
 export function createDemoStore(): DataStore {
   const base: Omit<DataStore, keyof SchoolStore> = {
     ...createDemoBilling(),
+    ...createDemoAi(),
     mode: 'demo',
     listCurricula: () => wait(CURRICULA_DATA),
     listDiagnosticRows: (groupId) => {
@@ -278,7 +288,7 @@ export function createDemoStore(): DataStore {
           questionsCount: a.questionsCount,
         }));
       const lessons = (st.weakLessons.length ? st.weakLessons : ['الاشتقاق الضمني', 'قواعد الاشتقاق الأساسية'])
-        .map((lesson, i) => ({ lesson, mastery: Math.max(35, base - 25 + i * 12) }))
+        .map((lesson, i) => ({ lesson, lessonId: demoLessonId(lesson), mastery: Math.max(35, base - 25 + i * 12) }))
         .sort((a, b) => a.mastery - b.mastery);
       return wait({ papers, lessons });
     },

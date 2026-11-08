@@ -1,4 +1,5 @@
 import type { BillingStore } from './billing';
+import type { AiStore } from './ai';
 import type { SchoolStore } from './school';
 // Shapes the screens work with. Both the demo store (mock data) and the real
 // Supabase store return these, so a screen does not care which one is active.
@@ -109,7 +110,7 @@ export interface StudentHistory {
   /** Graded and approved papers, newest first. */
   papers: { submissionId: string; assessmentId: string; title: string; score: number; total: number; date: string; questionsCount: number }[];
   /** Mastery per lesson (percent of points earned), weakest first. */
-  lessons: { lesson: string; mastery: number }[];
+  lessons: { lesson: string; lessonId: string | null; mastery: number }[];
 }
 
 /** One graded question of one approved paper, for «تشخيص طلابي». */
@@ -144,7 +145,7 @@ export interface DashboardSummary {
 /** One lesson's state in «وين وصلنا» for a group. */
 export type TaughtLessons = Record<string, string>; // lessonId -> taught_at ISO
 
-export interface DataStore extends BillingStore, SchoolStore {
+export interface DataStore extends BillingStore, SchoolStore, AiStore {
   readonly mode: 'demo' | 'real';
   getDashboard(): Promise<DashboardSummary>;
   listDiagnosticRows(groupId: string | null): Promise<DiagnosticRow[]>;

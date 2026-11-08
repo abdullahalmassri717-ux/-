@@ -6,6 +6,7 @@ import type { Curriculum, Exam, Group } from '../types';
 import { toInternationalPhone } from '../lib/phone';
 import { PLATFORM_CONFIG } from '../mockData';
 import { createSupabaseBilling } from './billing';
+import { createSupabaseAi } from './ai';
 import { createSupabaseSchool, type SchoolStore } from './school';
 import type {
   AssessmentDetail,
@@ -313,6 +314,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
 
   const base: Omit<DataStore, keyof SchoolStore> = {
     ...createSupabaseBilling(db, orgId),
+    ...createSupabaseAi(db, orgId),
     mode: 'real',
     listCurricula,
 
@@ -591,7 +593,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     async getStudentHistory(id) {
       const { data, error } = await db
         .from('submissions')
-        .select('id, assessment_id, submitted_at, approved_at, assessments(title, scheduled_on, assessment_totals(total_score, questions_count)), question_grades(final_score, questions(max_score, lessons(title)))')
+        .select('id, assessment_id, submitted_at, approved_at, assessments(title, scheduled_on, assessment_totals(total_score, questions_count)), question_grades(final_score, questions(max_score, lessons(id, title)))')
         .eq('student_id', id)
         .eq('status', 'approved')
         .order('submitted_at', { ascending: false });
@@ -599,9 +601,9 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       type Row = {
         id: string; assessment_id: string; submitted_at: string; approved_at: string | null;
         assessments: { title: string; scheduled_on: string | null; assessment_totals: { total_score: number; questions_count: number } | { total_score: number; questions_count: number }[] | null } | null;
-        question_grades: { final_score: number | null; questions: { max_score: number; lessons: { title: string } | null } | null }[];
+        question_grades: { final_score: number | null; questions: { max_score: number; lessons: { id: string; title: string } | null } | null }[];
       };
-      const lessonTotals = new Map<string, { got: number; max: number }>();
+      const lessonTotals = new Map<string, { id: string; got: number; max: number }>();
       const papers = ((data ?? []) as unknown as Row[]).map((r) => {
         const a = one(r.assessments);
         const totals = one(a?.assessment_totals);
@@ -609,9 +611,10 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
         for (const g of r.question_grades ?? []) {
           score += Number(g.final_score ?? 0);
           const q = one(g.questions);
-          const lesson = one(q?.lessons)?.title;
-          if (q && lesson) {
-            const t = lessonTotals.get(lesson) ?? { got: 0, max: 0 };
+          const ls = one(q?.lessons);
+          const lesson = ls?.title;
+          if (q && ls && lesson) {
+            const t = lessonTotals.get(lesson) ?? { id: ls.id, got: 0, max: 0 };
             t.got += Number(g.final_score ?? 0);
             t.max += Number(q.max_score);
             lessonTotals.set(lesson, t);
@@ -628,7 +631,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
         };
       });
       const lessons = [...lessonTotals.entries()]
-        .map(([lesson, t]) => ({ lesson, mastery: t.max ? Math.round((t.got / t.max) * 100) : 0 }))
+        .map(([lesson, t]) => ({ lesson, lessonId: t.id, mastery: t.max ? Math.round((t.got / t.max) * 100) : 0 }))
         .sort((a, b) => a.mastery - b.mastery);
       return { papers, lessons };
     },

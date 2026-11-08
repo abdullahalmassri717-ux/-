@@ -197,6 +197,18 @@ insert into public.support_messages (ticket_id, body) select id, 'جرّب مر�
 select tests.eq((select count(*) from public.support_messages where from_admin), 1::bigint, 'الدعم: رد المدير مُعلَّم');
 rollback;
 
+-- ---------------------------------------------------------------- بنك الأسئلة وسجل أدوات الذكاء الاصطناعي
+begin;
+select tests.login('+970590000001');
+set local role authenticated;
+insert into public.bank_questions (organization_id, text) values (tests.org('individual_teacher'), 'جد مشتقة س²');
+select tests.eq((select count(*) from public.bank_questions), 1::bigint, 'البنك: المدرّس يرى سؤاله');
+select tests.throws($$insert into public.bank_questions (organization_id, text) values (tests.org('learning_center'), 'x')$$, 'البنك: لا يضيف لجهة ليس عضواً فيها');
+select tests.throws($$insert into public.ai_tool_runs (organization_id, task, model) values (tests.org('individual_teacher'), 'x', 'y')$$, 'سجل الأدوات: لا يكتبه المتصفح');
+select tests.login('+970590000011');
+select tests.eq((select count(*) from public.bank_questions), 0::bigint, 'البنك: معلم جهة أخرى لا يرى أسئلة غيره');
+rollback;
+
 -- ---------------------------------------------------------------- تسجيل مستخدم جديد
 begin;
 insert into auth.users (id, phone) values ('11111111-1111-4111-8111-111111111111', '970590000020');
