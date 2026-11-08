@@ -1,68 +1,116 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ScreenId } from '../../types';
-import { MOCK_STUDENTS, CURRENT_TEACHER } from '../../mockData';
 import {
   Send,
   MessageCircle,
-  FileText,
-  Volume2,
-  Play,
-  Pause,
   CheckCircle2,
-  XCircle,
-  Download,
   Copy,
   ArrowRight,
   TrendingUp,
-  Award
+  ExternalLink,
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
+import { useActiveOrg, useData, useLoad, errorMessage } from '../../data/DataContext';
+import { useSelected } from '../../data/selection';
+import type { QuestionGradeRow, StudentHistory, StudentRow, SubmissionRow } from '../../data/types';
+import { buildReport } from '../../lib/reportText';
+import { toInternationalPhone } from '../../lib/phone';
 
 interface ParentReportPageProps {
   onNavigate: (screen: ScreenId) => void;
 }
 
+const STATUS_CHIP: Record<string, { text: string; cls: string }> = {
+  sent: { text: 'أُرسلت ✓', cls: 'text-emerald-700 bg-emerald-50' },
+  failed: { text: 'فشلت', cls: 'text-red-700 bg-red-50' },
+  queued: { text: 'في الانتظار', cls: 'text-blue-700 bg-blue-50' },
+};
+
 export const ParentReportPage: React.FC<ParentReportPageProps> = ({ onNavigate }) => {
-  const [reportTab, setReportTab] = useState<'parent' | 'student' | 'teacher_summary'>('parent');
-  const [selectedStudentId, setSelectedStudentId] = useState<string>('s1');
-  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>(['s1', 's2', 's3', 's4']);
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [audioProgress, setAudioProgress] = useState(25);
+  const store = useData();
+  const org = useActiveOrg();
+  const [savedExamId, setSavedExamId] = useSelected('exam');
+  const [selectedSubId, setSelectedSubId] = useState<string>('');
+  const [checked, setChecked] = useState<string[]>([]);
+  const [advice, setAdvice] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const [sendSuccess, setSendSuccess] = useState(false);
 
-  const currentStudent = MOCK_STUDENTS.find(s => s.id === selectedStudentId) || MOCK_STUDENTS[0];
+  const examsQ = useLoad((st) => st.listAssessments());
+  const exams = examsQ.data ?? [];
+  const examId = exams.some((e) => e.id === savedExamId) ? savedExamId! : exams[0]?.id ?? '';
+  const exam = exams.find((e) => e.id === examId);
+  const subsQ = useLoad((st) => (examId ? st.listSubmissions(examId) : Promise.resolve([] as SubmissionRow[])), [examId]);
+  const gradesQ = useLoad((st) => (examId ? st.listAssessmentGrades(examId) : Promise.resolve([] as QuestionGradeRow[])), [examId]);
+  const studentsQ = useLoad((st) => st.listStudents());
+  // Only approved papers can be reported (the teacher must approve first).
+  const approved = useMemo(() => (subsQ.data ?? []).filter((s) => s.status === 'approved' && s.studentId), [subsQ.data]);
+  const statusesQ = useLoad((st) => st.listReportStatuses(approved.map((s) => s.id)), [approved.map((s) => s.id).join(',')]);
+  const statuses = statusesQ.data ?? {};
+  const studentOf = (s: SubmissionRow): StudentRow | undefined => (studentsQ.data ?? []).find((x) => x.id === s.studentId);
 
-  const handleToggleSelectAll = () => {
-    if (selectedStudentIds.length === MOCK_STUDENTS.length) {
-      setSelectedStudentIds([]);
-    } else {
-      setSelectedStudentIds(MOCK_STUDENTS.map(s => s.id));
-    }
+  useEffect(() => {
+    setChecked(approved.filter((s) => statuses[s.id] !== 'sent').map((s) => s.id));
+    if (!approved.some((s) => s.id === selectedSubId)) setSelectedSubId(approved[0]?.id ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [approved, statusesQ.data]);
+
+  const current = approved.find((s) => s.id === selectedSubId);
+  const currentStudent = current ? studentOf(current) : undefined;
+  const historyQ = useLoad(
+    (st) => (current?.studentId ? st.getStudentHistory(current.studentId) : Promise.resolve({ papers: [], lessons: [] } as StudentHistory)),
+    [current?.studentId],
+  );
+  const orgName = org.name;
+
+  const reportFor = (s: SubmissionRow, history?: StudentHistory) => {
+    const papers = history?.papers ?? [];
+    const prev = papers.find((p) => p.assessmentId !== examId);
+    return buildReport({
+      studentName: s.studentName,
+      examTitle: exam?.title ?? '',
+      organizationName: orgName,
+      score: s.totalScore,
+      total: exam?.totalScore ?? 0,
+      previousPct: prev && prev.total ? Math.round((prev.score / prev.total) * 100) : null,
+      grades: (gradesQ.data ?? []).filter((g) => g.submissionId === s.id),
+      advice,
+    });
   };
+  const preview = current ? reportFor(current, historyQ.data) : null;
 
-  const handleToggleStudent = (id: string) => {
-    if (selectedStudentIds.includes(id)) {
-      setSelectedStudentIds(selectedStudentIds.filter(i => i !== id));
-    } else {
-      setSelectedStudentIds([...selectedStudentIds, id]);
-    }
-  };
-
-  const handleBatchSend = () => {
+  const handleBatchSend = async () => {
+    const items = approved
+      .filter((s) => checked.includes(s.id))
+      .map((s) => {
+        const st = studentOf(s);
+        return { studentId: s.studentId!, submissionId: s.id, phone: st?.parentPhone || '', body: reportFor(s).text, consent: st?.parentApproval };
+      });
+    const noPhone = items.filter((i) => !toInternationalPhone(i.phone));
+    if (noPhone.length) return notify(`${noPhone.length} من الطلاب المحددين بلا رقم ولي أمر صحيح. صحّحه من شاشة الطلاب.`, 'warning');
+    const noConsent = items.filter((i) => !i.consent).length;
+    if (noConsent) notify(`تنبيه: ${noConsent} من أولياء الأمور لم تُسجَّل موافقتهم على رسائل واتساب.`, 'warning');
     setIsSending(true);
-    setTimeout(() => {
+    try {
+      const r = await store.queueReports(items);
+      notify(r.error ?? `أُرسل ${r.sent} تقريراً على واتساب`, r.error ? 'info' : 'success');
+      statusesQ.reload();
+      if (exam && r.sent && exam.status === 'completed') await store.updateAssessment(exam.id, { status: 'reports_sent' });
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
       setIsSending(false);
-      setSendSuccess(true);
-      setTimeout(() => setSendSuccess(false), 3000);
-    }, 1200);
+    }
   };
+
+  const manualLink = (() => {
+    const phone = toInternationalPhone(currentStudent?.parentPhone ?? '');
+    return phone && preview ? `https://wa.me/${phone.slice(1)}?text=${encodeURIComponent(preview.text)}` : null;
+  })();
 
   return (
     <div className="space-y-6 text-right max-w-6xl mx-auto pb-12">
-      {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
-        <div>
+        <div className="min-w-0">
           <button
             onClick={() => onNavigate('B9')}
             className="text-xs text-slate-500 hover:text-[#1E3A5F] flex items-center gap-1 cursor-pointer font-medium mb-1"
@@ -70,272 +118,192 @@ export const ParentReportPage: React.FC<ParentReportPageProps> = ({ onNavigate }
             <ArrowRight className="w-4 h-4" />
             <span>العودة لنتائج الامتحان</span>
           </button>
-          <h1 className="text-xl font-extrabold text-[#1E3A5F]">
-            معاينة تقرير ولي الأمر وإرسال رسائل واتساب
-          </h1>
-          <p className="text-xs text-slate-500">
-            توليد تقرير شخصي ملخص من صفحة واحدة لكل طالب مع رسالة واتساب وتسجيل صوتي مقروء.
-          </p>
+          <h1 className="text-xl font-extrabold text-[#1E3A5F]">تقارير أولياء الأمور على واتساب</h1>
+          <select
+            value={examId}
+            onChange={(e) => setSavedExamId(e.target.value)}
+            className="mt-1 max-w-full text-xs p-1.5 bg-white border border-slate-300 rounded-lg font-bold text-slate-700"
+          >
+            {exams.map((ex) => (
+              <option key={ex.id} value={ex.id}>{ex.title} · {ex.group}</option>
+            ))}
+          </select>
         </div>
 
         <button
           onClick={handleBatchSend}
-          disabled={selectedStudentIds.length === 0 || isSending}
+          disabled={checked.length === 0 || isSending}
           className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 self-start sm:self-auto"
         >
           <Send className="w-4 h-4" />
-          <span>
-            {isSending
-              ? 'جارِ الإرسال عبر واتساب...'
-              : `إرسال للمحددين (${selectedStudentIds.length} طلاب)`}
-          </span>
+          <span>{isSending ? 'جارِ الإرسال...' : `إرسال للمحددين (${checked.length})`}</span>
         </button>
       </div>
 
-      {sendSuccess && (
-        <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 text-xs flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>تم إرسال التقارير ورسائل الواتساب بنجاح لجميع أولياء الأمور المحددين!</span>
+      <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900">
+        تظهر هنا فقط الأوراق التي اعتمدتها. لا يصل أي تقرير لولي الأمر قبل اعتمادك.
+      </div>
+
+      {approved.length === 0 ? (
+        <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-10 text-center space-y-3">
+          <p className="text-sm text-slate-600">{subsQ.loading ? 'جاري التحميل...' : 'لا توجد أوراق معتمدة في هذا الامتحان بعد.'}</p>
+          <button onClick={() => onNavigate('B8')} className="bg-[#1E3A5F] text-white px-4 py-2 rounded-lg text-xs font-bold cursor-pointer">مراجعة التصحيح</button>
         </div>
-      )}
-
-      {/* Report Types Tabs (PDF requirement: الطالب، ولي الأمر، المدرّس) */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2 text-xs">
-        <button
-          onClick={() => setReportTab('parent')}
-          className={`px-4 py-2 rounded-lg font-bold transition-colors cursor-pointer ${
-            reportTab === 'parent' ? 'bg-[#1E3A5F] text-white' : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          تقرير ولي الأمر (PDF + واتساب)
-        </button>
-        <button
-          onClick={() => setReportTab('student')}
-          className={`px-4 py-2 rounded-lg font-bold transition-colors cursor-pointer ${
-            reportTab === 'student' ? 'bg-[#1E3A5F] text-white' : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          تقرير الطالب (الورقة المصححة + ما يحتاج أن يعمل عليه)
-        </button>
-        <button
-          onClick={() => setReportTab('teacher_summary')}
-          className={`px-4 py-2 rounded-lg font-bold transition-colors cursor-pointer ${
-            reportTab === 'teacher_summary' ? 'bg-[#1E3A5F] text-white' : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          المدرّس (ملخّص المجموعة الشامل)
-        </button>
-      </div>
-
-      {/* Main Grid: Student Selection Table (Left) + 1-Page PDF & WhatsApp Preview (Right) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Student Checklist Column (1 col) */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="font-extrabold text-[#1E3A5F] text-sm">قائمة الطلاب وحالة الرسائل</h3>
-            <button
-              onClick={handleToggleSelectAll}
-              className="text-[11px] text-blue-700 hover:underline font-bold cursor-pointer"
-            >
-              {selectedStudentIds.length === MOCK_STUDENTS.length ? 'إلغاء التحديد' : 'تحديد الكل'}
-            </button>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-extrabold text-[#1E3A5F] text-sm">الطلاب وحالة الرسائل</h3>
+              <button
+                onClick={() => setChecked(checked.length === approved.length ? [] : approved.map((s) => s.id))}
+                className="text-[11px] text-blue-700 hover:underline font-bold cursor-pointer"
+              >
+                {checked.length === approved.length ? 'إلغاء التحديد' : 'تحديد الكل'}
+              </button>
+            </div>
+            <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
+              {approved.map((s) => {
+                const st = studentOf(s);
+                const chip = STATUS_CHIP[statuses[s.id] ?? ''];
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => setSelectedSubId(s.id)}
+                    className={`p-2.5 rounded-xl flex items-center justify-between gap-2 cursor-pointer transition-colors ${selectedSubId === s.id ? 'bg-[#E8F0F8]' : 'hover:bg-slate-50'}`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={checked.includes(s.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={() => setChecked((prev) => (prev.includes(s.id) ? prev.filter((x) => x !== s.id) : [...prev, s.id]))}
+                        className="accent-[#1E3A5F] w-4 h-4 cursor-pointer"
+                      />
+                      <div className="min-w-0">
+                        <span className="font-bold text-xs text-slate-800 block truncate">{s.studentName}</span>
+                        <span className="text-[10px] text-slate-500 font-mono">{st?.parentPhone || 'بلا رقم'} · {s.totalScore}/{exam?.totalScore}</span>
+                      </div>
+                    </div>
+                    {chip ? (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0 ${chip.cls}`}>{chip.text}</span>
+                    ) : (
+                      <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">جاهز</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="text-xs space-y-1 pt-2 border-t border-slate-100">
+              <label className="font-bold text-slate-700">نصيحة عامة تُضاف لكل التقارير (اختياري)</label>
+              <textarea
+                rows={2}
+                value={advice}
+                onChange={(e) => setAdvice(e.target.value)}
+                placeholder="مثال: نوصي بمراجعة الدرس يومياً 20 دقيقة"
+                className="w-full p-2 border border-slate-300 rounded-lg"
+              />
+            </div>
           </div>
 
-          <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto space-y-1">
-            {MOCK_STUDENTS.map((st) => {
-              const isChecked = selectedStudentIds.includes(st.id);
-              const isCurrent = selectedStudentId === st.id;
-
-              return (
-                <div
-                  key={st.id}
-                  onClick={() => setSelectedStudentId(st.id)}
-                  className={`p-2.5 rounded-xl flex items-center justify-between cursor-pointer transition-colors ${
-                    isCurrent ? 'bg-[#E8F0F8]' : 'hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        handleToggleStudent(st.id);
-                      }}
-                      className="accent-[#1E3A5F] w-4 h-4 cursor-pointer"
-                    />
-                    <div>
-                      <span className="font-bold text-xs text-slate-800 block">{st.name}</span>
-                      <span className="text-[10px] text-slate-500 font-mono">
-                        {st.parentPhone} · {st.latestScore}%
-                      </span>
+          {current && preview && (
+            <div className="lg:col-span-2 space-y-4">
+              <div className="bg-white border-2 border-slate-300 rounded-2xl p-5 sm:p-8 shadow-md space-y-5 text-right font-sans">
+                <div className="flex items-center justify-between gap-3 border-b-2 border-slate-900 pb-4">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-[#1E3A5F] text-white flex items-center justify-center font-bold text-base shrink-0">د✓</div>
+                    <div className="min-w-0">
+                      <h3 className="font-black text-lg text-[#1E3A5F]">تقرير الأداء</h3>
+                      <p className="text-xs text-slate-500 truncate">{exam?.title}</p>
                     </div>
                   </div>
+                </div>
 
-                  {/* Status indicator: أُرسلت / فشلت / معلق (PDF requirement) */}
-                  <div>
-                    {st.id === 's1' || st.id === 's3' ? (
-                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">
-                        أُرسلت ✓
-                      </span>
-                    ) : st.id === 's5' ? (
-                      <span className="text-[10px] text-red-700 bg-red-50 px-1.5 py-0.5 rounded font-bold">
-                        فشلت (عدم اتصال)
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                        جاهز للإرسال
-                      </span>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-0.5 min-w-0">
+                    <span className="text-xs text-slate-400">اسم الطالب:</span>
+                    <h4 className="text-base font-extrabold text-slate-900 break-words">{current.studentName}</h4>
+                    <p className="text-xs text-slate-500">{exam?.group}</p>
+                  </div>
+                  <div className="flex items-center gap-4 text-left">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">الدرجة</span>
+                      <span className="text-3xl font-black text-[#1E3A5F] font-mono tabular-nums">{current.totalScore} / {exam?.totalScore}</span>
+                    </div>
+                    {preview.change !== null && (
+                      <div className={`border-r border-slate-300 pr-3 text-xs font-bold ${preview.change >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                        <span>{preview.change >= 0 ? `↗ +${preview.change}%` : `↘ ${preview.change}%`}</span>
+                        <span className="block text-[10px] text-slate-500 font-normal">مقارنة بالامتحان السابق</span>
+                      </div>
                     )}
                   </div>
                 </div>
-              );
-            })}
-          </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3.5 space-y-2">
+                    <strong className="block text-emerald-950 font-bold flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>نقاط القوة:</span>
+                    </strong>
+                    <ul className="space-y-1 text-[11px] text-emerald-900">
+                      {preview.strengths.length ? preview.strengths.map((x) => <li key={x}>• {x}</li>) : <li>—</li>}
+                    </ul>
+                  </div>
+                  <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3.5 space-y-2">
+                    <strong className="block text-amber-950 font-bold flex items-center gap-1.5">
+                      <TrendingUp className="w-4 h-4 text-[#D97706]" />
+                      <span>ما يحتاج تطويره:</span>
+                    </strong>
+                    <ul className="space-y-1 text-[11px] text-amber-900">
+                      {preview.weaknesses.length ? preview.weaknesses.map((x) => <li key={x} className="break-words">• {x}</li>) : <li>—</li>}
+                    </ul>
+                  </div>
+                </div>
+
+                {advice.trim() && (
+                  <div className="p-3.5 bg-blue-50/60 border border-blue-200 rounded-xl text-xs text-blue-950 space-y-1">
+                    <strong className="block font-bold">نصيحة المدرّس:</strong>
+                    <p className="text-[11px] leading-relaxed text-blue-900 break-words">{advice}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-emerald-900/10 border border-emerald-300 rounded-2xl p-4 text-right space-y-2 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-emerald-950 font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <MessageCircle className="w-4 h-4 text-emerald-700" />
+                    <span>الرسالة التي تصل ولي الأمر ({currentStudent?.parentPhone || 'بلا رقم'})</span>
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(preview.text);
+                          notify('تم نسخ نص الرسالة');
+                        } catch {
+                          notify('تعذّر النسخ', 'warning');
+                        }
+                      }}
+                      className="text-[11px] text-emerald-800 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>نسخ</span>
+                    </button>
+                    {manualLink && (
+                      <a href={manualLink} target="_blank" rel="noreferrer" className="text-[11px] text-emerald-800 hover:underline flex items-center gap-1">
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>أرسل يدوياً من واتساب</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-slate-200 text-slate-700 font-sans leading-relaxed text-[11px] whitespace-pre-wrap break-words">
+                  {preview.text}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-
-        {/* 1-Page PDF Layout Preview & WhatsApp Bubble (2 cols) */}
-        <div className="lg:col-span-2 space-y-4">
-          {/* Audio voice note player [قريباً] (PDF page 13: مشغل صوت لمعاينة التقرير مقروءاً بصوت عربي) */}
-          <div className="bg-gradient-to-r from-blue-900 to-[#1E3A5F] text-white rounded-xl p-4 flex items-center justify-between shadow-xs">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsPlayingAudio(!isPlayingAudio)}
-                className="w-10 h-10 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center transition-transform active:scale-95 cursor-pointer shadow-md"
-              >
-                {isPlayingAudio ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 mr-0.5 rtl:ml-0.5" />}
-              </button>
-              <div>
-                <div className="flex items-center gap-2">
-                  <Volume2 className="w-4 h-4 text-emerald-400" />
-                  <span className="font-bold text-xs">
-                    استماع للتقرير الصوتي المقروء لولي الأمر (دقيقة واحدة)
-                  </span>
-                  <span className="text-[10px] bg-white/20 text-blue-100 px-1.5 py-0.2 rounded">
-                    قريباً
-                  </span>
-                </div>
-                <p className="text-[11px] text-blue-200">
-                  تسجيل صوتي ذكي يقرأ نقاط القوة والضعف بصوت عربي واضح ومطمئن لولي الأمر.
-                </p>
-              </div>
-            </div>
-
-            <span className="font-mono text-xs text-blue-200 tabular-nums">00:48 / 01:00</span>
-          </div>
-
-          {/* 1-Page PDF Report Card Preview (PDF requirement: من صفحة واحدة PDF مع مقارنة ونقطتا قوة وضعف ونصيحة وشعار) */}
-          <div className="bg-white border-2 border-slate-300 rounded-2xl p-6 sm:p-8 shadow-md space-y-5 text-right font-sans relative">
-            {/* Report Header */}
-            <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-[#1E3A5F] text-white flex items-center justify-center font-bold text-base">
-                  د✓
-                </div>
-                <div>
-                  <h3 className="font-black text-lg text-[#1E3A5F]">منصة دِقّـة · بطاقة تقرير الأداء الفردي</h3>
-                  <p className="text-xs text-slate-500">
-                    تقرير اختبار الثانوية العامة الدوري · المعلم: <strong>{CURRENT_TEACHER.name}</strong>
-                  </p>
-                </div>
-              </div>
-              <div className="text-left font-mono text-xs text-slate-400">
-                DATE: 2026-11-06 <br />
-                DOC_REF: REP-1042
-              </div>
-            </div>
-
-            {/* Student Info & Score Strip */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-0.5">
-                <span className="text-xs text-slate-400">اسم الطالب:</span>
-                <h4 className="text-base font-extrabold text-slate-900">{currentStudent.name}</h4>
-                <p className="text-xs text-slate-500">{currentStudent.group}</p>
-              </div>
-
-              {/* Score and Comparison with previous exam (PDF requirement: مقارنة بالامتحان السابق) */}
-              <div className="flex items-center gap-4 text-left">
-                <div>
-                  <span className="text-[10px] text-slate-400 block">الدرجة المحققة</span>
-                  <span className="text-3xl font-black text-[#1E3A5F] font-mono tabular-nums">
-                    {currentStudent.latestScore} / {currentStudent.totalScore}
-                  </span>
-                </div>
-                <div className="border-r border-slate-300 pr-3 text-emerald-700 text-xs font-bold">
-                  <span>↗ +6 علامات</span>
-                  <span className="block text-[10px] text-slate-500 font-normal">مقارنة بالاختبار السابق</span>
-                </div>
-              </div>
-            </div>
-
-            {/* 2 Strengths & 2 Weaknesses (PDF requirement) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              {/* Strengths */}
-              <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3.5 space-y-2">
-                <strong className="block text-emerald-950 font-bold flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>نقطتا القوة في الامتحان:</span>
-                </strong>
-                <ul className="space-y-1 text-[11px] text-emerald-900">
-                  <li>• إتقان ممتاز لقواعد الاشتقاق الأساسية والاقترانات المثلثية.</li>
-                  <li>• خطوات مرتبة ونموذجية في كتابة القانون الرياضي والتعويض.</li>
-                </ul>
-              </div>
-
-              {/* Weaknesses */}
-              <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3.5 space-y-2">
-                <strong className="block text-amber-950 font-bold flex items-center gap-1.5">
-                  <TrendingUp className="w-4 h-4 text-[#D97706]" />
-                  <span>نقطتا الضعف (ما يحتاج تطويره):</span>
-                </strong>
-                <ul className="space-y-1 text-[11px] text-amber-900">
-                  <li>• خطأ حسابي في توحيد المقامات بالبسط عند إيجاد المشتقة الثانية.</li>
-                  <li>• التسرع في التبسيط النهائي لمسائل الاشتقاق الضمني.</li>
-                </ul>
-              </div>
-            </div>
-
-            {/* 2-line advice from teacher (PDF requirement: نصيحة من سطرين) */}
-            <div className="p-3.5 bg-blue-50/60 border border-blue-200 rounded-xl text-xs text-blue-950 space-y-1">
-              <strong className="block font-bold">نصيحة الأستاذ محمد لولي الأمر والطالب:</strong>
-              <p className="text-[11px] leading-relaxed text-blue-900">
-                «مستوى الطالب أحمد في تطور ملحوظ ودرجاته تؤهله للتفوق في التوجيهي بإذن الله. نوصي بحل تمارين علاجية إضافية في توحيد مقامات الكسور الجبرية والمراجعة الهادئة قبل تسليم الورقة».
-              </p>
-            </div>
-
-            {/* Footer with Daqqa logo and teacher signature */}
-            <div className="flex items-center justify-between border-t border-slate-200 pt-3 text-[11px] text-slate-500">
-              <span>توقيع المعلم المعتمد: <strong>أ. محمد المصري</strong></span>
-              <span className="font-bold text-[#1E3A5F]">منصة دِقّـة · فلسطين 🇵🇸</span>
-            </div>
-          </div>
-
-          {/* WhatsApp Message Preview Bubble (PDF requirement) */}
-          <div className="bg-emerald-900/10 border border-emerald-300 rounded-2xl p-4 text-right space-y-2 text-xs">
-            <div className="flex items-center justify-between text-emerald-950 font-bold">
-              <span className="flex items-center gap-1.5">
-                <MessageCircle className="w-4 h-4 text-emerald-700" />
-                <span>نص رسالة الواتساب التي ستصل هاتف ولي الأمر ({currentStudent.parentPhone})</span>
-              </span>
-              <button
-                onClick={() => notify('تم نسخ نص الرسالة إلى الحافظة!')}
-                className="text-[11px] text-emerald-800 hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                <span>نسخ النص</span>
-              </button>
-            </div>
-            <div className="bg-white p-3 rounded-xl border border-slate-200 text-slate-700 font-sans leading-relaxed text-[11px]">
-              السلام عليكم ولي أمر الطالب: <strong>{currentStudent.name}</strong> 🌸 <br />
-              نرفق لكم نتيجة ورقة اختبار الرياضيات (التفاضل وقواعد الاشتقاق): <br />
-              📊 <strong>الدرجة: {currentStudent.latestScore} / {currentStudent.totalScore}</strong> (مستوى ممتاز ↗ أعلى بـ 6 درجات عن السابق)<br />
-              💪 <strong>أهم نقاط القوة:</strong> إتقان ممتاز لقواعد الاشتقاق وتطبيق القوانين الوزارية.<br />
-              🎯 <strong>يحتاج تركيزاً على:</strong> توحيد المقامات والتبسيط النهائي لمسائل الاشتقاق الضمني.<br />
-              📎 مرفق أعلاه ملف PDF يحتوي على الورقة المصححة وملاحظات الأستاذ محمد المصري.
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

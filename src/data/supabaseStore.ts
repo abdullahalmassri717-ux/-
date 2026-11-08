@@ -12,6 +12,7 @@ import type {
   NewAssessmentInput,
   NewGroupInput,
   QuestionGradeRow,
+  ReportStatus,
   StudentInput,
   StudentRow,
   SubmissionRow,
@@ -758,6 +759,38 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       if (paths.length) await db.storage.from('submission-pages').remove(paths);
       const { error } = await db.from('submissions').delete().eq('id', submissionId);
       if (error) fail(error, 'تعذّر حذف الورقة.');
+    },
+
+    async listReportStatuses(submissionIds) {
+      if (!submissionIds.length) return {};
+      const { data, error } = await db
+        .from('reports')
+        .select('submission_id, status, created_at')
+        .in('submission_id', submissionIds)
+        .order('created_at', { ascending: true });
+      if (error) fail(error, 'تعذّر تحميل حالة التقارير.');
+      const out: Record<string, ReportStatus> = {};
+      for (const r of data ?? []) out[r.submission_id as string] = r.status as ReportStatus;
+      return out;
+    },
+
+    async queueReports(items) {
+      const rows = items.map((i) => ({
+        id: crypto.randomUUID(),
+        organization_id: orgId,
+        student_id: i.studentId,
+        submission_id: i.submissionId,
+        recipient_phone: toInternationalPhone(i.phone),
+        body: i.body,
+        status: 'queued',
+      }));
+      const bad = rows.find((r) => !r.recipient_phone);
+      if (bad) throw new DataError('أحد أرقام أولياء الأمور غير صحيح. صحّحه من شاشة الطلاب.');
+      const { error } = await db.from('reports').insert(rows);
+      if (error) fail(error, 'تعذّر تجهيز التقارير.');
+      const { data, error: fnError } = await db.functions.invoke('send-reports', { body: { reportIds: rows.map((r) => r.id) } });
+      if (fnError) return { queued: rows.length, sent: 0, error: 'حُفظت التقارير بانتظار تفعيل إرسال واتساب على الخادم.' };
+      return { queued: rows.length, sent: Number(data?.sent ?? 0), error: data?.error };
     },
 
     async approveSubmission(submissionId) {

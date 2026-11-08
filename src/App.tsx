@@ -381,7 +381,7 @@ export default function App() {
           {isReal && roleForPath(location.pathname) !== 'visitor' && roleForPath(location.pathname) !== 'student' && auth.status !== 'signed_in' ? (
             <div className="py-24 text-center text-sm text-slate-500">جاري التحميل...</div>
           ) : (
-            <DataProvider orgId={activeEntity.id} real={isReal}>
+            <DataProvider org={activeEntity} real={isReal}>
               {renderScreen()}
             </DataProvider>
           )}

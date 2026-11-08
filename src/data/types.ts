@@ -68,6 +68,8 @@ export interface PaperPage {
   mediaType: 'image/jpeg';
 }
 
+export type ReportStatus = 'draft' | 'queued' | 'sent' | 'failed';
+
 export interface SubmissionRow {
   id: string;
   assessmentId: string;
@@ -157,4 +159,8 @@ export interface DataStore {
   getPageUrls(submissionId: string): Promise<string[]>;
   assignStudent(submissionId: string, studentId: string | null): Promise<void>;
   deleteSubmission(submissionId: string): Promise<void>;
+  /** Latest WhatsApp report status per paper. */
+  listReportStatuses(submissionIds: string[]): Promise<Record<string, ReportStatus>>;
+  /** Puts approved results in the WhatsApp queue and asks the server to send them. */
+  queueReports(items: { studentId: string; submissionId: string; phone: string; body: string }[]): Promise<{ queued: number; sent: number; error?: string }>;
 }

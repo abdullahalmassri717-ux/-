@@ -3,18 +3,32 @@ import { supabase } from '../lib/supabase';
 import { createDemoStore } from './demoStore';
 import { createSupabaseStore } from './supabaseStore';
 import type { DataStore } from './types';
+import type { Entity } from '../types';
 
 // Gives every screen the data store for the organization that is active in the
 // top bar. Switching organization gives a fresh store, so no data leaks across.
 
 const DataContext = createContext<DataStore | null>(null);
+const OrgContext = createContext<Entity | null>(null);
 
-export const DataProvider: React.FC<{ orgId: string; real: boolean; children: React.ReactNode }> = ({ orgId, real, children }) => {
+/** The organization chosen in the top bar. */
+export function useActiveOrg(): Entity {
+  const org = useContext(OrgContext);
+  if (!org) throw new Error('useActiveOrg must be used inside <DataProvider>');
+  return org;
+}
+
+export const DataProvider: React.FC<{ org: Entity; real: boolean; children: React.ReactNode }> = ({ org, real, children }) => {
+  const orgId = org.id;
   const store = useMemo(
     () => (real && supabase ? createSupabaseStore(supabase, orgId) : createDemoStore()),
     [real, orgId],
   );
-  return <DataContext.Provider value={store}>{children}</DataContext.Provider>;
+  return (
+    <OrgContext.Provider value={org}>
+      <DataContext.Provider value={store}>{children}</DataContext.Provider>
+    </OrgContext.Provider>
+  );
 };
 
 export function useData(): DataStore {

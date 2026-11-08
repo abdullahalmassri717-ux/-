@@ -17,6 +17,7 @@ import type {
   AssessmentRow,
   DataStore,
   QuestionGradeRow,
+  ReportStatus,
   StudentRow,
   SubmissionRow,
   TaughtLessons,
@@ -41,6 +42,7 @@ interface DemoState {
   submissions: SubmissionRow[];
   grades: QuestionGradeRow[];
   pages: Record<string, string[]>;
+  reports: Record<string, ReportStatus>;
 }
 
 function initialState(): DemoState {
@@ -103,7 +105,7 @@ function initialState(): DemoState {
       pageCount: 1,
     };
   });
-  return { groups, students, progress: { g1: taughtG1 }, assessments, submissions, grades, pages: {} };
+  return { groups, students, progress: { g1: taughtG1 }, assessments, submissions, grades, pages: {}, reports: {} };
 }
 
 let state: DemoState | null = null;
@@ -419,6 +421,11 @@ export function createDemoStore(): DataStore {
       s().submissions = s().submissions.filter((x) => x.id !== id);
       s().grades = s().grades.filter((g) => g.submissionId !== id);
       return wait(undefined);
+    },
+    listReportStatuses: (ids) => wait(Object.fromEntries(ids.filter((id) => s().reports[id]).map((id) => [id, s().reports[id]]))),
+    async queueReports(items) {
+      for (const i of items) s().reports[i.submissionId] = 'queued';
+      return wait({ queued: items.length, sent: 0, error: 'وضع التجربة: الإرسال الآلي يعمل بعد ربط واتساب. استخدم زر «أرسل يدوياً» الآن.' });
     },
     async approveSubmission(id) {
       const sub = s().submissions.find((x) => x.id === id);
