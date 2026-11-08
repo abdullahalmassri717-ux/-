@@ -1,6 +1,6 @@
 #subject|البرمجة
 #sem|0
-#src|https://elearnps.blob.core.windows.net/public/Books/c5/prog5.pdf
+#book|c5_prog5
 U|البرمجة في ماين كرافت
 L|الوصول إلى الخروف
 L|تكسير الحطب

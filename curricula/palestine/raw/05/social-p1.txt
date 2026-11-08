@@ -1,6 +1,6 @@
 #subject|الدراسات الاجتماعية
 #sem|1
-#src|https://elearnps.blob.core.windows.net/public/Books/c5/dira5-p1.pdf
+#book|c5_dira5-p1
 U|الوحدة الأولى: كوكب الأرض
 L|شكل الأرض ومقوماتها وحركاتها
 L|سطح الأرض

@@ -1,6 +1,6 @@
 #subject|العلوم والحياة
 #sem|1
-#src|https://elearn.azureedge.net/Books/c5/sc5-p1.pdf
+#book|c5_sc5-p1
 U|الخلية
 L|المجهر واكتشاف الخلية
 L|الخلية وأنواعها

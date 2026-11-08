@@ -1,6 +1,6 @@
 #subject|الرياضيات
 #sem|1
-#src|https://elearn.azureedge.net/Books/c5/ma5-p1.pdf
+#book|c5_ma5-p1
 U|نظرية الأعداد
 L|العدد الأولي
 L|التحليل إلى العوامل الأولية

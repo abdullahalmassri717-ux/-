@@ -1,6 +1,6 @@
 #subject|الدراسات الاجتماعية
 #sem|2
-#src|https://elearnps.blob.core.windows.net/public/Books/c5/dira5-p2.pdf
+#book|c5_dira5-p2
 U|الوحدة الرابعة: استقرار الإنسان
 L|تحول الإنسان إلى ممارسة الزراعة
 L|تدجين الحيوانات

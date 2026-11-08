@@ -1,6 +1,6 @@
 #subject|الرياضيات
 #sem|2
-#src|https://elearn.azureedge.net/Books/c5/ma5-p2.pdf
+#book|c5_ma5-p2
 U|ضرب الأعداد الكسرية وقسمتها
 L|ضرب عدد كسري في عدد صحيح
 L|ضرب عدد كسري في كسر عادي

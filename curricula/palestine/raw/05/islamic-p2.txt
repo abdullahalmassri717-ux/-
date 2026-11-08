@@ -1,6 +1,6 @@
 #subject|التربية الإسلامية
 #sem|2
-#src|https://elearn.azureedge.net/Books/c5/re5-p2.pdf
+#book|c5_re5-p2
 U|القرآن الكريم
 L|سورة الواقعة (1)
 L|سورة الواقعة (2)

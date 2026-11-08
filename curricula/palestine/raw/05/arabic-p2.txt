@@ -1,6 +1,6 @@
 #subject|اللغة العربية
 #sem|2
-#src|https://elearn.azureedge.net/Books/c5/ar5-p2.pdf
+#book|c5_ar5-p2
 U|الوحدة الأولى: خصال الخير
 L|الاستماع: الجوهرة
 L|القراءة: خصال الخير

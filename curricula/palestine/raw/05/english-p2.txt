@@ -1,0 +1,24 @@
+#subject|اللغة الإنجليزية
+#sem|2
+#book|c5_en5-p2
+U|Unit 10: Ben and Amy's holiday
+O|Talking about holidays
+O|Talking about a wedding in Scotland
+U|Unit 11: The wolf's shoes
+O|Enjoying a story with a moral
+O|Talking about events in the past
+U|Unit 12: Omar and Rania's visit to Qalqilya
+O|Identifying specific items
+O|Identifying what you can do in Qalqilya
+U|Unit 13: Ben's blog
+O|Introducing features of a blog
+O|Talking about an accident in the past
+U|Unit 15: The 'Best of Palestine' tour
+O|Talking about an itinerary for a tour of Palestine
+O|Identifying different activities in places in Palestine
+U|Unit 16: Can I use it?
+O|Identifying items which help us
+O|Asking permission to borrow items
+U|Unit 17: What will happen?
+O|Talking about possible events in the future
+O|Predicting the future

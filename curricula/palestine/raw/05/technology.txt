@@ -1,6 +1,6 @@
 #subject|التكنولوجيا
 #sem|0
-#src|https://elearnps.blob.core.windows.net/public/Books/c5/it5.pdf
+#book|c5_it5
 U|نفكر بالتكنولوجيا
 L|التكنولوجيا في كل زمان
 L|تكنولوجيا الاتصال

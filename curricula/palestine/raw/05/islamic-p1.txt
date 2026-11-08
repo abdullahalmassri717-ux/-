@@ -1,6 +1,6 @@
 #subject|التربية الإسلامية
 #sem|1
-#src|https://elearn.azureedge.net/Books/c5/re5-p1.pdf
+#book|c5_re5-p1
 U|القرآن الكريم
 L|سورة التين
 L|سورة البروج
