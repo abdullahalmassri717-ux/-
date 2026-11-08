@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ScreenId } from '../../types';
 import { useData, useLoad, errorMessage } from '../../data/DataContext';
-import type { StudentInput } from '../../data/types';
+import type { StudentInput, StudentRow } from '../../data/types';
 import {
   Users,
   Search,
@@ -15,7 +15,11 @@ import {
   CheckCircle2,
   XCircle,
   Smartphone,
-  BookOpen
+  BookOpen,
+  Pencil,
+  Trash2,
+  Ban,
+  RotateCcw
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
 
@@ -59,8 +63,20 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   const [importGroupId, setImportGroupId] = useState('');
   const [importText, setImportText] = useState('');
 
+  // Edit / disable / delete a student
+  const [editing, setEditing] = useState<StudentRow | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editGroupId, setEditGroupId] = useState('');
+  const [editParentPhone, setEditParentPhone] = useState('');
+  const [editStudentPhone, setEditStudentPhone] = useState('');
+  const [editApproval, setEditApproval] = useState(false);
+  const [confirming, setConfirming] = useState<{ kind: 'disable' | 'delete'; student: StudentRow } | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+
   const groupsQ = useLoad((st) => st.listGroups());
   const studentsQ = useLoad((st) => st.listStudents());
+  const archivedQ = useLoad((st) => st.listArchivedStudents());
+  const archived = archivedQ.data ?? [];
   const curriculaQ = useLoad((st) => st.listCurricula());
   const groups = groupsQ.data ?? [];
   const students = studentsQ.data ?? [];
@@ -156,6 +172,77 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
       notify(errorMessage(e));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openEdit = (st: StudentRow) => {
+    setEditing(st);
+    setEditName(st.name);
+    setEditGroupId(st.groupId);
+    setEditParentPhone(st.parentPhone);
+    setEditStudentPhone(st.studentPhone ?? '');
+    setEditApproval(st.parentApproval);
+  };
+
+  const reloadAll = () => {
+    studentsQ.reload();
+    archivedQ.reload();
+    groupsQ.reload();
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editing) return;
+    if (editName.trim().split(/\s+/).length < 2) {
+      notify('اكتب اسم الطالب كاملاً (اسمين على الأقل)');
+      return;
+    }
+    setSaving(true);
+    try {
+      await store.updateStudent(editing.id, {
+        name: editName,
+        parentPhone: editParentPhone,
+        studentPhone: editStudentPhone,
+        parentApproval: editApproval,
+        ...(editGroupId !== editing.groupId ? { groupId: editGroupId } : {}),
+      });
+      notify('تم حفظ بيانات الطالب', 'success');
+      setEditing(null);
+      reloadAll();
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!confirming) return;
+    const { kind, student } = confirming;
+    setSaving(true);
+    try {
+      if (kind === 'disable') {
+        await store.archiveStudent(student.id);
+        notify(`تم تعطيل ${student.name}. تجده في «الطلاب المعطّلون» ويمكنك تفعيله متى شئت.`, 'success');
+      } else {
+        await store.deleteStudent(student.id);
+        notify(`تم حذف ${student.name} نهائياً`, 'success');
+      }
+      setConfirming(null);
+      reloadAll();
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRestore = async (st: StudentRow) => {
+    try {
+      await store.restoreStudent(st.id);
+      notify(`تم تفعيل ${st.name} من جديد`, 'success');
+      reloadAll();
+    } catch (e) {
+      notify(errorMessage(e));
     }
   };
 
@@ -388,15 +475,26 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                   )}
                 </td>
                 <td className="p-3.5 text-center">
-                  <button
-                    onClick={() => {
-                      onSelectStudent(st.id);
-                      onNavigate('B3');
-                    }}
-                    className="text-[#1E3A5F] hover:bg-blue-50 px-2.5 py-1 rounded text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    الملف الشخصي
-                  </button>
+                  <div className="inline-flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        onSelectStudent(st.id);
+                        onNavigate('B3');
+                      }}
+                      className="text-[#1E3A5F] hover:bg-blue-50 px-2.5 py-1 rounded text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      الملف الشخصي
+                    </button>
+                    <button onClick={() => openEdit(st)} title="تعديل" aria-label={`تعديل ${st.name}`} className="p-1.5 rounded text-slate-600 hover:bg-slate-100 cursor-pointer">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => setConfirming({ kind: 'disable', student: st })} title="تعطيل" aria-label={`تعطيل ${st.name}`} className="p-1.5 rounded text-amber-700 hover:bg-amber-50 cursor-pointer">
+                      <Ban className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => setConfirming({ kind: 'delete', student: st })} title="حذف" aria-label={`حذف ${st.name}`} className="p-1.5 rounded text-red-600 hover:bg-red-50 cursor-pointer">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -441,6 +539,18 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                 <span className="text-blue-700 font-bold text-xs">عرض الملف ←</span>
               </div>
             </div>
+
+            <div className="flex items-center gap-2 pt-2 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
+              <button onClick={() => openEdit(st)} className="flex-1 inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold cursor-pointer">
+                <Pencil className="w-3.5 h-3.5" /> تعديل
+              </button>
+              <button onClick={() => setConfirming({ kind: 'disable', student: st })} className="flex-1 inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold cursor-pointer">
+                <Ban className="w-3.5 h-3.5" /> تعطيل
+              </button>
+              <button onClick={() => setConfirming({ kind: 'delete', student: st })} className="flex-1 inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-bold cursor-pointer">
+                <Trash2 className="w-3.5 h-3.5" /> حذف
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -470,6 +580,117 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
           >
             {groups.length === 0 ? 'مجموعة جديدة' : 'إضافة طالب'}
           </button>
+        </div>
+      )}
+
+      {/* Disabled students */}
+      {archived.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+          <button
+            onClick={() => setShowArchived(!showArchived)}
+            aria-expanded={showArchived}
+            className="w-full p-3.5 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+          >
+            <span className="flex items-center gap-1.5">
+              <Ban className="w-4 h-4 text-amber-600" />
+              الطلاب المعطّلون ({archived.length})
+            </span>
+            <span className="text-[#1E3A5F]">{showArchived ? 'إخفاء' : 'عرض'}</span>
+          </button>
+          {showArchived && (
+            <div className="divide-y divide-slate-100 border-t border-slate-100">
+              <p className="p-3 text-[11px] text-slate-500 leading-relaxed">
+                الطالب المعطّل لا يظهر في القوائم، ولا يُحسب في الاشتراك، ولا يستطيع التسليم من رابط الامتحان. درجاته السابقة محفوظة.
+              </p>
+              {archived.map((st) => (
+                <div key={st.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="min-w-0">
+                    <span className="font-bold text-slate-700 block">{st.name}</span>
+                    <span className="text-[10px] text-slate-400 font-mono">رمز: {st.studentCode}{st.group ? ` · ${st.group.split('(')[0]}` : ''}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => handleRestore(st)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold cursor-pointer">
+                      <RotateCcw className="w-3.5 h-3.5" /> تفعيل
+                    </button>
+                    <button onClick={() => setConfirming({ kind: 'delete', student: st })} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 font-bold cursor-pointer">
+                      <Trash2 className="w-3.5 h-3.5" /> حذف
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Edit Student Modal */}
+      {editing && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 text-right space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="font-bold text-base text-[#1E3A5F]">تعديل بيانات الطالب</h3>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">اسم الطالب</label>
+                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg" />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">المجموعة</label>
+                <select value={editGroupId} onChange={(e) => setEditGroupId(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg">
+                  {!editing.groupId && <option value="">بدون مجموعة</option>}
+                  {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">رقم واتساب ولي الأمر</label>
+                <input type="tel" dir="ltr" value={editParentPhone} onChange={(e) => setEditParentPhone(e.target.value)} placeholder="0599000000" className="w-full p-2 border border-slate-300 rounded-lg font-mono text-right" />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-bold mb-1 flex items-center gap-1"><Smartphone className="w-3.5 h-3.5" /> رقم الطالب (اختياري)</label>
+                <input type="tel" dir="ltr" value={editStudentPhone} onChange={(e) => setEditStudentPhone(e.target.value)} placeholder="0599000000" className="w-full p-2 border border-slate-300 rounded-lg font-mono text-right" />
+              </div>
+              <label className="flex items-center gap-2 text-slate-700 cursor-pointer">
+                <input type="checkbox" checked={editApproval} onChange={(e) => setEditApproval(e.target.checked)} />
+                <span>ولي الأمر وافق على استلام التقارير على واتساب</span>
+              </label>
+              <p className="text-[11px] text-slate-500">رمز الطالب ({editing.studentCode}) لا يتغيّر.</p>
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              <button disabled={saving} onClick={handleSaveEdit} className="flex-1 bg-[#1E3A5F] text-white py-2 rounded-lg font-bold text-xs cursor-pointer disabled:opacity-60">
+                {saving ? 'جاري الحفظ...' : 'حفظ التعديلات'}
+              </button>
+              <button onClick={() => setEditing(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-4 rounded-lg font-medium text-xs cursor-pointer">
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm disable / delete */}
+      {confirming && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-right space-y-4 shadow-2xl">
+            <h3 className={`font-bold text-base ${confirming.kind === 'delete' ? 'text-red-700' : 'text-amber-800'}`}>
+              {confirming.kind === 'delete' ? `حذف ${confirming.student.name} نهائياً؟` : `تعطيل ${confirming.student.name}؟`}
+            </h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              {confirming.kind === 'delete'
+                ? 'سيُحذف الطالب وكل أوراقه ودرجاته ورسومه، ولا يمكن التراجع. إن كان الطالب ترك مؤقتاً فالأفضل «تعطيله» بدل الحذف.'
+                : 'سيختفي من القوائم ولن يُحسب في الاشتراك، ولن يقبل رابط التسليم رمزه. درجاته محفوظة، ويمكنك تفعيله لاحقاً من «الطلاب المعطّلون».'}
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                disabled={saving}
+                onClick={handleConfirm}
+                className={`flex-1 text-white py-2 rounded-lg font-bold text-xs cursor-pointer disabled:opacity-60 ${confirming.kind === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'}`}
+              >
+                {saving ? 'لحظة...' : confirming.kind === 'delete' ? 'نعم، احذف نهائياً' : 'نعم، عطّل الطالب'}
+              </button>
+              <button onClick={() => setConfirming(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-4 rounded-lg font-medium text-xs cursor-pointer">
+                إلغاء
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

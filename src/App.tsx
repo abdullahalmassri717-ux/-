@@ -31,6 +31,7 @@ import { ExamAnalyticsPage } from './components/groupB/ExamAnalyticsPage';
 import { ParentReportPage } from './components/groupB/ParentReportPage';
 import { SubscriptionPage } from './components/groupB/SubscriptionPage';
 import { CorrectedPaperViewPage } from './components/groupB/CorrectedPaperViewPage';
+import { getExamScope, setExamScope } from './data/examScope';
 import WhereWeReachedPage from './components/groupB/WhereWeReachedPage';
 import { TeacherDiagnosticAnalyticsPage } from './components/groupB/TeacherDiagnosticAnalyticsPage';
 
@@ -200,6 +201,7 @@ export default function App() {
       notify('إدارة الاشتراكات والفواتير خاصة بإدارة المدرسة فقط وغير متاحة لمعلمي المدرسة.', 'warning');
       return;
     }
+    setExamScope(null);
     setCurrentScreen(screen);
   };
 
@@ -292,7 +294,10 @@ export default function App() {
         return (
           <WhereWeReachedPage 
             onNavigate={handleNavigate} 
-            onOpenExamGen={() => handleNavigate('C1')} 
+            onOpenExamGen={(scope) => {
+              setExamScope(scope);
+              setCurrentScreen('C1');
+            }}
           />
         );
       case 'B15':
@@ -302,7 +307,7 @@ export default function App() {
       case 'C_HUB':
         return <AIToolsHubPage onNavigate={handleNavigate} onOpenAI={() => setIsAIOpen(true)} />;
       case 'C1':
-        return <GenerateExamTool onNavigate={handleNavigate} />;
+        return <GenerateExamTool onNavigate={handleNavigate} scope={getExamScope()} />;
       case 'C2':
         return <RemedialExercisesTool onNavigate={handleNavigate} />;
       case 'C3':
@@ -384,7 +389,12 @@ export default function App() {
       {/* 2. Main Workspace Layout with Right Sidebar for Desktop & Mobile Drawer */}
       <div className={`flex-1 flex w-full mx-auto ${currentScreen === 'A1' ? '' : 'max-w-7xl'}`}>
         {/* Main Content Viewport */}
-        <main className={currentScreen === 'A1' ? 'flex-1 min-w-0' : 'flex-1 p-3 sm:p-6 lg:p-8 min-w-0'}>
+        <main
+          className={`${currentScreen === 'A1' ? 'flex-1 min-w-0' : 'flex-1 p-3 sm:p-6 lg:p-8 min-w-0'} ${
+            // Room for the fixed bottom bar on phones, so the end of the page is not hidden behind it.
+            currentRole !== 'visitor' && currentRole !== 'student' ? 'pb-24 sm:pb-24 lg:pb-8' : ''
+          }`}
+        >
           {isReal && roleForPath(location.pathname) !== 'visitor' && roleForPath(location.pathname) !== 'student' && auth.status !== 'signed_in' ? (
             <div className="py-24 text-center text-sm text-slate-500">جاري التحميل...</div>
           ) : (

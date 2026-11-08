@@ -455,7 +455,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     async listGroups() {
       const { data, error } = await db
         .from('groups')
-        .select('id, name, label, grade_id, subject_id, schedule, group_students(left_at), group_lesson_progress(lesson_id)')
+        .select('id, name, label, grade_id, subject_id, schedule, group_students(left_at, students(status)), group_lesson_progress(lesson_id)')
         .eq('organization_id', orgId)
         .is('archived_at', null)
         .order('created_at');
@@ -463,7 +463,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       const out: Group[] = [];
       for (const g of (data ?? []) as unknown as {
         id: string; name: string; label: string | null; grade_id: string | null; subject_id: string | null; schedule: string | null;
-        group_students: { left_at: string | null }[]; group_lesson_progress: { lesson_id: string }[];
+        group_students: { left_at: string | null; students: { status: string } | { status: string }[] | null }[]; group_lesson_progress: { lesson_id: string }[];
       }[]) {
         const names = await curriculumNames(g.grade_id, g.subject_id);
         out.push({
@@ -476,7 +476,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
           curriculumName: names.curriculumName,
           gradeName: names.gradeName,
           subjectName: names.subjectName,
-          studentCount: (g.group_students ?? []).filter((s) => !s.left_at).length,
+          studentCount: (g.group_students ?? []).filter((s) => !s.left_at && one(s.students)?.status !== 'archived').length,
           avgScore: 0,
           schedule: g.schedule ?? '',
           totalLessonsCount: names.totalLessons,
@@ -587,7 +587,30 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
 
     async archiveStudent(id) {
       const { error } = await db.from('students').update({ status: 'archived' }).eq('id', id);
-      if (error) fail(error, 'تعذّر أرشفة الطالب.');
+      if (error) fail(error, 'تعذّر تعطيل الطالب.');
+    },
+
+    async listArchivedStudents() {
+      const { data, error } = await db
+        .from('students')
+        .select(STUDENT_COLUMNS)
+        .eq('organization_id', orgId)
+        .eq('status', 'archived')
+        .order('full_name');
+      if (error) fail(error, 'تعذّر تحميل الطلاب المعطّلين.');
+      return ((data ?? []) as unknown as StudentDb[]).map((s) => toStudent(s, new Map()));
+    },
+
+    async restoreStudent(id) {
+      const { error } = await db.from('students').update({ status: 'active' }).eq('id', id);
+      if (error) fail(error, 'تعذّر تفعيل الطالب.');
+    },
+
+    async deleteStudent(id) {
+      // RLS lets only the organization's owner delete; a teacher gets 0 rows back.
+      const { data, error } = await db.from('students').delete().eq('id', id).select('id');
+      if (error) fail(error, 'تعذّر حذف الطالب.');
+      if (!data?.length) throw new Error('حذف الطالب متاح لمالك الجهة فقط. يمكنك تعطيله بدلاً من ذلك.');
     },
 
     async getStudentHistory(id) {
@@ -651,6 +674,17 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
             { onConflict: 'group_id,lesson_id', ignoreDuplicates: true },
           )
         : await db.from('group_lesson_progress').delete().eq('group_id', groupId).eq('lesson_id', lessonId);
+      if (error) fail(error, 'تعذّر حفظ التقدّم.');
+    },
+
+    async setLessonsTaught(groupId, lessonIds, taught) {
+      if (!lessonIds.length) return;
+      const { error } = taught
+        ? await db.from('group_lesson_progress').upsert(
+            lessonIds.map((lessonId) => ({ group_id: groupId, organization_id: orgId, lesson_id: lessonId })),
+            { onConflict: 'group_id,lesson_id', ignoreDuplicates: true },
+          )
+        : await db.from('group_lesson_progress').delete().eq('group_id', groupId).in('lesson_id', lessonIds);
       if (error) fail(error, 'تعذّر حفظ التقدّم.');
     },
 

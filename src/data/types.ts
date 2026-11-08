@@ -162,11 +162,19 @@ export interface DataStore extends BillingStore, SchoolStore, AiStore {
   createStudent(input: StudentInput): Promise<void>;
   createStudents(inputs: StudentInput[]): Promise<number>;
   updateStudent(id: string, input: Partial<StudentInput>): Promise<void>;
+  /** «تعطيل»: the student stays saved but leaves lists, billing and the submission link. */
   archiveStudent(id: string): Promise<void>;
+  /** Disabled students, so the teacher can turn them back on. */
+  listArchivedStudents(): Promise<StudentRow[]>;
+  restoreStudent(id: string): Promise<void>;
+  /** Deletes the student and their papers for good (owners only). */
+  deleteStudent(id: string): Promise<void>;
   getStudentHistory(id: string): Promise<StudentHistory>;
   // «وين وصلنا»
   getTaughtLessons(groupId: string): Promise<TaughtLessons>;
   setLessonTaught(groupId: string, lessonId: string, taught: boolean): Promise<void>;
+  /** Same as setLessonTaught for many lessons in one request. */
+  setLessonsTaught(groupId: string, lessonIds: string[], taught: boolean): Promise<void>;
   /** Lessons this group was examined on, with mastery % from approved papers (null = not graded yet). */
   getExaminedLessons(groupId: string): Promise<Record<string, number | null>>;
   // Assessments

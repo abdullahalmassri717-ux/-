@@ -16,12 +16,15 @@ import {
 import { useData, useLoad, errorMessage } from '../../data/DataContext';
 import type { BankQuestion, DraftQuestion } from '../../data/ai';
 import { setExamDraft } from '../../data/examDraft';
+import type { ExamScope } from '../../data/examScope';
 import type { TaughtLessons } from '../../data/types';
 import { notify } from '../../lib/notify';
 
 interface GenerateExamToolProps {
   onNavigate: (screen: ScreenId) => void;
   preselectedLessonIds?: string[];
+  /** From «امتحان لهذا الدرس»: lock the screen to this group, subject and lesson(s). */
+  scope?: ExamScope | null;
 }
 
 type Item = DraftQuestion & { key: string; origin: 'ai' | 'bank'; sourceLabel: string; saved?: boolean };
@@ -34,24 +37,26 @@ const SOURCE_LABEL: Record<BankQuestion['source'], string> = {
   past_exam: 'امتحان سابق',
 };
 
-export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, preselectedLessonIds }) => {
+export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, preselectedLessonIds: preselectedProp, scope }) => {
+  const preselectedLessonIds = scope?.lessonIds ?? preselectedProp;
   const store = useData();
   const groupsQ = useLoad((st) => st.listGroups());
   const curriculaQ = useLoad((st) => st.listCurricula());
   const groups = groupsQ.data ?? [];
-  const [groupId, setGroupId] = useState('');
+  const [groupId, setGroupId] = useState(scope?.groupId ?? '');
   useEffect(() => {
     if (!groupId && groups.length) setGroupId(groups[0].id);
   }, [groups, groupId]);
   const group = groups.find((g) => g.id === groupId);
+  const subjectId = scope?.subjectId || group?.subjectId || '';
 
   const subject = useMemo(() => {
     for (const c of curriculaQ.data ?? [])
       for (const g of c.grades)
         for (const s of g.subjects)
-          if (s.id === group?.subjectId) return { curriculum: c.name, grade: g.name, subject: s.name, units: s.units };
+          if (s.id === subjectId) return { curriculum: c.name, grade: g.name, subject: s.name, units: s.units };
     return null;
-  }, [curriculaQ.data, group?.subjectId]);
+  }, [curriculaQ.data, subjectId]);
   const allLessons = useMemo(
     () => (subject?.units ?? []).flatMap((u) => u.lessons.map((l) => ({ id: l.id, title: l.title, outcome: l.learningOutcomes?.[0] ?? l.outcomes?.[0] ?? '' }))),
     [subject],
@@ -83,13 +88,17 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
   const [rejected, setRejected] = useState<{ text: string; reason: string }[]>([]);
 
   const hasUntaughtSelected = selectedLessons.some((id) => !taught[id]);
-  const visibleLessons = showAllLessons ? allLessons : allLessons.filter((l) => taught[l.id] || selectedLessons.includes(l.id));
+  const visibleLessons = scope
+    ? allLessons.filter((l) => scope.lessonIds.includes(l.id))
+    : showAllLessons
+      ? allLessons
+      : allLessons.filter((l) => taught[l.id] || selectedLessons.includes(l.id));
 
   const toggleLesson = (id: string) =>
     setSelectedLessons((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   const handleGenerate = async () => {
-    if (!group?.subjectId) return notify('اختر مجموعة مرتبطة بمادة أولاً');
+    if (!group || !subjectId) return notify('اختر مجموعة مرتبطة بمادة أولاً');
     if (!selectedLessons.length) return notify('اختر درساً واحداً على الأقل');
     setIsGenerating(true);
     setRejected([]);
@@ -97,7 +106,7 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
       const existing = new Set(items.map((i) => i.text));
       let fromBank: Item[] = [];
       if (sourceMode !== 'new_ai') {
-        const bank = await store.listBank(group.subjectId);
+        const bank = await store.listBank(subjectId);
         const wanted = sourceMode === 'bank_first' ? qCount : Math.floor(qCount / 2);
         fromBank = bank
           .filter((q) => q.lessonId && selectedLessons.includes(q.lessonId) && !existing.has(q.text))
@@ -108,7 +117,7 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
       let generated: Item[] = [];
       if (remaining > 0) {
         const r = await store.aiGenerateQuestions({
-          subjectId: group.subjectId,
+          subjectId,
           groupId: group.id,
           lessonIds: selectedLessons,
           count: remaining,
@@ -134,7 +143,7 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
     if (!fresh.length) return notify('هذه الأسئلة محفوظة في البنك');
     try {
       await store.addBankQuestions(
-        fresh.map((q) => ({ ...q, subjectId: group?.subjectId ?? null, source: 'ai_generated' as const, difficulty })),
+        fresh.map((q) => ({ ...q, subjectId: subjectId || null, source: 'ai_generated' as const, difficulty })),
       );
       const keys = new Set(fresh.map((q) => q.key));
       setItems((prev) => prev.map((q) => (keys.has(q.key) ? { ...q, saved: true } : q)));
@@ -147,7 +156,7 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
   const createExam = () => {
     if (!items.length) return notify('ولّد الأسئلة أولاً');
     setExamDraft({
-      title: subject ? `امتحان ${subject.subject}` : '',
+      title: scope && visibleLessons.length === 1 ? `امتحان ${visibleLessons[0].title}` : subject ? `امتحان ${subject.subject}` : '',
       groupId: group?.id ?? null,
       kind: 'exam',
       questions: items.map(({ lessonId, outcome, text, type, maxScore, modelAnswer, criteria }) => ({ lessonId, outcome, text, type, maxScore, modelAnswer, criteria })),
@@ -162,11 +171,11 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
           <button
-            onClick={() => onNavigate('B1')}
+            onClick={() => onNavigate(scope ? 'B14' : 'B1')}
             className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-[#1E3A5F] mb-2 font-bold cursor-pointer"
           >
             <ArrowRight className="w-3.5 h-3.5" />
-            <span>العودة للرئيسية</span>
+            <span>{scope ? 'العودة إلى «وين وصلنا»' : 'العودة للرئيسية'}</span>
           </button>
           <h1 className="text-2xl font-black text-[#1E3A5F] flex items-center gap-2">
             <Sparkles className="w-6 h-6 text-indigo-600" />
@@ -176,8 +185,11 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
             أسئلة من الدروس التي شرحتها فقط، مع نموذج إجابة ومعايير تصحيح، وفحص ثانٍ يتأكد أن كل سؤال يقيس ناتج تعلّم منها.
           </p>
         </div>
-        <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+        <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200 min-w-0">
           <span className="text-xs font-bold text-slate-700 shrink-0">المجموعة:</span>
+          {scope ? (
+            <span className="text-xs font-bold text-slate-900 truncate">{group?.name ?? '...'}</span>
+          ) : (
           <select
             value={groupId}
             onChange={(e) => {
@@ -192,8 +204,18 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
               </option>
             ))}
           </select>
+          )}
         </div>
       </div>
+
+      {scope && (
+        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-xs text-blue-900 leading-relaxed">
+          <strong className="block font-bold mb-1">امتحان لهذا الدرس فقط</strong>
+          الأسئلة ستكون من {visibleLessons.length === 1 ? `درس «${visibleLessons[0].title}»` : 'الدروس المختارة'} فقط
+          {subject ? `، مادة ${subject.subject}` : ''}
+          {group ? `، للمجموعة: ${group.name}` : ''}.
+        </div>
+      )}
 
       {!groupsQ.loading && !groups.length && (
         <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center text-sm text-slate-600 space-y-3">
@@ -284,15 +306,19 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
                 <span className="text-xs font-bold text-slate-700">الدروس:</span>
                 <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold">{selectedLessons.length} مختارة</span>
               </div>
-              <button
+              {!scope && <button
                 type="button"
                 onClick={() => setShowAllLessons(!showAllLessons)}
                 className="text-xs text-[#1E3A5F] hover:underline font-bold cursor-pointer"
               >
                 {showAllLessons ? 'الدروس المشروحة فقط' : 'أظهر كل دروس المادة'}
-              </button>
+              </button>}
             </div>
-            {!visibleLessons.length ? (
+            {!visibleLessons.length && scope ? (
+              <div className="p-4 border border-dashed border-slate-300 rounded-xl text-xs text-slate-500 text-center">
+                {curriculaQ.loading ? 'جاري تحميل الدرس...' : 'لم نجد هذا الدرس في مادة المجموعة. ارجع إلى «وين وصلنا» واختره من جديد.'}
+              </div>
+            ) : !visibleLessons.length ? (
               <div className="p-4 border border-dashed border-slate-300 rounded-xl text-xs text-slate-500 text-center space-y-2">
                 <p>لم تعلّم أي درس «مشروحاً» لهذه المجموعة بعد.</p>
                 <button type="button" onClick={() => setShowAllLessons(true)} className="text-[#1E3A5F] font-bold underline cursor-pointer">
