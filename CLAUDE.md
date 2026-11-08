@@ -35,6 +35,7 @@
 
 ## الوضع الحالي للكود
 - React 19 + TypeScript + Vite + Tailwind 4 + React Router 7. الواجهة كاملة (نحو 35 شاشة) لكنها **تعمل ببيانات وهمية** من `src/mockData.ts`.
+- قاعدة البيانات (المرحلة 1) في `supabase/`: الترحيلات، `seed.sql`، وفحوص الصلاحيات `supabase/checks/rls_checks.sql`. الشرح في `supabase/README.md`.
 - خريطة الشاشات والروابط في `src/routes.ts`. الشاشات مقسّمة في `src/components/groupA..E`.
 - الإشعارات داخل المنصة: `notify()` في `src/lib/notify.ts` (لا تستخدم `alert()`).
 - زر اللغة الإنجليزية غير مبني بعد: يحتاج ملفات ترجمة (i18n) لاحقاً.
