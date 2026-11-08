@@ -1,23 +1,98 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import QRCode from 'qrcode';
 import { ScreenId } from '../../types';
-import { MOCK_STUDENTS, CURRENT_TEACHER } from '../../mockData';
 import {
   Printer,
-  Download,
   QrCode,
   ArrowRight,
-  CheckCircle2,
-  FileText,
-  Users
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
+import { useLoad } from '../../data/DataContext';
+import { useSelected } from '../../data/selection';
+import type { AssessmentDetail, StudentRow } from '../../data/types';
 
 interface PrintAnswerSheetsPageProps {
   onNavigate: (screen: ScreenId) => void;
 }
 
+const ORDINALS = ['الأول', 'الثاني', 'الثالث', 'الرابع', 'الخامس', 'السادس', 'السابع', 'الثامن', 'التاسع', 'العاشر'];
+
+/** One printable A4 answer sheet for one student. */
+const AnswerSheet: React.FC<{ exam: AssessmentDetail; student: StudentRow; qr: string; className?: string }> = ({ exam, student, qr, className = '' }) => (
+  <div className={`bg-white border-2 border-slate-300 shadow-xl rounded-xl p-6 sm:p-8 max-w-2xl mx-auto space-y-5 text-right font-sans relative ${className}`}>
+    <div className="flex items-start justify-between gap-3 border-b-2 border-slate-900 pb-4">
+      <div className="space-y-1 min-w-0">
+        <span className="font-black text-lg text-slate-900 block">{exam.title}</span>
+        <p className="text-xs text-slate-600 font-bold">
+          {exam.subject && <>المادة: <strong>{exam.subject}</strong> · </>}المجموعة: <strong>{exam.group}</strong>
+        </p>
+        <div className="text-xs text-slate-800 flex flex-wrap gap-x-3 pt-1">
+          <span>الطالب: <strong className="text-sm text-[#1E3A5F]">{student.name}</strong></span>
+        </div>
+      </div>
+      <div className="border-2 border-slate-900 p-1.5 rounded-lg bg-white text-center shrink-0">
+        {qr ? <img src={qr} alt="رمز QR" className="w-20 h-20" /> : <div className="w-20 h-20" />}
+        <span className="text-base font-black font-mono text-slate-900 block tabular-nums tracking-widest" dir="ltr">
+          {student.studentCode}
+        </span>
+        <span className="text-[9px] text-slate-500 block">رمز الطالب</span>
+      </div>
+    </div>
+
+    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded text-[11px] text-slate-600 space-y-0.5">
+      <strong className="block text-slate-800">تعليمات:</strong>
+      <span>1. أجب داخل المربع المخصص لكل سؤال. 2. اكتب بقلم أزرق أو أسود بخط واضح. 3. لا تكتب فوق رمز QR ولا تطوِه.</span>
+    </div>
+
+    {exam.questions.map((q, i) => (
+      <div key={q.id} className="border border-slate-300 rounded-lg p-3 space-y-2 break-inside-avoid">
+        <div className="flex items-center justify-between gap-2 text-xs font-bold text-slate-800 border-b border-slate-200 pb-1.5">
+          <span className="min-w-0 break-words">إجابة السؤال {ORDINALS[i] ?? i + 1}{q.lesson ? ` (${q.lesson})` : ''}</span>
+          <span className="font-mono text-slate-500 tabular-nums shrink-0">[ {q.maxScore} ]</span>
+        </div>
+        <div className={`${q.type === 'multiple_choice' ? 'h-14' : q.type === 'short_answer' ? 'h-24' : 'h-44'} border border-dashed border-slate-200 rounded`} />
+      </div>
+    ))}
+
+    <div className="border-t border-slate-200 pt-3 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+      <span>دقة</span>
+      <span dir="ltr">{exam.submissionCode} · {student.studentCode}</span>
+    </div>
+  </div>
+);
+
 export const PrintAnswerSheetsPage: React.FC<PrintAnswerSheetsPageProps> = ({ onNavigate }) => {
-  const [selectedStudent, setSelectedStudent] = useState(MOCK_STUDENTS[0]);
+  const [savedExamId, setSavedExamId] = useSelected('exam');
+  const examsQ = useLoad((st) => st.listAssessments());
+  const exams = examsQ.data ?? [];
+  const examId = exams.some((e) => e.id === savedExamId) ? savedExamId! : exams[0]?.id ?? '';
+  const examQ = useLoad((st) => (examId ? st.getAssessment(examId) : Promise.resolve(null)), [examId]);
+  const studentsQ = useLoad((st) => st.listStudents());
+  const exam = examQ.data;
+  const students = useMemo(
+    () => (studentsQ.data ?? []).filter((s) => s.groupId === exam?.groupId),
+    [studentsQ.data, exam?.groupId],
+  );
+  const [selectedId, setSelectedId] = useState('');
+  const selectedStudent = students.find((s) => s.id === selectedId) ?? students[0];
+  const [qrs, setQrs] = useState<Record<string, string>>({});
+
+  // QR holds only the exam link code and the student's 4-digit code (no names).
+  useEffect(() => {
+    if (!exam) return;
+    let alive = true;
+    Promise.all(
+      students.map(async (s) => [s.id, await QRCode.toDataURL(`daqa:${exam.submissionCode}:${s.studentCode}`, { margin: 0, width: 160 })] as const),
+    ).then((pairs) => alive && setQrs(Object.fromEntries(pairs)));
+    return () => {
+      alive = false;
+    };
+  }, [exam, students]);
+
+  const printAll = () => {
+    if (!students.length) return notify('لا يوجد طلاب في مجموعة هذا الامتحان', 'warning');
+    window.print();
+  };
 
   return (
     <div className="space-y-6 text-right max-w-4xl mx-auto pb-12">
@@ -39,13 +114,13 @@ export const PrintAnswerSheetsPage: React.FC<PrintAnswerSheetsPageProps> = ({ on
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => notify('تم تجهيز ملف PDF جاهز للطباعة لـ 52 طالباً في المجموعة!')}
+            onClick={printAll}
             className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-2 shadow-2xs"
           >
-            <Download className="w-4 h-4" />
-            <span>تحميل PDF لكل الطلاب (52 ورقة)</span>
+            <Printer className="w-4 h-4" />
+            <span>طباعة / حفظ PDF لكل الطلاب ({students.length} ورقة)</span>
           </button>
 
           <button
@@ -63,99 +138,49 @@ export const PrintAnswerSheetsPage: React.FC<PrintAnswerSheetsPageProps> = ({ on
         <div>
           <strong className="block">ملاحظة تقنية حول رمز QR المطبوع:</strong>
           <span>
-            «الرمز يعرّف صاحب الورقة ورقم السؤال تلقائياً بدقة 100% دون الحاجة لقراءة اسم الطالب يدوياً».
+            رمز الطالب (4 أرقام) مطبوع بخط كبير بجانب رمز QR، فيتعرّف التصحيح على صاحب الورقة تلقائياً. لحفظ ملف PDF اختر «حفظ كـ PDF» من نافذة الطباعة.
           </span>
         </div>
       </div>
 
-      {/* Sheet Student Selector */}
-      <div className="flex items-center gap-2 text-xs">
-        <span className="font-bold text-slate-700">معاينة ورقة الطالب:</span>
+      {/* Exam & student selectors */}
+      <div className="flex flex-col sm:flex-row gap-2 text-xs">
         <select
-          value={selectedStudent.id}
-          onChange={(e) => {
-            const found = MOCK_STUDENTS.find(s => s.id === e.target.value);
-            if (found) setSelectedStudent(found);
-          }}
-          className="p-2 bg-white border border-slate-300 rounded-lg text-xs font-medium"
+          value={examId}
+          onChange={(e) => setSavedExamId(e.target.value)}
+          className="min-w-0 flex-1 p-2 bg-white border border-slate-300 rounded-lg font-bold"
         >
-          {MOCK_STUDENTS.map((st) => (
-            <option key={st.id} value={st.id}>
-              {st.name} (رمز: {st.studentCode})
-            </option>
+          {exams.length === 0 && <option value="">لا توجد امتحانات بعد</option>}
+          {exams.map((ex) => (
+            <option key={ex.id} value={ex.id}>{ex.title} ({ex.group})</option>
+          ))}
+        </select>
+        <select
+          value={selectedStudent?.id ?? ''}
+          onChange={(e) => setSelectedId(e.target.value)}
+          className="min-w-0 flex-1 p-2 bg-white border border-slate-300 rounded-lg"
+        >
+          {students.map((st) => (
+            <option key={st.id} value={st.id}>معاينة: {st.name} ({st.studentCode})</option>
           ))}
         </select>
       </div>
 
-      {/* Realistic A4 Paper Sheet Preview Container */}
-      <div className="bg-white border-2 border-slate-300 shadow-xl rounded-xl p-8 max-w-2xl mx-auto space-y-6 min-h-[700px] text-right font-sans relative">
-        {/* Paper Header with QR Code & Student Name */}
-        <div className="flex items-start justify-between border-b-2 border-slate-900 pb-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="font-black text-lg text-slate-900">منصة دِقّـة · ورقة إجابة رسمية</span>
-              <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-mono">
-                A4-STANDARD
-              </span>
-            </div>
-            <p className="text-xs text-slate-600 font-bold">
-              امتحان مبحث: <strong>الرياضيات (علمي)</strong> · المعلم: <strong>{CURRENT_TEACHER.name}</strong>
-            </p>
-            <div className="text-xs text-slate-800 space-x-3 rtl:space-x-reverse pt-1">
-              <span>الطالب: <strong className="text-sm text-[#1E3A5F]">{selectedStudent.name}</strong></span>
-              <span>المجموعة: <strong>{selectedStudent.group.split('(')[0]}</strong></span>
-              <span>الرمز: <strong className="font-mono text-sm tabular-nums">{selectedStudent.studentCode}</strong></span>
-            </div>
-          </div>
+      {exam && !exam.questions.length && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">هذا الامتحان بلا أسئلة بعد، لذلك الورقة بلا مربعات إجابة.</p>
+      )}
+      {!students.length && exam && <p className="text-xs text-slate-500 text-center">لا يوجد طلاب في مجموعة هذا الامتحان بعد.</p>}
 
-          {/* QR Code Graphic Box */}
-          <div className="border-2 border-slate-900 p-2 rounded-lg bg-white text-center space-y-1 shrink-0">
-            <div className="w-16 h-16 bg-slate-900 text-white flex flex-col items-center justify-center font-mono text-[8px] tracking-widest p-1">
-              <div className="grid grid-cols-4 gap-0.5 w-full h-full">
-                {Array.from({ length: 16 }).map((_, i) => (
-                  <div key={i} className={`${i % 2 === 0 ? 'bg-white' : 'bg-transparent'}`} />
-                ))}
-              </div>
-            </div>
-            <span className="text-[9px] font-mono text-slate-800 block tabular-nums">
-              ID: {selectedStudent.studentCode}
-            </span>
-          </div>
-        </div>
+      {exam && selectedStudent && <AnswerSheet exam={exam} student={selectedStudent} qr={qrs[selectedStudent.id] ?? ''} />}
 
-        {/* Instructions for Student */}
-        <div className="p-2.5 bg-slate-50 border border-slate-200 rounded text-[11px] text-slate-600 space-y-0.5">
-          <strong className="block text-slate-800">تعليمات حل الورقة:</strong>
-          <span>1. أجب داخل المربعات المخصصة لكل سؤال فقط. 2. اكتب بالقلم الجاف الأزرق أو الأسود بخط واضح. 3. لا تطوِ رمز QR الموجود بالأعلى.</span>
+      {/* Every student's sheet, shown only when printing */}
+      {exam && (
+        <div className="print-area print-only">
+          {students.map((st) => (
+            <AnswerSheet key={st.id} exam={exam} student={st} qr={qrs[st.id] ?? ''} className="print-sheet" />
+          ))}
         </div>
-
-        {/* Question Answer Box 1 */}
-        <div className="border border-slate-300 rounded-lg p-3 space-y-2">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-800 border-b border-slate-200 pb-1.5">
-            <span>إجابة السؤال الأول (الاشتقاق الضمني)</span>
-            <span className="font-mono text-slate-500 tabular-nums">الدرجة المخصصة: [ 20 ]</span>
-          </div>
-          <div className="h-44 border border-dashed border-slate-200 rounded p-2 text-slate-300 text-xs flex items-center justify-center font-mono">
-            [ مخصص لحل خطوات واشتقاق الطالب اليدوية ]
-          </div>
-        </div>
-
-        {/* Question Answer Box 2 */}
-        <div className="border border-slate-300 rounded-lg p-3 space-y-2">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-800 border-b border-slate-200 pb-1.5">
-            <span>إجابة السؤال الثاني (مشتقات الاقترانات الأسية والمماس)</span>
-            <span className="font-mono text-slate-500 tabular-nums">الدرجة المخصصة: [ 15 ]</span>
-          </div>
-          <div className="h-44 border border-dashed border-slate-200 rounded p-2 text-slate-300 text-xs flex items-center justify-center font-mono">
-            [ مخصص لحل خطوات واشتقاق الطالب اليدوية ]
-          </div>
-        </div>
-
-        <div className="border-t border-slate-200 pt-3 flex items-center justify-between text-[10px] text-slate-400 font-mono">
-          <span>منصة دقة - فلسطين © 2026</span>
-          <span>PAGE 1 OF 1 · EXAM_REF_2026_MATH</span>
-        </div>
-      </div>
+      )}
     </div>
   );
 };
