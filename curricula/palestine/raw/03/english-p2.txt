@@ -1,0 +1,24 @@
+#subject|اللغة الإنجليزية
+#sem|2
+#book|c3_en3-p2
+U|Unit 10: What's the time?
+O|Talking about the days of the week
+O|Saying the time and when things happen
+U|Unit 11: At the playground
+O|Talking about the playground
+O|Making suggestions
+U|Unit 12: Open Day
+O|Talking about school Open Day
+O|Saying what you do at your Open Day
+U|Unit 13: I'm wearing a scarf
+O|Talking about clothes
+O|Describing what you are wearing
+U|Unit 15: They're jumping!
+O|Talking about what you do in your free time
+O|Describing what you are doing
+U|Unit 16: I'm Palestinian
+O|Talking about where you're from
+O|Saying what languages you speak
+U|Unit 17: My favourite
+O|Describing sports
+O|Expressing likes and dislikes

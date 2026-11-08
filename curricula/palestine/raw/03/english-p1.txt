@@ -1,0 +1,24 @@
+#subject|اللغة الإنجليزية
+#sem|1
+#book|c3_en3-p1
+U|Unit 1: All about me
+O|Greeting people
+O|Giving information about yourself and others
+U|Unit 2: He's a doctor
+O|Talking about jobs
+O|Saying what members of your family do
+U|Unit 3: At the market
+O|Buying food
+O|Saying what food you like/don't like
+U|Unit 4: At the zoo
+O|Talking about animals
+O|Using colours and other words to describe things
+U|Unit 6: I don't feel well
+O|Saying what's wrong with you
+O|Giving and understanding advice
+U|Unit 7: My day
+O|Talking about your daily routine
+O|Saying when you do things
+U|Unit 8: It's sunny
+O|Talking about the weather
+O|Saying where people are
