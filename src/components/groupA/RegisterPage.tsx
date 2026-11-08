@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ScreenId, UserRole, EntityType, Entity } from '../../types';
 import {
   Check,
@@ -20,6 +20,14 @@ import {
   PhoneCall
 } from 'lucide-react';
 import { CURRICULA_DATA, PLATFORM_CONFIG } from '../../mockData';
+import { curriculumAdminApi } from '../../data/curriculumAdmin';
+
+type RegCurriculum = {
+  id: string;
+  name: string;
+  country: string;
+  grades: { id: string; name: string; subjects: { id: string; name: string; code?: string; status: 'draft' | 'published' }[] }[];
+};
 import { useAuth } from '../../lib/auth';
 import { FinishSignupWithWhatsApp } from './FinishSignupWithWhatsApp';
 
@@ -44,9 +52,25 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
   const [step, setStep] = useState<number>(1);
 
   // Teacher Form State
-  const [selectedCurriculumId, setSelectedCurriculumId] = useState<string>(CURRICULA_DATA[0].id);
-  const [selectedGradeIds, setSelectedGradeIds] = useState<string[]>(['grade_12']);
-  const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>(['math_scientific']);
+  // The curriculum list is data: the real one comes from the database (available curricula only).
+  const [curricula, setCurricula] = useState<RegCurriculum[]>(isReal ? [] : CURRICULA_DATA);
+  const [selectedCurriculumId, setSelectedCurriculumId] = useState<string>(isReal ? '' : CURRICULA_DATA[0].id);
+  const [selectedGradeIds, setSelectedGradeIds] = useState<string[]>(isReal ? [] : ['grade_12']);
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>(isReal ? [] : ['math_scientific']);
+  useEffect(() => {
+    if (!isReal) return;
+    curriculumAdminApi()
+      .load()
+      .then((all) => {
+        const list = all.filter((c) => c.isAvailable);
+        setCurricula(list);
+        if (list[0]) {
+          setSelectedCurriculumId(list[0].id);
+          if (list[0].grades[0]) setSelectedGradeIds([list[0].grades[0].id]);
+        }
+      })
+      .catch(() => setCurricula([]));
+  }, [isReal]);
   // Demo mode keeps sample values so the prototype can be clicked through quickly.
   const [teacherName, setTeacherName] = useState(isReal ? auth.profile?.fullName ?? '' : 'أ. محمد المصري');
   const [teacherPhone, setTeacherPhone] = useState(isReal ? '' : '0599123456');
@@ -70,7 +94,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
   const [callBooked, setCallBooked] = useState(false);
 
   // Active Curriculum Data
-  const currentCurriculum = CURRICULA_DATA.find((c) => c.id === selectedCurriculumId) || CURRICULA_DATA[0];
+  const currentCurriculum: RegCurriculum = curricula.find((c) => c.id === selectedCurriculumId) ?? curricula[0] ?? { id: '', name: '', country: '', grades: [] };
 
   // Filter available grades in curriculum
   const availableGrades = currentCurriculum.grades;
@@ -286,7 +310,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                 value={selectedCurriculumId}
                 onChange={(e) => {
                   setSelectedCurriculumId(e.target.value);
-                  const curr = CURRICULA_DATA.find((c) => c.id === e.target.value);
+                  const curr = curricula.find((c) => c.id === e.target.value);
                   if (curr && curr.grades.length > 0) {
                     setSelectedGradeIds([curr.grades[0].id]);
                     if (curr.grades[0].subjects.length > 0) {
@@ -296,7 +320,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                 }}
                 className="w-full p-2.5 bg-[#F7F8FA] border border-slate-300 rounded-xl font-bold text-slate-800"
               >
-                {CURRICULA_DATA.map((c) => (
+                {curricula.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} ({c.country})
                   </option>
