@@ -1,0 +1,21 @@
+#subject|اللغة الإنجليزية
+#sem|1
+#book|c8_en8-p1
+U|Unit 1: Hello World!
+O|Using greetings and focussing on a topic of conversation
+O|Writing a letter or email
+U|Unit 2: A taste of Palestinian culture
+O|Talking about ability
+O|Talking about habitual action in the past (used to)
+U|Unit 3: Going to a national park
+O|Talking about experiences (Have you ever ...?)
+O|Writing a page of your diary
+U|Unit 4: How to get healthy
+O|Giving advice and making suggestions
+O|Sharing problems, suggestions and advice
+U|Unit 5: People and games
+O|Talking about ownership
+O|Writing a true story
+U|Unit 6: Friends
+O|Making suggestions and making things clear
+O|Writing a problem letter and an answer to it (conditional type 1)

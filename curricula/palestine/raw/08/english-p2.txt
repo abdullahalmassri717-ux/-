@@ -1,0 +1,21 @@
+#subject|اللغة الإنجليزية
+#sem|2
+#book|c8_en8-p2
+U|Unit 8: Different people, different clothes
+O|Making comparisons
+O|Buying and selling
+U|Unit 9: The world of food
+O|Talking about quantities
+O|Planning a class picnic
+U|Unit 10: Back home in Palestine
+O|Identifying people and things (relative clauses)
+O|Describing a photo of friends
+U|Unit 11: A Palestinian wedding
+O|Making and responding to offers
+O|Talking about purpose
+U|Unit 12: Finding out about names
+O|Reporting statements, questions and responses
+O|Writing a formal letter
+U|Unit 13: When Islam came to Spain
+O|Finding out about personal routines
+O|Describing a famous Palestinian building
