@@ -1,0 +1,24 @@
+#subject|اللغة الإنجليزية
+#sem|2
+#book|c7_en7-p2
+U|Unit 10: Technology
+O|Talking about technology
+O|Reporting statements
+U|Unit 11: Visiting a city
+O|Talking about cities/towns
+O|Writing an informal letter
+U|Unit 12: The arts and crafts of Palestine
+O|Talking about arts and crafts
+O|Asking for, giving and following directions
+U|Unit 13: Table manners
+O|Talking about table manners and food
+O|Ordering food in a restaurant
+U|Unit 15: Embroidery
+O|Talking about Palestinian embroidery
+O|Expressing intentions and promises
+U|Unit 16: The talking world
+O|Talking about communications
+O|Expressing obligation (have to)
+U|Unit 17: Let's go for a picnic!
+O|Planning and talking about a picnic
+O|Expressing possibility (may, might)

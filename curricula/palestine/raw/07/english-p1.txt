@@ -1,0 +1,24 @@
+#subject|اللغة الإنجليزية
+#sem|1
+#book|c7_en7-p1
+U|Unit 1: Oh, hello!
+O|Using greetings and talking about personal communication
+O|Writing an email
+U|Unit 2: World languages
+O|Discussing world languages and international communication
+O|Describing changes (present continuous)
+U|Unit 3: Animal magic
+O|Talking about animals and animal communication
+U|Unit 4: Keep in touch!
+O|Making and responding to telephone calls
+O|Saying telephone numbers
+O|Writing an email
+U|Unit 6: Goal!
+O|Talking about football and other sports
+O|Present perfect with just, already, yet
+U|Unit 7: The craft show
+O|Talking about crafts and a school crafts show
+O|Writing an informal letter
+U|Unit 8: The hike
+O|Talking about a hike
+O|Giving instructions and advice (should)
