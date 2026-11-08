@@ -18,7 +18,7 @@ import { notify } from '../../lib/notify';
 interface WhereWeReachedPageProps {
   groupId?: string;
   onNavigate?: (screenId: ScreenId) => void;
-  onOpenExamGen?: (lessonIds: string[]) => void;
+  onOpenExamGen?: (scope: { groupId: string; subjectId: string; lessonIds: string[] }) => void;
 }
 
 export default function WhereWeReachedPage({
@@ -53,36 +53,39 @@ export default function WhereWeReachedPage({
   for (const id of Object.keys(examined)) lessonStatuses[id] = 'examined';
   const masteryOf = (lessonId: string) => examined[lessonId] ?? null;
 
-  // Expanded units (all open by default)
-  const [collapsedUnits, setCollapsedUnits] = useState<Record<string, boolean>>({});
+  // Units start closed: the teacher sees the units first and opens one to see its lessons.
+  const [openUnits, setOpenUnits] = useState<Record<string, boolean>>({});
 
   // Expanded lesson details (outcomes & terms)
   const [expandedLessonDetails, setExpandedLessonDetails] = useState<Record<string, boolean>>({});
 
   const toggleUnit = (unitId: string) => {
-    setCollapsedUnits(prev => ({ ...prev, [unitId]: !prev[unitId] }));
+    setOpenUnits(prev => ({ ...prev, [unitId]: !prev[unitId] }));
   };
 
   const toggleLessonDetails = (lessonId: string) => {
     setExpandedLessonDetails(prev => ({ ...prev, [lessonId]: !prev[lessonId] }));
   };
 
-  const saveTaught = async (lessonIds: string[], value: boolean) => {
+  /** Marks lessons taught (`teach`) and not taught (`unteach`) in one go: shown at once, then saved. */
+  const saveTaught = async (teach: string[], unteach: string[] = []): Promise<boolean> => {
+    if (!selectedGroupId || (!teach.length && !unteach.length)) return true;
     const before = taughtQ.data ?? {};
-    // Show the change at once, then save.
+    const now = new Date().toISOString();
     taughtQ.setData(() => {
       const next = { ...before };
-      for (const id of lessonIds) {
-        if (value) next[id] = next[id] ?? new Date().toISOString();
-        else delete next[id];
-      }
+      for (const id of teach) next[id] = next[id] ?? now;
+      for (const id of unteach) delete next[id];
       return next;
     });
     try {
-      for (const id of lessonIds) await store.setLessonTaught(selectedGroupId, id, value);
+      if (teach.length) await store.setLessonsTaught(selectedGroupId, teach, true);
+      if (unteach.length) await store.setLessonsTaught(selectedGroupId, unteach, false);
+      return true;
     } catch (e) {
       taughtQ.setData(before);
       notify(errorMessage(e));
+      return false;
     }
   };
 
@@ -91,26 +94,37 @@ export default function WhereWeReachedPage({
       if (!(lessonId in examined)) {
         notify('تظهر «امتُحن» تلقائياً بعد إنشاء امتحان فيه أسئلة من هذا الدرس. علّمناه كمشروح.', 'info');
       }
-      if (!(lessonId in taught)) void saveTaught([lessonId], true);
+      if (!(lessonId in taught)) void saveTaught([lessonId]);
       return;
     }
     if (newStatus === 'not_taught' && lessonId in examined) {
       notify('هذا الدرس دخل في امتحان سابق، لكن علّمناه «لم يُشرح» كما طلبت.', 'info');
     }
-    void saveTaught([lessonId], newStatus !== 'not_taught');
+    if (newStatus === 'not_taught') void saveTaught([], [lessonId]);
+    else void saveTaught([lessonId]);
   };
 
-  // Fast forward button: "وصلنا لحد هذا الدرس" -> Marks all previous lessons as 'taught'
-  const markUpToLesson = (targetLessonId: string) => {
+  // «وصلنا لهون»: this lesson and every lesson before it are taught, and the
+  // lessons after it go back to «لم يُشرح» (unless an exam already covered them).
+  const markUpToLesson = async (targetLessonId: string) => {
     if (!subject) return;
-    const allLessons = subject.units.flatMap(u => u.lessons);
-    const targetIndex = allLessons.findIndex(l => l.id === targetLessonId);
+    const ordered = subject.units.flatMap(u => u.lessons);
+    const targetIndex = ordered.findIndex(l => l.id === targetLessonId);
     if (targetIndex === -1) return;
-    const ids = allLessons.slice(0, targetIndex + 1).map((l) => l.id).filter((id) => !(id in taught));
-    if (ids.length) void saveTaught(ids, true);
+    const teach = ordered.slice(0, targetIndex + 1).map((l) => l.id).filter((id) => !(id in taught));
+    const unteach = ordered.slice(targetIndex + 1).map((l) => l.id).filter((id) => id in taught && !(id in examined));
+    if (!teach.length && !unteach.length) {
+      notify(`مسجّل مسبقاً: وصلتم إلى «${ordered[targetIndex].title}».`, 'info');
+      return;
+    }
+    if (await saveTaught(teach, unteach)) {
+      notify(`تم: وصلتم إلى «${ordered[targetIndex].title}» (${targetIndex + 1} من ${ordered.length} دروس مشروحة).`, 'success');
+    }
   };
 
   const allLessons = subject?.units.flatMap(u => u.lessons) || [];
+  // The furthest lesson marked taught: where the group has reached.
+  const reachedLessonId = [...allLessons].reverse().find((l) => lessonStatuses[l.id])?.id ?? null;
   const taughtCount = allLessons.filter(l => lessonStatuses[l.id] === 'taught' || lessonStatuses[l.id] === 'examined').length;
   const examinedCount = allLessons.filter(l => lessonStatuses[l.id] === 'examined').length;
   const progressPercent = allLessons.length > 0 ? Math.round((taughtCount / allLessons.length) * 100) : 0;
@@ -213,7 +227,7 @@ export default function WhereWeReachedPage({
       {/* Units & Lessons Interactive Tree */}
       <div className="space-y-4">
         {subject?.units.map((unit) => {
-          const isExpanded = !collapsedUnits[unit.id];
+          const isExpanded = !!openUnits[unit.id];
           const unitLessons = unit.lessons;
           const unitTaught = unitLessons.filter(l => lessonStatuses[l.id] === 'taught' || lessonStatuses[l.id] === 'examined').length;
 
@@ -222,14 +236,16 @@ export default function WhereWeReachedPage({
               {/* Unit Header */}
               <div 
                 onClick={() => toggleUnit(unit.id)}
-                className="p-4 bg-slate-50/70 hover:bg-slate-50 flex items-center justify-between cursor-pointer border-b border-slate-100 select-none transition-colors"
+                role="button"
+                aria-expanded={isExpanded}
+                className="p-4 bg-slate-50/70 hover:bg-slate-50 flex items-center justify-between gap-3 cursor-pointer border-b border-slate-100 select-none transition-colors"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   <div className="w-8 h-8 rounded-lg bg-[#1E3A5F]/10 text-[#1E3A5F] flex items-center justify-center font-black text-sm">
                     {unit.order}
                   </div>
                   <div>
-                    <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                    <h3 className="font-bold text-slate-900 text-base flex flex-wrap items-center gap-x-2">
                       {unit.title}
                       <span className="text-xs font-normal text-slate-500">
                         ({unitTaught} من {unitLessons.length} دروس مُشروحة)
@@ -238,10 +254,13 @@ export default function WhereWeReachedPage({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
                   <span className="text-xs font-bold text-slate-500 bg-white border border-slate-200 px-2.5 py-1 rounded-lg">
                     {unitLessons.length} دروس
                   </span>
+                  {unitLessons.some((l) => l.id === reachedLessonId) && (
+                    <span className="text-xs font-bold text-white bg-[#1E3A5F] px-2.5 py-1 rounded-lg">وصلنا هنا</span>
+                  )}
                   <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                 </div>
               </div>
@@ -269,6 +288,9 @@ export default function WhereWeReachedPage({
                               <h4 className="font-bold text-slate-900 text-sm">
                                 {lesson.title}
                               </h4>
+                              {lesson.id === reachedLessonId && (
+                                <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-[#1E3A5F] text-white">وصلنا هنا</span>
+                              )}
                               
                               {/* Mastery Tag if examined */}
                               {status === 'examined' && (
@@ -372,7 +394,7 @@ export default function WhereWeReachedPage({
                             {/* Quick Shortcut: "وصلنا لحد هذا الدرس" */}
                             <button
                               type="button"
-                              onClick={() => markUpToLesson(lesson.id)}
+                              onClick={() => void markUpToLesson(lesson.id)}
                               title="تعليم كل الدروس السابقة حتى هذا الدرس كمشروحة دفعة واحدة"
                               className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 font-bold flex items-center gap-1 transition-colors"
                             >
@@ -381,14 +403,14 @@ export default function WhereWeReachedPage({
                             </button>
 
                             {/* Create Exam on this lesson */}
-                            {onOpenExamGen && (
+                            {onOpenExamGen && subject && (
                               <button
                                 type="button"
-                                onClick={() => onOpenExamGen([lesson.id])}
+                                onClick={() => onOpenExamGen({ groupId: selectedGroupId, subjectId: subject.id, lessonIds: [lesson.id] })}
                                 className="text-xs px-2.5 py-1.5 rounded-lg bg-[#1E3A5F]/10 hover:bg-[#1E3A5F]/20 text-[#1E3A5F] font-bold flex items-center gap-1 transition-colors"
                               >
                                 <Sparkles className="w-3.5 h-3.5" />
-                                امتحان بهذا الدرس
+                                امتحان لهذا الدرس
                               </button>
                             )}
                           </div>

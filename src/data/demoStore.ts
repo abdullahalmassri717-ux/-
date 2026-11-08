@@ -55,6 +55,7 @@ function demoLessonId(title: string): string | null {
 interface DemoState {
   groups: Group[];
   students: StudentRow[];
+  archivedStudents: StudentRow[];
   progress: Record<string, TaughtLessons>;
   assessments: AssessmentDetail[];
   submissions: SubmissionRow[];
@@ -123,7 +124,7 @@ function initialState(): DemoState {
       pageCount: 1,
     };
   });
-  return { groups, students, progress: { g1: taughtG1 }, assessments, submissions, grades, pages: {}, reports: {} };
+  return { groups, students, archivedStudents: [], progress: { g1: taughtG1 }, assessments, submissions, grades, pages: {}, reports: {} };
 }
 
 let state: DemoState | null = null;
@@ -275,7 +276,27 @@ export function createDemoStore(): DataStore {
       return wait(undefined);
     },
     async archiveStudent(id) {
+      const st = s().students.find((x) => x.id === id);
+      if (st) s().archivedStudents.push(st);
+      const g = s().groups.find((x) => x.id === st?.groupId);
+      if (g) g.studentCount = Math.max(0, g.studentCount - 1);
       s().students = s().students.filter((x) => x.id !== id);
+      return wait(undefined);
+    },
+    listArchivedStudents: () => wait(s().archivedStudents.map((x) => ({ ...x }))),
+    async restoreStudent(id) {
+      const st = s().archivedStudents.find((x) => x.id === id);
+      if (st) s().students.push(st);
+      const g = s().groups.find((x) => x.id === st?.groupId);
+      if (g) g.studentCount += 1;
+      s().archivedStudents = s().archivedStudents.filter((x) => x.id !== id);
+      return wait(undefined);
+    },
+    async deleteStudent(id) {
+      const g = s().groups.find((x) => x.id === s().students.find((st) => st.id === id)?.groupId);
+      if (g) g.studentCount = Math.max(0, g.studentCount - 1);
+      s().students = s().students.filter((x) => x.id !== id);
+      s().archivedStudents = s().archivedStudents.filter((x) => x.id !== id);
       return wait(undefined);
     },
 
@@ -305,6 +326,14 @@ export function createDemoStore(): DataStore {
       const p = (s().progress[groupId] ??= {});
       if (taught) p[lessonId] = new Date().toISOString();
       else delete p[lessonId];
+      return wait(undefined);
+    },
+    async setLessonsTaught(groupId, lessonIds, taught) {
+      const p = (s().progress[groupId] ??= {});
+      for (const id of lessonIds) {
+        if (taught) p[id] ??= new Date().toISOString();
+        else delete p[id];
+      }
       return wait(undefined);
     },
 
