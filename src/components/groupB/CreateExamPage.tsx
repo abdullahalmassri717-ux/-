@@ -1,6 +1,21 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ScreenId, QuestionRubric } from '../../types';
-import { MOCK_GROUPS, MOCK_RUBRICS } from '../../mockData';
+import { useData, useLoad, errorMessage } from '../../data/DataContext';
+import { setSelected } from '../../data/selection';
+
+type DraftQuestion = QuestionRubric & { lessonId: string | null };
+
+const blankQuestion = (n: number): DraftQuestion => ({
+  id: `q${Date.now()}_${n}`,
+  questionNumber: n,
+  text: '',
+  type: 'problem_solving',
+  maxScore: 10,
+  lesson: '',
+  lessonId: null,
+  modelAnswer: '',
+  criteria: [{ description: '', points: 10 }],
+});
 import {
   ArrowRight,
   Sparkles,
@@ -27,13 +42,30 @@ interface CreateExamPageProps {
 
 export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) => {
   const [examType, setExamType] = useState<'exam' | 'homework'>('exam');
-  const [title, setTitle] = useState('امتحان الحساب التفاضلي وتطبيقات المشتقة الأولى');
-  const [selectedGroup, setSelectedGroup] = useState(MOCK_GROUPS[0].name);
-  const [examDate, setExamDate] = useState('2026-11-10');
-  const [totalScore, setTotalScore] = useState(100);
+  const store = useData();
+  const groupsQ = useLoad((st) => st.listGroups());
+  const curriculaQ = useLoad((st) => st.listCurricula());
+  const groups = groupsQ.data ?? [];
+  const [title, setTitle] = useState('');
+  const [selectedGroup, setSelectedGroup] = useState('');
+  const [examDate, setExamDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (!selectedGroup && groups.length) setSelectedGroup(groups[0].id);
+  }, [groups, selectedGroup]);
+  const group = groups.find((g) => g.id === selectedGroup);
+  // Lessons of the group's subject, for linking each question to a lesson.
+  const subjectLessons = useMemo(() => {
+    for (const c of curriculaQ.data ?? []) for (const gr of c.grades) for (const sb of gr.subjects)
+      if (sb.id === group?.subjectId) return sb.units.flatMap((u) => u.lessons.map((l) => ({ id: l.id, title: l.title, unit: u.title })));
+    return [];
+  }, [curriculaQ.data, group?.subjectId]);
   const [submissionMode, setSubmissionMode] = useState<'link' | 'teacher_scan'>('teacher_scan');
   const [autoSendReports, setAutoSendReports] = useState<'after_review' | 'auto'>('after_review');
-  const [questions, setQuestions] = useState<QuestionRubric[]>(MOCK_RUBRICS);
+  const [questions, setQuestions] = useState<DraftQuestion[]>(() => [blankQuestion(1)]);
+  const totalScore = questions.reduce((n, q) => n + (Number(q.maxScore) || 0), 0);
+  const updateQ = (id: string, patch: Partial<DraftQuestion>) =>
+    setQuestions((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   const [multiFormEnabled, setMultiFormEnabled] = useState(false);
   const [multiFormCount, setMultiFormCount] = useState<'A_B' | 'A_B_C'>('A_B');
   const [copiedLink, setCopiedLink] = useState(false);
@@ -55,7 +87,7 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
     setTimeout(() => {
       setIsScanningPhoto(false);
       // Generate questions from the scanned photos
-      const scannedQuestions: QuestionRubric[] = [
+      const scannedQuestions: DraftQuestion[] = ([
         {
           id: `sc_q1_${Date.now()}`,
           questionNumber: 1,
@@ -99,11 +131,10 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
             { description: 'الناتج النهائي المبسط (-25/64)', points: 4 },
           ],
         },
-      ];
+      ] as QuestionRubric[]).map((q) => ({ ...q, lessonId: null }));
 
       setQuestions(scannedQuestions);
       setTitle('امتحان التفاضل والنهايات (تم إنشاؤه بالتصوير بالكاميرا)');
-      setTotalScore(50);
       setShowCameraModal(false);
       setPhotoExtractedSuccess(true);
       setTimeout(() => setPhotoExtractedSuccess(false), 5000);
@@ -111,22 +142,47 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
   };
 
   const handleAddQuestion = () => {
-    const qNum = questions.length + 1;
-    const newQ: QuestionRubric = {
-      id: `q${Date.now()}`,
-      questionNumber: qNum,
-      text: `سؤال ${qNum}: إذا كان ص = ق(س)، جد مشتقة الاقتران المركب...`,
-      type: 'problem_solving',
-      maxScore: 15,
-      lesson: 'قاعدة السلسلة والاشتقاق الضمني',
-      modelAnswer: 'ق\'(س) = 3س² + 4س. عند س = 1 المشتقة تساوي 7.',
-      criteria: [
-        { description: 'كتابة القانون الوزاري المعتمد للاشتقاق', points: 5 },
-        { description: 'التعويض العددي السليم بقيم المعطيات', points: 6 },
-        { description: 'استخراج الناتج النهائي المبسط', points: 4 },
-      ],
-    };
-    setQuestions([...questions, newQ]);
+    setQuestions([...questions, blankQuestion(questions.length + 1)]);
+  };
+
+  const handleSave = async () => {
+    if (!title.trim()) return notify('اكتب عنوان الامتحان أو الواجب');
+    if (!selectedGroup) return notify('أنشئ مجموعة أولاً من شاشة المجموعات والطلاب');
+    if (!questions.length) return notify('أضف سؤالاً واحداً على الأقل');
+    const bad = questions.findIndex((q) => !q.text.trim() || !(Number(q.maxScore) > 0));
+    if (bad !== -1) return notify(`أكمل نص السؤال ${bad + 1} ودرجته`);
+    const mismatch = questions.findIndex((q) => {
+      const used = q.criteria.filter((c) => c.description.trim());
+      return used.length > 0 && used.reduce((n, c) => n + (Number(c.points) || 0), 0) !== Number(q.maxScore);
+    });
+    if (mismatch !== -1) return notify(`مجموع نقاط معايير السؤال ${mismatch + 1} لا يساوي درجته`, 'warning');
+    setSaving(true);
+    try {
+      const id = await store.createAssessment({
+        title,
+        kind: examType,
+        groupId: selectedGroup,
+        subjectId: group?.subjectId || null,
+        scheduledOn: examDate || null,
+        submissionMode,
+        autoSendReports: autoSendReports === 'auto',
+        questions: questions.map((q) => ({
+          text: q.text,
+          type: q.type,
+          maxScore: Number(q.maxScore),
+          modelAnswer: q.modelAnswer,
+          lessonId: q.lessonId,
+          criteria: q.criteria.map((c) => ({ description: c.description, points: Number(c.points) || 0 })),
+        })),
+      });
+      setSelected('exam', id);
+      notify(submissionMode === 'link' ? 'تم حفظ الامتحان. انسخ رابط التسليم من قائمة الامتحانات.' : 'تم حفظ الامتحان ومعايير تصحيحه. جهّز أوراق الإجابة للطباعة.');
+      onNavigate(submissionMode === 'link' ? 'B4' : 'B6');
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleRemoveQuestion = (id: string) => {
@@ -190,13 +246,11 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
           </button>
 
           <button
-            onClick={() => {
-              notify('تم حفظ الامتحان ومعايير تصحيحه بنجاح! تم تجهيز نماذج أوراق الإجابة.');
-              onNavigate('B6');
-            }}
-            className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-5 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-2xs"
+            disabled={saving}
+            onClick={handleSave}
+            className="disabled:opacity-60 bg-[#1E3A5F] hover:bg-[#152a45] text-white px-5 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-2xs"
           >
-            حفظ وتجهيز أوراق الإجابة للطباعة
+            {saving ? 'جاري الحفظ...' : 'حفظ الامتحان ومعايير التصحيح'}
           </button>
         </div>
       </div>
@@ -273,8 +327,9 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
               onChange={(e) => setSelectedGroup(e.target.value)}
               className="w-full p-2 bg-[#F7F8FA] border border-slate-300 rounded-lg font-medium"
             >
-              {MOCK_GROUPS.map((g) => (
-                <option key={g.id} value={g.name}>{g.name}</option>
+              {groups.length === 0 && <option value="">لا توجد مجموعات بعد</option>}
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
               ))}
             </select>
           </div>
@@ -285,6 +340,7 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              placeholder="مثال: امتحان الشهر الأول في التفاضل"
               className="w-full p-2.5 bg-[#F7F8FA] border border-slate-300 rounded-lg font-bold text-slate-900"
             />
           </div>
@@ -300,12 +356,12 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
           </div>
 
           <div>
-            <label className="block text-slate-700 font-bold mb-1">الدرجة الكلية</label>
+            <label className="block text-slate-700 font-bold mb-1">الدرجة الكلية (مجموع درجات الأسئلة)</label>
             <input
               type="number"
               value={totalScore}
-              onChange={(e) => setTotalScore(Number(e.target.value))}
-              className="w-full p-2 bg-[#F7F8FA] border border-slate-300 rounded-lg font-mono font-bold tabular-nums"
+              readOnly
+              className="w-full p-2 bg-slate-100 border border-slate-300 rounded-lg font-mono font-bold tabular-nums"
             />
           </div>
         </div>
@@ -352,21 +408,9 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
           </div>
 
           {submissionMode === 'link' && (
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between text-xs text-blue-900">
-              <span className="font-mono text-[11px] truncate max-w-sm">
-                https://daqqa.ps/submit?exam=ex_tawjihi_diff_2026
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setCopiedLink(true);
-                  setTimeout(() => setCopiedLink(false), 2000);
-                }}
-                className="bg-[#1E3A5F] text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0"
-              >
-                <Share2 className="w-3.5 h-3.5" />
-                <span>{copiedLink ? 'تم نسخ الرابط لواتساب ✓' : 'انسخ الرابط لواتساب'}</span>
-              </button>
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-2 text-xs text-blue-900">
+              <Share2 className="w-4 h-4 shrink-0" />
+              <span>بعد الحفظ يتولّد رابط تسليم خاص بهذا الامتحان، تنسخه من قائمة الامتحانات وترسله للطلاب. كل طالب يدخل رمزه الخاص (4 أرقام).</span>
             </div>
           )}
         </div>
@@ -447,9 +491,20 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
                     {idx + 1}
                   </span>
                   <span className="font-bold text-slate-900 text-sm">السؤال {idx + 1}</span>
-                  <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
-                    الدرس: {q.lesson}
-                  </span>
+                  <select
+                    value={q.lessonId ?? ''}
+                    onChange={(e) => {
+                      const l = subjectLessons.find((x) => x.id === e.target.value);
+                      updateQ(q.id, { lessonId: l?.id ?? null, lesson: l?.title ?? '' });
+                    }}
+                    aria-label="درس السؤال"
+                    className="text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded max-w-[11rem] sm:max-w-xs"
+                  >
+                    <option value="">الدرس: غير محدد</option>
+                    {subjectLessons.map((l) => (
+                      <option key={l.id} value={l.id}>{l.title}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -481,10 +536,8 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
                   <input
                     type="text"
                     value={q.text}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setQuestions(questions.map(item => item.id === q.id ? { ...item, text: val } : item));
-                    }}
+                    onChange={(e) => updateQ(q.id, { text: e.target.value })}
+                    placeholder="اكتب نص السؤال كما في الورقة"
                     className="w-full p-2 bg-[#F7F8FA] border border-slate-300 rounded-lg font-medium"
                   />
                 </div>
@@ -493,10 +546,9 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
                   <input
                     type="number"
                     value={q.maxScore}
-                    onChange={(e) => {
-                      const val = Number(e.target.value);
-                      setQuestions(questions.map(item => item.id === q.id ? { ...item, maxScore: val } : item));
-                    }}
+                    min={0.5}
+                    step={0.5}
+                    onChange={(e) => updateQ(q.id, { maxScore: Number(e.target.value) })}
                     className="w-full p-2 bg-[#F7F8FA] border border-slate-300 rounded-lg font-mono font-bold tabular-nums"
                   />
                 </div>
@@ -508,10 +560,8 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
                 <textarea
                   rows={2}
                   value={q.modelAnswer}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setQuestions(questions.map(item => item.id === q.id ? { ...item, modelAnswer: val } : item));
-                  }}
+                  onChange={(e) => updateQ(q.id, { modelAnswer: e.target.value })}
+                  placeholder="الحل الكامل الذي يقارن به التصحيح"
                   className="w-full p-2 bg-[#F7F8FA] border border-slate-300 rounded-lg font-mono"
                 />
               </div>
@@ -528,12 +578,39 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
                 <div className="space-y-1.5">
                   {q.criteria.map((crit, cIdx) => (
                     <div key={cIdx} className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200 gap-2">
-                      <span className="text-slate-800 flex-1 font-medium">{crit.description}</span>
-                      <span className="bg-blue-50 text-[#1E3A5F] px-2 py-0.5 rounded font-bold font-mono tabular-nums">
-                        {crit.points} علامات
-                      </span>
+                      <input
+                        type="text"
+                        value={crit.description}
+                        onChange={(e) => updateQ(q.id, { criteria: q.criteria.map((c, i) => (i === cIdx ? { ...c, description: e.target.value } : c)) })}
+                        placeholder="مثال: كتابة القانون الصحيح"
+                        className="text-slate-800 flex-1 min-w-0 font-medium bg-transparent focus:outline-none"
+                      />
+                      <input
+                        type="number"
+                        value={crit.points}
+                        min={0}
+                        step={0.5}
+                        onChange={(e) => updateQ(q.id, { criteria: q.criteria.map((c, i) => (i === cIdx ? { ...c, points: Number(e.target.value) } : c)) })}
+                        aria-label="النقاط"
+                        className="w-14 bg-blue-50 text-[#1E3A5F] px-1 py-0.5 rounded font-bold font-mono tabular-nums text-center"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => updateQ(q.id, { criteria: q.criteria.filter((_, i) => i !== cIdx) })}
+                        className="text-slate-400 hover:text-red-600 cursor-pointer"
+                        title="حذف المعيار"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   ))}
+                  <button
+                    type="button"
+                    onClick={() => updateQ(q.id, { criteria: [...q.criteria, { description: '', points: 0 }] })}
+                    className="text-[11px] text-blue-700 font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> إضافة معيار
+                  </button>
                 </div>
               </div>
             </div>
