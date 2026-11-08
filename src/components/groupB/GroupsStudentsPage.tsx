@@ -602,70 +602,84 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                 />
               </div>
 
-              {/* Curriculum Selector */}
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">المنهاج التعليمي</label>
-                <select
-                  value={newGroupCurriculumId}
-                  onChange={(e) => {
-                    const cId = e.target.value;
-                    setNewGroupCurriculumId(cId);
-                    const c = curricula.find(x => x.id === cId);
-                    if (c && c.grades.length > 0) {
-                      setNewGroupGradeId(c.grades[0].id);
-                      const publishedSubjects = c.grades[0].subjects.filter(s => s.status === 'published');
-                      if (publishedSubjects.length > 0) {
-                        setNewGroupSubjectId(publishedSubjects[0].id);
-                      }
-                    }
-                  }}
-                  className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white"
-                >
-                  {curricula.map(c => (
-                    <option key={c.id} value={c.id}>{c.name} ({c.country})</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Grade Selector */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">الصف الدراسي</label>
-                  <select
-                    value={newGroupGradeId}
-                    onChange={(e) => {
-                      const gId = e.target.value;
-                      setNewGroupGradeId(gId);
-                      const curr = curricula.find(c => c.id === newGroupCurriculumId);
-                      const gr = curr?.grades.find(g => g.id === gId);
-                      const pub = gr?.subjects.filter(s => s.status === 'published') || [];
-                      if (pub.length > 0) setNewGroupSubjectId(pub[0].id);
-                    }}
-                    className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white"
-                  >
-                    {curricula.find(c => c.id === newGroupCurriculumId)?.grades.map(g => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Subject Selector (Drafts filtered out) */}
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">المادة المقررة</label>
-                  <select
-                    value={newGroupSubjectId}
-                    onChange={(e) => setNewGroupSubjectId(e.target.value)}
-                    className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white"
-                  >
-                    {curricula.find(c => c.id === newGroupCurriculumId)
-                      ?.grades.find(g => g.id === newGroupGradeId)
-                      ?.subjects.filter(s => s.status === 'published')
-                      .map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                  </select>
-                </div>
-              </div>
+              {/* Curriculum, grade and subject (draft subjects are hidden) */}
+              {(() => {
+                const selCurr = curricula.find((c) => c.id === newGroupCurriculumId);
+                const selGrade = selCurr?.grades.find((g) => g.id === newGroupGradeId);
+                const pubSubjects = selGrade?.subjects.filter((s) => s.status === 'published') ?? [];
+                if (curriculaQ.loading) return <div className="text-slate-500">جارٍ تحميل المناهج…</div>;
+                if (!curricula.length)
+                  return (
+                    <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 leading-relaxed">
+                      لا يوجد منهج متاح بعد. يجب أن يضيف مدير المنصة المنهج، ويجعله «متاحاً للتسجيل»، وينشر مادة واحدة على الأقل.
+                    </div>
+                  );
+                return (
+                  <>
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1">المنهاج التعليمي</label>
+                      <select
+                        value={newGroupCurriculumId}
+                        onChange={(e) => {
+                          const c = curricula.find((x) => x.id === e.target.value);
+                          const g = c?.grades[0];
+                          setNewGroupCurriculumId(e.target.value);
+                          setNewGroupGradeId(g?.id ?? '');
+                          setNewGroupSubjectId(g?.subjects.find((x) => x.status === 'published')?.id ?? '');
+                        }}
+                        className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white"
+                      >
+                        {curricula.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.country ? `${c.name} (${c.country})` : c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-slate-700 font-bold mb-1">الصف الدراسي</label>
+                        <select
+                          value={newGroupGradeId}
+                          disabled={!selCurr?.grades.length}
+                          onChange={(e) => {
+                            const gr = selCurr?.grades.find((g) => g.id === e.target.value);
+                            setNewGroupGradeId(e.target.value);
+                            setNewGroupSubjectId(gr?.subjects.find((s) => s.status === 'published')?.id ?? '');
+                          }}
+                          className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white disabled:bg-slate-50"
+                        >
+                          {!selCurr?.grades.length && <option value="">لا توجد صفوف</option>}
+                          {selCurr?.grades.map((g) => (
+                            <option key={g.id} value={g.id}>
+                              {g.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-slate-700 font-bold mb-1">المادة المقررة</label>
+                        <select
+                          value={newGroupSubjectId}
+                          disabled={!pubSubjects.length}
+                          onChange={(e) => setNewGroupSubjectId(e.target.value)}
+                          className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white disabled:bg-slate-50"
+                        >
+                          {!pubSubjects.length && <option value="">لا توجد مواد</option>}
+                          {pubSubjects.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    {selGrade && !pubSubjects.length && (
+                      <div className="text-[11px] text-amber-800">لا توجد مادة منشورة لهذا الصف بعد. المواد المسودة لا تظهر للمدرّسين.</div>
+                    )}
+                  </>
+                );
+              })()}
 
               <div>
                 <label className="block text-slate-700 font-bold mb-1">مواعيد الجلسات الأسبوعية</label>
@@ -682,7 +696,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
             <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
               <button
                 type="button"
-                disabled={saving}
+                disabled={saving || !newGroupSubjectId}
                 onClick={handleCreateGroup}
                 className="disabled:opacity-60 flex-1 bg-[#1E3A5F] hover:bg-[#152a45] text-white py-2.5 rounded-lg font-bold text-xs transition-colors shadow-sm cursor-pointer"
               >
