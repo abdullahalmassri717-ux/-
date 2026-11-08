@@ -48,7 +48,7 @@ jobs:
         # versions target the linked project with --remote, older ones with --linked.
         run: |
           if supabase db push --help 2>&1 | grep -q -- '--remote'; then
-            supabase db push --remote --include-all
+            supabase db push --remote --include-all --yes
           else
             supabase db push --linked --include-all
           fi
@@ -66,14 +66,19 @@ jobs:
             if [ -n "${!name}" ]; then args+=("$name=${!name}"); fi
           done
           if [ ${#args[@]} -gt 0 ]; then
-            supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" "${args[@]}"
+            yes_flag=""
+            if supabase secrets set --help 2>&1 | grep -q -- '--yes'; then yes_flag="--yes"; fi
+            supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" $yes_flag "${args[@]}"
           else
             echo "No function secrets set yet."
           fi
 
       - name: Deploy functions
+        # Newer CLI versions ask for confirmation unless --yes is passed.
         run: |
-          supabase functions deploy grade-submission --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy ai-tools --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy send-reports --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy student-submit --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+          yes_flag=""
+          if supabase functions deploy --help 2>&1 | grep -q -- '--yes'; then yes_flag="--yes"; fi
+          supabase functions deploy grade-submission --project-ref "$SUPABASE_PROJECT_REF" $yes_flag
+          supabase functions deploy ai-tools --project-ref "$SUPABASE_PROJECT_REF" $yes_flag
+          supabase functions deploy send-reports --project-ref "$SUPABASE_PROJECT_REF" $yes_flag
+          supabase functions deploy student-submit --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt $yes_flag
