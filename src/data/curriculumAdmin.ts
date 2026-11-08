@@ -7,7 +7,9 @@ import { CURRICULA_DATA } from '../mockData';
 export interface CLesson {
   id: string;
   title: string;
+  /** Lesson text. The tree loads without it (it can be large): use getLessonContent. */
   content: string;
+  hasContent: boolean;
   outcomes: string[];
   terms: string[];
   symbols: string[];
@@ -51,6 +53,7 @@ export interface CurriculumAdminApi {
   addMany(level: Exclude<Level, 'curriculum'>, rows: { parentId: string; name: string; order: number; content?: string }[]): Promise<string[]>;
   addOutcomes(rows: { lessonId: string; text: string; order: number }[]): Promise<void>;
   setLessonContent(lessonId: string, content: string): Promise<void>;
+  getLessonContent(lessonId: string): Promise<string>;
 }
 
 const TABLE: Record<Level, { table: string; nameCol: string; parentCol: string | null }> = {
@@ -77,11 +80,19 @@ function realApi(): CurriculumAdminApi {
       const { data, error } = await db
         .from('curricula')
         .select(
-          'id, name, country, is_available, sort_order, grades(id, name, sort_order, subjects(id, name, status, sort_order, units(id, title, sort_order, lessons(id, title, content, sort_order, learning_outcomes(text, sort_order), lesson_terms(kind, text, sort_order)))))',
+          'id, name, country, is_available, sort_order, grades(id, name, sort_order, subjects(id, name, status, sort_order, units(id, title, sort_order, lessons(id, title, sort_order, learning_outcomes(text, sort_order), lesson_terms(kind, text, sort_order)))))',
         )
         .order('sort_order');
       if (error) fail(error, 'تعذّر تحميل المناهج.');
-      type L = { id: string; title: string; content: string | null; sort_order: number; learning_outcomes: { text: string; sort_order: number }[]; lesson_terms: { kind: string; text: string; sort_order: number }[] };
+      // Which lessons have text, without downloading the text itself (paged: the API returns at most 1000 rows).
+      const withContent = new Set<string>();
+      for (let from = 0; ; from += 1000) {
+        const page = await db.from('lessons').select('id').not('content', 'is', null).neq('content', '').order('id').range(from, from + 999);
+        if (page.error) fail(page.error, 'تعذّر تحميل المناهج.');
+        for (const r of (page.data ?? []) as { id: string }[]) withContent.add(r.id);
+        if ((page.data?.length ?? 0) < 1000) break;
+      }
+      type L = { id: string; title: string; sort_order: number; learning_outcomes: { text: string; sort_order: number }[]; lesson_terms: { kind: string; text: string; sort_order: number }[] };
       type U = { id: string; title: string; sort_order: number; lessons: L[] };
       type S = { id: string; name: string; status: 'draft' | 'published'; sort_order: number; units: U[] };
       type G = { id: string; name: string; sort_order: number; subjects: S[] };
@@ -106,7 +117,8 @@ function realApi(): CurriculumAdminApi {
                 return {
                   id: l.id,
                   title: l.title,
-                  content: l.content ?? '',
+                  content: '',
+                  hasContent: withContent.has(l.id),
                   outcomes: [...l.learning_outcomes].sort(bySort).map((o) => o.text),
                   terms: terms.filter((t) => t.kind === 'term').map((t) => t.text),
                   symbols: terms.filter((t) => t.kind === 'symbol').map((t) => t.text),
@@ -173,6 +185,11 @@ function realApi(): CurriculumAdminApi {
       const { error } = await db.from('lessons').update({ content }).eq('id', lessonId);
       if (error) fail(error, 'تعذّر حفظ محتوى الدرس.');
     },
+    async getLessonContent(lessonId) {
+      const { data, error } = await db.from('lessons').select('content').eq('id', lessonId).single();
+      if (error) fail(error, 'تعذّر تحميل محتوى الدرس.');
+      return (data as { content: string | null }).content ?? '';
+    },
     async saveLesson(l) {
       const up = await db.from('lessons').update({ title: l.title.trim(), content: l.content.trim() || null }).eq('id', l.id);
       if (up.error) fail(up.error, 'تعذّر حفظ الدرس.');
@@ -220,6 +237,7 @@ function demoApi(): CurriculumAdminApi {
             id: l.id,
             title: l.title,
             content: '',
+            hasContent: false,
             outcomes: l.learningOutcomes ?? l.outcomes ?? [],
             terms: l.keyTerms ?? l.termsAndSymbols ?? [],
             symbols: l.symbols ?? [],
@@ -252,7 +270,7 @@ function demoApi(): CurriculumAdminApi {
         grade: { id, name, subjects: [] },
         subject: { id, name, status: 'draft', units: [] },
         unit: { id, title: name, lessons: [] },
-        lesson: { id, title: name, content: '', outcomes: [], terms: [], symbols: [] },
+        lesson: { id, title: name, content: '', hasContent: false, outcomes: [], terms: [], symbols: [] },
       };
       if (level === 'curriculum') tree.push(base.curriculum as CCurriculum);
       else (find(parentId!)?.node[CHILD[level]] as object[] | undefined)?.push(base[level]);
@@ -280,7 +298,7 @@ function demoApi(): CurriculumAdminApi {
     },
     async saveLesson(l) {
       const f = find(l.id);
-      if (f) Object.assign(f.node, l);
+      if (f) Object.assign(f.node, l, { hasContent: !!l.content.trim() });
       await wait(null);
     },
     async addMany(level, rows) {
@@ -289,7 +307,7 @@ function demoApi(): CurriculumAdminApi {
         const id = await this.add(level, r.parentId, r.name, r.order);
         if (level === 'lesson' && r.content) {
           const f = find(id);
-          if (f) f.node.content = r.content;
+          if (f) Object.assign(f.node, { content: r.content, hasContent: true });
         }
         ids.push(id);
       }
@@ -304,8 +322,11 @@ function demoApi(): CurriculumAdminApi {
     },
     async setLessonContent(lessonId, content) {
       const f = find(lessonId);
-      if (f) f.node.content = content;
+      if (f) Object.assign(f.node, { content, hasContent: !!content.trim() });
       await wait(null);
+    },
+    async getLessonContent(lessonId) {
+      return wait((find(lessonId)?.node.content as string | undefined) ?? '');
     },
   };
 }

@@ -268,7 +268,7 @@ export async function applyImport(
       const ex = have.find((l) => key(l.title) === key(input.name)) ?? null;
       if (ex) {
         summary.existing++;
-        if (input.content && !ex.content.trim()) contentUpdates.push({ id: ex.id, content: input.content });
+        if (input.content && !ex.hasContent) contentUpdates.push({ id: ex.id, content: input.content });
       } else newLessons.push({ parentId: uj.id, name: input.name, order: have.length + added++, content: input.content || undefined });
       lessonJobs.push({ input, existing: ex, id: ex?.id ?? '' });
     }
