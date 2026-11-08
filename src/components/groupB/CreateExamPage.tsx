@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ScreenId, QuestionRubric } from '../../types';
 import { useData, useLoad, errorMessage } from '../../data/DataContext';
 import { setSelected } from '../../data/selection';
+import { takeExamDraft } from '../../data/examDraft';
+import type { DraftQuestion as AiDraft } from '../../data/ai';
+import { prepareImageForGrading, type PreparedImage } from '../../lib/imageResize';
 
 type DraftQuestion = QuestionRubric & { lessonId: string | null };
 
@@ -15,6 +18,17 @@ const blankQuestion = (n: number): DraftQuestion => ({
   lessonId: null,
   modelAnswer: '',
   criteria: [{ description: '', points: 10 }],
+});
+const fromDraft = (q: AiDraft, i: number): DraftQuestion => ({
+  id: `q${Date.now()}_${i}`,
+  questionNumber: i + 1,
+  text: q.text,
+  type: q.type,
+  maxScore: q.maxScore,
+  lesson: '',
+  lessonId: q.lessonId,
+  modelAnswer: q.modelAnswer,
+  criteria: q.criteria.length ? q.criteria : [{ description: '', points: q.maxScore }],
 });
 import {
   ArrowRight,
@@ -71,74 +85,54 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
   const [copiedLink, setCopiedLink] = useState(false);
   const [isAiSuggesting, setIsAiSuggesting] = useState<string | null>(null);
 
-  // Camera Photo-capture state
+  // Photographed exam paper → questions (read by AI on the server).
   const [showCameraModal, setShowCameraModal] = useState(false);
-  const [capturedPhotos, setCapturedPhotos] = useState<string[]>([]);
+  const [capturedPhotos, setCapturedPhotos] = useState<PreparedImage[]>([]);
   const [isScanningPhoto, setIsScanningPhoto] = useState(false);
   const [photoExtractedSuccess, setPhotoExtractedSuccess] = useState(false);
 
-  const handleCapturePaper = () => {
-    const newPhotoId = `photo_${Date.now()}`;
-    setCapturedPhotos(prev => [...prev, newPhotoId]);
+  // Questions handed over from an AI tool or the question bank.
+  useEffect(() => {
+    const draft = takeExamDraft();
+    if (!draft) return;
+    if (draft.title) setTitle(draft.title);
+    if (draft.groupId) setSelectedGroup(draft.groupId);
+    setExamType(draft.kind);
+    if (draft.questions.length) setQuestions(draft.questions.map((q, i) => fromDraft(q, i)));
+  }, []);
+
+  const handleAddPhotos = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const room = 6 - capturedPhotos.length;
+    const picked = [...files].slice(0, Math.max(room, 0));
+    if (files.length > picked.length) notify('يمكن رفع 6 صفحات كحد أقصى', 'warning');
+    try {
+      const prepared = await Promise.all(picked.map((f) => prepareImageForGrading(f)));
+      setCapturedPhotos((prev) => [...prev, ...prepared]);
+    } catch {
+      notify('أحد الملفات ليس صورة. اختر صوراً فقط.', 'warning');
+    }
   };
 
-  const handleProcessCapturedPhotos = () => {
+  const handleProcessCapturedPhotos = async () => {
+    if (!group?.subjectId) return notify('اختر مجموعة لها مادة أولاً، حتى نربط الأسئلة بدروسها.');
     setIsScanningPhoto(true);
-    setTimeout(() => {
-      setIsScanningPhoto(false);
-      // Generate questions from the scanned photos
-      const scannedQuestions: DraftQuestion[] = ([
-        {
-          id: `sc_q1_${Date.now()}`,
-          questionNumber: 1,
-          text: 'السؤال 1 (مستخرج من الصورة): إذا كان ص = س³ - 3س² + 4، جد فترات التزايد والتناقص والقيم القصوى المحلية لمنحنى ق.',
-          type: 'problem_solving',
-          maxScore: 20,
-          lesson: 'تطبيقات القيم القصوى والتزايد والتناقص',
-          modelAnswer: 'ق\'(س) = 3س² - 6س = 3س(س - 2) = 0. النقط الحرجة س = 0، س = 2. متزايد على (-∞, 0] و [2, ∞)، متناقص على [0, 2]. عظمى محلية ق(0)=4، صغرى محلية ق(2)=0.',
-          criteria: [
-            { description: 'إيجاد المشتقة الأولى ومساواتها بالصفر (ق\'(س) = 3س² - 6س = 0)', points: 6 },
-            { description: 'تحديد النقط الحرجة (س = 0، س = 2) وبحث إشارة المشتقة', points: 6 },
-            { description: 'كتابة فترات التزايد والتناقص بدقة', points: 4 },
-            { description: 'تحديد القيم العظمى والصغرى المحلية بالتعويض', points: 4 },
-          ],
-        },
-        {
-          id: `sc_q2_${Date.now()}`,
-          questionNumber: 2,
-          text: 'السؤال 2 (مستخرج من الصورة): أوجد نها(س→0) [ (1 - جتا 4س) / س² ] باستخدام المتطابقات المثلثية وقاعدة لوبيتال.',
-          type: 'short_answer',
-          maxScore: 15,
-          lesson: 'النهايات الدائرية والاتصال',
-          modelAnswer: '1 - جتا 4س = 2 جا²(2س). النهاية = نها 2 [جا(2س)/س]² = 2 * (2)² = 8.',
-          criteria: [
-            { description: 'تطبيق متطابقة نصف الزاوية أو قاعدة لوبيتال', points: 6 },
-            { description: 'التعويض وتوزيع النهاية على التربيع', points: 5 },
-            { description: 'الناتج النهائي المبسط (8)', points: 4 },
-          ],
-        },
-        {
-          id: `sc_q3_${Date.now()}`,
-          questionNumber: 3,
-          text: 'السؤال 3 (مستخرج من الصورة): إذا كان س² + ص² = 25، أوجد د²ص / دس² عند النقطة (3, 4).',
-          type: 'problem_solving',
-          maxScore: 15,
-          lesson: 'الاشتقاق الضمني',
-          modelAnswer: 'ص\' = -س/ص = -3/4. ص\'\' = -25/ص³ = -25/64.',
-          criteria: [
-            { description: 'الاشتقاق الضمني الأولي الصحيح', points: 5 },
-            { description: 'اشتقاق المشتقة الثانية بقاعدة القسمة', points: 6 },
-            { description: 'الناتج النهائي المبسط (-25/64)', points: 4 },
-          ],
-        },
-      ] as QuestionRubric[]).map((q) => ({ ...q, lessonId: null }));
-
-      setQuestions(scannedQuestions);
-      setTitle('امتحان التفاضل والنهايات (تم إنشاؤه بالتصوير بالكاميرا)');
+    try {
+      const r = await store.aiExtractExam(group.subjectId, capturedPhotos);
+      if (!r.readable || !r.questions.length) {
+        notify('لم نتمكن من قراءة أسئلة من الصور. صوّر الورقة بإضاءة جيدة ومن الأعلى.', 'warning');
+        return;
+      }
+      setQuestions(r.questions.map((q, i) => fromDraft(q, i)));
       setShowCameraModal(false);
+      setCapturedPhotos([]);
       setPhotoExtractedSuccess(true);
-      setTimeout(() => setPhotoExtractedSuccess(false), 5000);
-    }, 1500);
+      setTimeout(() => setPhotoExtractedSuccess(false), 6000);
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setIsScanningPhoto(false);
+    }
   };
 
   const handleAddQuestion = () => {
@@ -189,24 +183,20 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
     setQuestions(questions.filter(q => q.id !== id));
   };
 
-  const handleAiSuggestCriteria = (qId: string) => {
+  const handleAiSuggestCriteria = async (qId: string) => {
+    const q = questions.find((x) => x.id === qId);
+    if (!q) return;
+    if (!q.text.trim()) return notify('اكتب نص السؤال أولاً');
+    if (!group?.subjectId) return notify('اختر المجموعة أولاً');
     setIsAiSuggesting(qId);
-    setTimeout(() => {
+    try {
+      const r = await store.aiSuggestRubric({ subjectId: group.subjectId, lessonId: q.lessonId, text: q.text, maxScore: Number(q.maxScore) || 10 });
+      updateQ(qId, { modelAnswer: q.modelAnswer.trim() ? q.modelAnswer : r.modelAnswer, criteria: r.criteria });
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
       setIsAiSuggesting(null);
-      setQuestions(prev => prev.map(q => {
-        if (q.id === qId) {
-          return {
-            ...q,
-            criteria: [
-              { description: 'تطبيق القانون والاشتقاق الأولي الدقيق', points: Math.floor(q.maxScore * 0.4) },
-              { description: 'التعويض الرياضي الخالي من الأخطاء الحسابية', points: Math.floor(q.maxScore * 0.4) },
-              { description: 'الناتج النهائي المبسط مع الوحدات إن وجدت', points: Math.ceil(q.maxScore * 0.2) },
-            ]
-          };
-        }
-        return q;
-      }));
-    }, 900);
+    }
   };
 
   return (
@@ -242,7 +232,7 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
             title="استيراد من امتحان ورقي قديم عبر الذكاء الاصطناعي"
           >
             <Sparkles className="w-4 h-4 text-blue-600" />
-            <span>استيراد ملف PDF قديم</span>
+            <span>تحويل امتحان قديم</span>
           </button>
 
           <button
@@ -259,8 +249,8 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
         <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-900 text-xs flex items-center gap-2.5 shadow-xs">
           <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
           <div>
-            <strong className="block text-sm">تم إنشاء الامتحان من صورة الكاميرا بنجاح! ✓</strong>
-            <span>تم استخراج الأسئلة، وتحديد الدرجات وسلالم التصحيح التلقائية وفق المنهاج. يمكنك مراجعتها وتعديلها أدناه.</span>
+            <strong className="block text-sm">تمت قراءة الأسئلة من الصور ✓</strong>
+            <span>راجع نص كل سؤال ودرجته ومعاييره أدناه وعدّلها قبل الحفظ.</span>
           </div>
         </div>
       )}
@@ -618,229 +608,81 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
         </div>
       </div>
 
-      {/* Camera Capture Modal Popup */}
+      {/* Photograph the exam paper */}
       {showCameraModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl overflow-hidden border border-slate-200 flex flex-col my-auto max-h-[92vh]">
-            {/* Header */}
-            <div className="bg-[#1E3A5F] text-white p-4 sm:p-5 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden my-auto">
+            <div className="bg-[#1E3A5F] text-white p-4 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300">
-                  <Camera className="w-5 h-5" />
-                </div>
+                <Camera className="w-5 h-5 text-emerald-300" />
                 <div>
-                  <h3 className="font-extrabold text-sm sm:text-base">تصوير ورقة الامتحان بالكاميرا</h3>
-                  <p className="text-[11px] text-blue-200">التقط صورة لورقة الامتحان المكتوبة بخط اليد أو المطبوعة لاستخراج الأسئلة تلقائياً</p>
+                  <h3 className="font-extrabold text-sm">تصوير ورقة الامتحان</h3>
+                  <p className="text-[11px] text-blue-200">صوّر كل صفحة من الأعلى وبإضاءة جيدة (حتى 6 صفحات)</p>
                 </div>
               </div>
               <button
-                onClick={() => setShowCameraModal(false)}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold cursor-pointer transition-colors"
+                type="button"
+                onClick={() => !isScanningPhoto && setShowCameraModal(false)}
+                aria-label="إغلاق"
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center cursor-pointer"
               >
                 ✕
               </button>
             </div>
-
-            {/* Modal Body */}
-            <div className="p-4 sm:p-6 overflow-y-auto space-y-4">
-              {/* Camera Viewfinder Box */}
-              <div className="relative bg-slate-950 rounded-2xl aspect-[4/3] sm:aspect-[16/10] overflow-hidden flex flex-col items-center justify-center text-white border-2 border-emerald-500/40 shadow-inner group">
-                {/* Viewfinder Grid & Corner Guidelines */}
-                <div className="absolute inset-4 border border-white/20 rounded-xl pointer-events-none">
-                  {/* Corner markers */}
-                  <div className="absolute -top-1 -right-1 w-5 h-5 border-t-2 border-r-2 border-emerald-400"></div>
-                  <div className="absolute -top-1 -left-1 w-5 h-5 border-t-2 border-l-2 border-emerald-400"></div>
-                  <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-2 border-r-2 border-emerald-400"></div>
-                  <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-2 border-l-2 border-emerald-400"></div>
-                  
-                  {/* Central Crosshair */}
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-12 h-12 border border-emerald-400/40 rounded-full flex items-center justify-center">
-                      <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></div>
-                    </div>
-                  </div>
-
-                  {/* Scanning Laser Animation */}
-                  {isScanningPhoto && (
-                    <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_12px_#34d399] animate-bounce"></div>
-                  )}
-                </div>
-
-                {/* Simulated Camera Feed Background Graphic */}
-                <div className="text-center p-4 z-10 max-w-sm">
-                  {isScanningPhoto ? (
-                    <div className="space-y-3">
-                      <div className="w-14 h-14 mx-auto rounded-full bg-emerald-500/20 border border-emerald-400 flex items-center justify-center animate-spin">
-                        <Sparkles className="w-7 h-7 text-emerald-400" />
-                      </div>
-                      <h4 className="font-bold text-sm text-emerald-300">جاري مسح وتحليل الورقة بالذكاء الاصطناعي...</h4>
-                      <p className="text-[11px] text-slate-300">
-                        التعرف على خط يد الأستاذ • استخراج نص المسائل • تفكيك خطوات الحل إلى روبريك معتمد
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="w-12 h-12 mx-auto rounded-full bg-white/10 flex items-center justify-center text-slate-300 mb-2">
-                        <Camera className="w-6 h-6 text-emerald-400" />
-                      </div>
-                      <p className="text-xs font-semibold text-slate-200">
-                        ضع ورقة الامتحان داخل الإطار بشكل مستوٍ ومستقيم
-                      </p>
-                      <p className="text-[10px] text-slate-400">
-                        تدعم المنصة الخط اليدوي للأساتذة في غزة والمسائل الرياضية والفيزيائية بالرموز العربية والإنجليزية
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Camera Top Controls */}
-                <div className="absolute top-3 inset-x-4 flex items-center justify-between text-xs text-slate-300 z-10">
-                  <span className="bg-black/60 px-2.5 py-1 rounded-full text-[10px] font-mono flex items-center gap-1.5 border border-white/10">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                    كاميرا عالية الدقة HD (نشطة)
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => notify('تم تفعيل الفلاش والإضاءة المعززة للورقة')} 
-                      className="bg-black/60 hover:bg-black/80 px-2 py-1 rounded-full text-[10px] border border-white/10 cursor-pointer"
-                      title="فلاش الكاميرا"
-                    >
-                      ⚡ فلاش تلقائي
-                    </button>
-                    <button 
-                      onClick={() => notify('تم التبديل بين الكاميرا الخلفية والأمامية')}
-                      className="bg-black/60 hover:bg-black/80 p-1.5 rounded-full border border-white/10 cursor-pointer"
-                      title="تبديل الكاميرا"
-                    >
-                      <RotateCw className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Bottom Viewfinder Action Bar */}
-                <div className="absolute bottom-3 inset-x-4 flex items-center justify-center gap-3 z-10">
-                  <button
-                    disabled={isScanningPhoto}
-                    onClick={handleCapturePaper}
-                    className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold px-6 py-2.5 rounded-full shadow-lg flex items-center gap-2 text-xs transition-transform active:scale-95 cursor-pointer"
-                  >
-                    <div className="w-3.5 h-3.5 rounded-full border-2 border-white flex items-center justify-center">
-                      <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
-                    </div>
-                    <span>التقاط صورة الصفحة {capturedPhotos.length + 1}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Sample Quick-Test helper for demo */}
-              <div className="flex items-center justify-between p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-xs">
-                <div className="flex items-center gap-2 text-[#1E3A5F]">
-                  <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
-                  <span className="text-[11px] font-medium">لتجربة الميزة فوراً بدون تصوير فعلي، يمكنك التقاط نموذج ورقة جاهزة:</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleCapturePaper();
-                    if (capturedPhotos.length === 0) {
-                      setCapturedPhotos(['sample_paper_1', 'sample_paper_2']);
-                    }
-                  }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer shrink-0 transition-colors"
-                >
-                  + التقاط ورقة تجريبية
-                </button>
-              </div>
-
-              {/* Captured Photos Gallery Strip */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-800">
-                    الصفحات الملتقطة ({capturedPhotos.length} {capturedPhotos.length === 1 ? 'صفحة' : 'صفحات'}):
-                  </span>
-                  {capturedPhotos.length > 0 && (
+            <div className="p-4 space-y-4 text-right">
+              <div className="grid grid-cols-3 gap-2">
+                {capturedPhotos.map((p, i) => (
+                  <div key={i} className="relative aspect-[3/4] rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
+                    <img src={p.dataUrl} alt={`صفحة ${i + 1}`} className="w-full h-full object-cover" />
                     <button
-                      onClick={() => setCapturedPhotos([])}
-                      className="text-rose-600 hover:underline text-[11px] cursor-pointer"
+                      type="button"
+                      onClick={() => setCapturedPhotos((prev) => prev.filter((_, j) => j !== i))}
+                      aria-label={`حذف الصفحة ${i + 1}`}
+                      className="absolute top-1 left-1 w-6 h-6 rounded-full bg-black/60 text-white text-xs cursor-pointer"
                     >
-                      مسح الكل
+                      ✕
                     </button>
-                  )}
-                </div>
-
-                {capturedPhotos.length === 0 ? (
-                  <div className="border border-dashed border-slate-300 rounded-xl p-4 text-center text-xs text-slate-400">
-                    لم تقم بالتقاط أي صفحة بعد. انقر على زر "التقاط صورة" أعلاه لأخذ لقطة لصفحة الامتحان الأولى.
+                    <span className="absolute bottom-1 right-1 bg-black/60 text-white text-[10px] px-1.5 rounded">{i + 1}</span>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                    {capturedPhotos.map((photo, idx) => (
-                      <div key={photo} className="relative group bg-slate-100 rounded-xl border-2 border-emerald-500/60 p-2 flex flex-col items-center justify-between">
-                        <div className="w-full aspect-[3/4] bg-white rounded-lg border border-slate-200 flex flex-col p-2 text-[9px] text-slate-600 shadow-2xs font-mono select-none overflow-hidden">
-                          <div className="border-b border-slate-200 pb-1 font-bold text-[#1E3A5F] flex justify-between">
-                            <span>امتحان رياضيات</span>
-                            <span>ص {idx + 1}</span>
-                          </div>
-                          <div className="mt-2 space-y-1 text-[8px] text-slate-500">
-                            <div className="h-1.5 bg-slate-200 rounded w-4/5"></div>
-                            <div className="h-1.5 bg-slate-200 rounded w-full"></div>
-                            <div className="h-1.5 bg-slate-200 rounded w-3/4"></div>
-                            <div className="h-2 bg-emerald-100 rounded w-1/2 my-1"></div>
-                            <div className="h-1.5 bg-slate-200 rounded w-5/6"></div>
-                          </div>
-                          <div className="mt-auto text-center font-bold text-emerald-700 bg-emerald-50 rounded py-0.5">
-                            تمت المعاينة ✓
-                          </div>
-                        </div>
-
-                        <div className="w-full flex items-center justify-between mt-1 text-[11px]">
-                          <span className="font-bold text-slate-700">الصفحة {idx + 1}</span>
-                          <button
-                            onClick={() => setCapturedPhotos(capturedPhotos.filter(p => p !== photo))}
-                            className="text-rose-500 hover:text-rose-700 p-0.5 cursor-pointer"
-                            title="حذف هذه الصفحة"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-
-                    <button
-                      onClick={handleCapturePaper}
-                      className="border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-xl p-4 flex flex-col items-center justify-center text-slate-500 hover:text-emerald-700 transition-colors cursor-pointer text-xs gap-1.5"
-                    >
-                      <Plus className="w-5 h-5 text-slate-400" />
-                      <span>إضافة صفحة ثانية</span>
-                    </button>
-                  </div>
+                ))}
+                {capturedPhotos.length < 6 && (
+                  <label className="aspect-[3/4] rounded-lg border-2 border-dashed border-emerald-300 bg-emerald-50 flex flex-col items-center justify-center gap-1 text-emerald-800 text-[11px] font-bold cursor-pointer">
+                    <Camera className="w-6 h-6" />
+                    <span>{capturedPhotos.length ? 'صفحة أخرى' : 'صوّر أو اختر صورة'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      multiple
+                      className="sr-only"
+                      onChange={(e) => {
+                        void handleAddPhotos(e.target.files);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
                 )}
               </div>
-            </div>
-
-            {/* Modal Footer Actions */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <span className="text-[11px] text-slate-500 text-center sm:text-right">
-                سيتعرف الذكاء الاصطناعي على الأسئلة ومستويات الصعوبة وفق منهاج فلسطين
-              </span>
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <button
-                  type="button"
-                  onClick={() => setShowCameraModal(false)}
-                  className="w-1/2 sm:w-auto px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
-                >
-                  إلغاء
-                </button>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                يقرأ الذكاء الاصطناعي الأسئلة ويقترح الدرجات ونموذج الإجابة ومعايير التصحيح. ستراجعها وتعدّلها قبل الحفظ. الأسئلة الحالية في النموذج ستُستبدل.
+              </p>
+              <div className="flex gap-2">
                 <button
                   type="button"
                   disabled={capturedPhotos.length === 0 || isScanningPhoto}
                   onClick={handleProcessCapturedPhotos}
-                  className="w-1/2 sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <Sparkles className="w-4 h-4 text-emerald-200" />
-                  <span>
-                    {isScanningPhoto ? 'جاري التحليل...' : `تحليل ${capturedPhotos.length} ${capturedPhotos.length === 1 ? 'صفحة' : 'صفحات'} واستخراج الأسئلة`}
-                  </span>
+                  {isScanningPhoto ? <RotateCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                  <span>{isScanningPhoto ? 'جاري قراءة الورقة...' : 'استخراج الأسئلة'}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isScanningPhoto}
+                  onClick={() => setShowCameraModal(false)}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+                >
+                  إلغاء
                 </button>
               </div>
             </div>

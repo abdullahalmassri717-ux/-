@@ -11,6 +11,7 @@ import {
   generateQuestions,
   parentReply,
   studyPlan,
+  suggestRubric,
   type LessonContext,
 } from '../_shared/aiTools/tools.ts';
 
@@ -114,7 +115,8 @@ Deno.serve(async (req) => {
     switch (task) {
       case 'generate_questions':
       case 'extract_exam':
-      case 'study_plan': {
+      case 'study_plan':
+      case 'suggest_rubric': {
         const subjectId = str(body.subjectId, 40);
         if (!UUID.test(subjectId)) return json({ error: 'اختر المادة أولاً.' }, 400);
         const info = await subjectInfo(db, subjectId);
@@ -135,6 +137,21 @@ Deno.serve(async (req) => {
             purpose: body.purpose === 'remedial' ? 'remedial' : 'exam',
             note: str(body.note, 1000),
             avoid: Array.isArray(body.avoid) ? body.avoid.map((x) => str(x, 500)).filter(Boolean) : [],
+            ...info,
+          });
+          await log(result.usage);
+          return json(result.data);
+        }
+
+        if (task === 'suggest_rubric') {
+          const text = str(body.text, 4000).trim();
+          if (!text) return json({ error: 'اكتب نص السؤال أولاً.' }, 400);
+          const lessonId = str(body.lessonId, 40);
+          const [lesson] = UUID.test(lessonId) ? await loadLessons(db, [lessonId], subjectId) : [];
+          const result = await suggestRubric(model, config, {
+            text,
+            maxScore: Math.min(Math.max(Number(body.maxScore) || 10, 1), 100),
+            lesson: lesson ?? null,
             ...info,
           });
           await log(result.usage);

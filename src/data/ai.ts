@@ -59,6 +59,7 @@ export interface StudyPlan {
 export interface AiStore {
   aiGenerateQuestions(input: GenerateInput): Promise<{ questions: DraftQuestion[]; rejected: { text: string; reason: string }[] }>;
   aiExtractExam(subjectId: string, pages: PaperPage[]): Promise<{ questions: DraftQuestion[]; readable: boolean }>;
+  aiSuggestRubric(input: { subjectId: string; lessonId: string | null; text: string; maxScore: number }): Promise<{ modelAnswer: string; criteria: { description: string; points: number }[] }>;
   aiStudyPlan(subjectId: string, lessons: { id: string; mastery: number | null }[], days: number): Promise<StudyPlan>;
   aiParentReply(input: { message: string; studentFirstName: string; facts: string[] }): Promise<{ reply: string; needsTeacher: boolean }>;
   aiAssistant(turns: { role: 'user' | 'assistant'; text: string }[]): Promise<string>;
@@ -94,6 +95,7 @@ export function createSupabaseAi(db: SupabaseClient, orgId: string): AiStore {
     aiGenerateQuestions: (input) => call('generate_questions', { ...input }),
     aiExtractExam: (subjectId, pages) =>
       call('extract_exam', { subjectId, pages: pages.map((p) => ({ data: p.base64, mediaType: p.mediaType })) }),
+    aiSuggestRubric: (input) => call('suggest_rubric', { ...input }),
     aiStudyPlan: (subjectId, lessons, days) => call('study_plan', { subjectId, lessons, days }),
     aiParentReply: (input) => call('parent_reply', { ...input }),
     async aiAssistant(turns) {
@@ -253,6 +255,18 @@ export function createDemoAi(): AiStore {
     async aiExtractExam() {
       const l = lessons[0];
       return wait({ questions: [sampleQuestion(l, 0, false), sampleQuestion(lessons[1] ?? l, 1, false)], readable: true }, 1600);
+    },
+    async aiSuggestRubric({ maxScore }) {
+      const a = Math.round(maxScore * 0.4 * 2) / 2;
+      const b = Math.round(maxScore * 0.4 * 2) / 2;
+      return wait({
+        modelAnswer: '(نموذج تجريبي) يكتب الطالب القانون، ثم يعوّض بالخطوات، ثم يصل للناتج النهائي.',
+        criteria: [
+          { description: 'كتابة القانون أو الفكرة الصحيحة', points: a },
+          { description: 'خطوات الحل والتعويض بدقة', points: b },
+          { description: 'الناتج النهائي الصحيح', points: maxScore - a - b },
+        ],
+      });
     },
     async aiStudyPlan(_subjectId, weak, days) {
       const list = weak.map((w) => lessons.find((l) => l.id === w.id)).filter((l): l is (typeof lessons)[number] => !!l);

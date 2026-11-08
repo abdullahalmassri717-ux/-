@@ -333,3 +333,35 @@ export async function assistantChat(
   const res = await model.chat({ model: config.mainModel, effort: 'low', system: ASSISTANT_SYSTEM, turns });
   return { data: { reply: res.text }, usage: [res.usage] };
 }
+
+const RubricSchema = z.object({
+  model_answer: z.string(),
+  criteria: z.array(z.object({ description: z.string(), points: z.number() })),
+});
+
+/** Suggests a model answer and marking criteria for a question the teacher wrote. */
+export async function suggestRubric(
+  model: ToolModel,
+  config: ToolModelConfig,
+  o: { text: string; maxScore: number; lesson: LessonContext | null; subjectName: string; gradeName: string },
+): Promise<ToolResult<{ modelAnswer: string; criteria: { description: string; points: number }[] }>> {
+  const res = await model.json({
+    model: config.mainModel,
+    effort: 'low',
+    system: `أنت مدرّس خبير. اكتب نموذج إجابة كاملاً ومعايير تصحيح واضحة لسؤال امتحان ورقي.
+كل معيار شيء يمكن رؤيته على ورقة الطالب (خطوة، قانون، ناتج). من 2 إلى 5 معايير، ومجموع نقاطها يساوي درجة السؤال بالضبط.
+استخدم مصطلحات الدرس إن وُجد.`,
+    content: [
+      {
+        type: 'text',
+        text: `المادة: ${o.subjectName} — ${o.gradeName}\n${o.lesson ? renderLessons([o.lesson]) : ''}\n\nالسؤال (${o.maxScore} درجات):\n${o.text}`,
+      },
+    ],
+    schema: RubricSchema,
+  });
+  const q = normalizeQuestion(
+    { lesson_id: '', outcome: '', text: o.text, type: 'problem_solving', max_score: o.maxScore, model_answer: res.data.model_answer, criteria: res.data.criteria },
+    new Set(),
+  );
+  return { data: { modelAnswer: q?.modelAnswer ?? '', criteria: q?.criteria ?? [] }, usage: [res.usage] };
+}
