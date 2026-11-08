@@ -61,6 +61,13 @@ export interface NewAssessmentInput {
   questions: QuestionInput[];
 }
 
+export interface PaperPage {
+  /** Base64 JPEG data without the data-URL prefix. */
+  base64: string;
+  dataUrl: string;
+  mediaType: 'image/jpeg';
+}
+
 export interface SubmissionRow {
   id: string;
   assessmentId: string;
@@ -91,6 +98,7 @@ export interface QuestionGradeRow {
   finalScore: number | null;
   teacherNote: string | null;
   reviewedAt: string | null;
+  lesson?: string;
 }
 
 export interface StudentHistory {
@@ -137,6 +145,16 @@ export interface DataStore {
   // Submissions & grading
   listSubmissions(assessmentId: string): Promise<SubmissionRow[]>;
   listQuestionGrades(submissionId: string): Promise<QuestionGradeRow[]>;
+  /** Every question grade of every paper in an exam (one request). */
+  listAssessmentGrades(assessmentId: string): Promise<QuestionGradeRow[]>;
   saveTeacherGrade(questionGradeId: string, finalScore: number, teacherNote: string | null): Promise<void>;
   approveSubmission(submissionId: string): Promise<void>;
+  /** Saves one student's photographed pages (already shrunk to JPEG). Returns the new submission id. */
+  uploadPaper(assessmentId: string, pages: PaperPage[], studentId?: string | null): Promise<string>;
+  /** Asks the server to grade a stored paper with AI. */
+  gradeSubmission(submissionId: string): Promise<{ ok: boolean; error?: string }>;
+  /** Short-lived links to the paper's photos (private storage). */
+  getPageUrls(submissionId: string): Promise<string[]>;
+  assignStudent(submissionId: string, studentId: string | null): Promise<void>;
+  deleteSubmission(submissionId: string): Promise<void>;
 }

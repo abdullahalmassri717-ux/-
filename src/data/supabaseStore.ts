@@ -268,6 +268,45 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     };
   }
 
+  async function loadGrades(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    filter: (q: any) => any,
+    extraJoin = '',
+  ): Promise<QuestionGradeRow[]> {
+    const columns = `id, submission_id, question_id, ai_score, ai_reason, ai_transcription, ai_confidence, ai_criteria, final_score, teacher_note, reviewed_at, questions(number, text, max_score, model_answer, lessons(title))${extraJoin ? `, ${extraJoin}` : ''}`;
+    const { data, error } = await filter(db.from('question_grades').select(columns));
+    if (error) fail(error, 'تعذّر تحميل الدرجات.');
+    type Row = {
+      id: string; submission_id: string; question_id: string; ai_score: number | null; ai_reason: string | null;
+      ai_transcription: string | null; ai_confidence: number | null; ai_criteria: QuestionGradeRow['aiCriteria'] | null;
+      final_score: number | null; teacher_note: string | null; reviewed_at: string | null;
+      questions: { number: number; text: string; max_score: number; model_answer: string | null; lessons: { title: string } | null } | null;
+    };
+    return ((data ?? []) as unknown as Row[])
+      .map((g) => {
+        const q = one(g.questions);
+        return {
+          id: g.id,
+          submissionId: g.submission_id,
+          questionId: g.question_id,
+          questionNumber: q?.number ?? 0,
+          questionText: q?.text ?? '',
+          maxScore: Number(q?.max_score ?? 0),
+          modelAnswer: q?.model_answer ?? '',
+          lesson: one(q?.lessons)?.title ?? '',
+          aiScore: g.ai_score === null ? null : Number(g.ai_score),
+          aiReason: g.ai_reason,
+          aiTranscription: g.ai_transcription,
+          aiConfidence: g.ai_confidence === null ? null : Number(g.ai_confidence),
+          aiCriteria: g.ai_criteria ?? [],
+          finalScore: g.final_score === null ? null : Number(g.final_score),
+          teacherNote: g.teacher_note,
+          reviewedAt: g.reviewed_at,
+        };
+      })
+      .sort((a, b) => a.questionNumber - b.questionNumber);
+  }
+
   return {
     mode: 'real',
     listCurricula,
@@ -637,45 +676,88 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     },
 
     async listQuestionGrades(submissionId) {
-      const { data, error } = await db
-        .from('question_grades')
-        .select('id, submission_id, question_id, ai_score, ai_reason, ai_transcription, ai_confidence, ai_criteria, final_score, teacher_note, reviewed_at, questions(number, text, max_score, model_answer)')
-        .eq('submission_id', submissionId);
-      if (error) fail(error, 'تعذّر تحميل الدرجات.');
-      type Row = {
-        id: string; submission_id: string; question_id: string; ai_score: number | null; ai_reason: string | null;
-        ai_transcription: string | null; ai_confidence: number | null; ai_criteria: QuestionGradeRow['aiCriteria'] | null;
-        final_score: number | null; teacher_note: string | null; reviewed_at: string | null;
-        questions: { number: number; text: string; max_score: number; model_answer: string | null } | null;
-      };
-      return ((data ?? []) as unknown as Row[])
-        .map((g) => {
-          const q = one(g.questions);
-          return {
-            id: g.id,
-            submissionId: g.submission_id,
-            questionId: g.question_id,
-            questionNumber: q?.number ?? 0,
-            questionText: q?.text ?? '',
-            maxScore: Number(q?.max_score ?? 0),
-            modelAnswer: q?.model_answer ?? '',
-            aiScore: g.ai_score === null ? null : Number(g.ai_score),
-            aiReason: g.ai_reason,
-            aiTranscription: g.ai_transcription,
-            aiConfidence: g.ai_confidence === null ? null : Number(g.ai_confidence),
-            aiCriteria: g.ai_criteria ?? [],
-            finalScore: g.final_score === null ? null : Number(g.final_score),
-            teacherNote: g.teacher_note,
-            reviewedAt: g.reviewed_at,
-          };
-        })
-        .sort((a, b) => a.questionNumber - b.questionNumber);
+      return loadGrades((q) => q.eq('submission_id', submissionId));
+    },
+
+    async listAssessmentGrades(assessmentId) {
+      return loadGrades((q) => q.eq('submissions.assessment_id', assessmentId), 'submissions!inner(assessment_id)');
     },
 
     async saveTeacherGrade(questionGradeId, finalScore, teacherNote) {
       // The database keeps the before/after/who/when history by itself (grade_edits).
       const { error } = await db.from('question_grades').update({ final_score: finalScore, teacher_note: teacherNote }).eq('id', questionGradeId);
       if (error) fail(error, 'تعذّر حفظ الدرجة.');
+    },
+
+    async uploadPaper(assessmentId, pages, studentId = null) {
+      const id = crypto.randomUUID();
+      const { error } = await db.from('submissions').insert({
+        id,
+        organization_id: orgId,
+        assessment_id: assessmentId,
+        student_id: studentId,
+        source: 'teacher_scan',
+      });
+      if (error) fail(error, 'تعذّر حفظ الورقة.');
+      const rows = [];
+      for (let i = 0; i < pages.length; i++) {
+        const path = `${orgId}/${assessmentId}/${id}/${i + 1}.jpg`;
+        const bytes = Uint8Array.from(atob(pages[i].base64), (c) => c.charCodeAt(0));
+        const { error: upError } = await db.storage
+          .from('submission-pages')
+          .upload(path, new Blob([bytes], { type: pages[i].mediaType }), { contentType: pages[i].mediaType, upsert: true });
+        if (upError) {
+          await db.from('submissions').delete().eq('id', id);
+          fail(upError, 'تعذّر رفع صورة الورقة.');
+        }
+        rows.push({ submission_id: id, organization_id: orgId, page_number: i + 1, storage_path: path });
+      }
+      const { error: pagesError } = await db.from('submission_pages').insert(rows);
+      if (pagesError) fail(pagesError, 'تعذّر حفظ صفحات الورقة.');
+      return id;
+    },
+
+    async gradeSubmission(submissionId) {
+      const { data, error } = await db.functions.invoke('grade-submission', { body: { submissionId } });
+      if (error) {
+        let message = 'تعذّر تصحيح الورقة الآن.';
+        const ctx = (error as { context?: Response }).context;
+        try {
+          const body = ctx ? await ctx.json() : null;
+          if (body?.error) message = body.error;
+        } catch {
+          // keep the generic message
+        }
+        return { ok: false, error: message };
+      }
+      return { ok: !!data?.ok, error: data?.error };
+    },
+
+    async getPageUrls(submissionId) {
+      const { data, error } = await db
+        .from('submission_pages')
+        .select('page_number, storage_path, corrected_storage_path')
+        .eq('submission_id', submissionId)
+        .order('page_number');
+      if (error) fail(error, 'تعذّر تحميل صور الورقة.');
+      const paths = (data ?? []).map((p) => p.storage_path as string);
+      if (!paths.length) return [];
+      const { data: signed, error: signError } = await db.storage.from('submission-pages').createSignedUrls(paths, 60 * 30);
+      if (signError) fail(signError, 'تعذّر عرض صور الورقة.');
+      return (signed ?? []).map((s) => s.signedUrl ?? '').filter(Boolean);
+    },
+
+    async assignStudent(submissionId, studentId) {
+      const { error } = await db.from('submissions').update({ student_id: studentId }).eq('id', submissionId);
+      if (error) fail(error, error.code === '23505' ? 'لهذا الطالب ورقة أخرى في نفس الامتحان.' : 'تعذّر ربط الورقة بالطالب.');
+    },
+
+    async deleteSubmission(submissionId) {
+      const { data } = await db.from('submission_pages').select('storage_path').eq('submission_id', submissionId);
+      const paths = (data ?? []).map((p) => p.storage_path as string);
+      if (paths.length) await db.storage.from('submission-pages').remove(paths);
+      const { error } = await db.from('submissions').delete().eq('id', submissionId);
+      if (error) fail(error, 'تعذّر حذف الورقة.');
     },
 
     async approveSubmission(submissionId) {

@@ -11,6 +11,7 @@ import {
   MOCK_STUDENTS,
 } from '../mockData';
 import type { Group } from '../types';
+import { requestGrading } from '../lib/gradingApi';
 import type {
   AssessmentDetail,
   AssessmentRow,
@@ -39,6 +40,7 @@ interface DemoState {
   assessments: AssessmentDetail[];
   submissions: SubmissionRow[];
   grades: QuestionGradeRow[];
+  pages: Record<string, string[]>;
 }
 
 function initialState(): DemoState {
@@ -101,7 +103,7 @@ function initialState(): DemoState {
       pageCount: 1,
     };
   });
-  return { groups, students, progress: { g1: taughtG1 }, assessments, submissions, grades };
+  return { groups, students, progress: { g1: taughtG1 }, assessments, submissions, grades, pages: {} };
 }
 
 let state: DemoState | null = null;
@@ -320,6 +322,10 @@ export function createDemoStore(): DataStore {
     listSubmissions: (assessmentId) => wait(s().submissions.filter((x) => x.assessmentId === assessmentId)),
     listQuestionGrades: (submissionId) =>
       wait(s().grades.filter((g) => g.submissionId === submissionId).sort((a, b) => a.questionNumber - b.questionNumber)),
+    listAssessmentGrades: (assessmentId) => {
+      const subs = new Set(s().submissions.filter((x) => x.assessmentId === assessmentId).map((x) => x.id));
+      return wait(s().grades.filter((g) => subs.has(g.submissionId)).map((g) => ({ ...g })));
+    },
     async saveTeacherGrade(id, finalScore, teacherNote) {
       const g = s().grades.find((x) => x.id === id);
       if (g) {
@@ -333,6 +339,85 @@ export function createDemoStore(): DataStore {
           sub.lowConfidenceUnreviewed = rows.filter((r) => !r.reviewedAt && (r.aiConfidence ?? 1) < 0.7).length;
         }
       }
+      return wait(undefined);
+    },
+    async uploadPaper(assessmentId, pages, studentId = null) {
+      const id = newId('sub');
+      const st = s().students.find((x) => x.id === studentId);
+      s().submissions.push({
+        id,
+        assessmentId,
+        studentId: st?.id ?? null,
+        studentName: st?.name ?? 'طالب غير محدد',
+        studentCode: st?.studentCode ?? '',
+        source: 'teacher_scan',
+        status: 'uploaded',
+        totalScore: 0,
+        lowConfidenceUnreviewed: 0,
+        submittedAt: new Date().toISOString(),
+        pageCount: pages.length,
+      });
+      s().pages[id] = pages.map((p) => p.dataUrl);
+      const a = s().assessments.find((x) => x.id === assessmentId);
+      if (a) a.uploadedCount += 1;
+      return wait(id);
+    },
+    async gradeSubmission(id) {
+      const sub = s().submissions.find((x) => x.id === id);
+      const a = s().assessments.find((x) => x.id === sub?.assessmentId);
+      if (!sub || !a) return { ok: false, error: 'لم نجد الورقة.' };
+      if (!a.questions.length) return { ok: false, error: 'أضف أسئلة ومعايير لهذا الامتحان أولاً.' };
+      sub.status = 'grading';
+      try {
+        const result = await requestGrading(
+          {
+            title: a.title,
+            subject: a.subject,
+            feedbackLanguage: 'ar',
+            questions: a.questions.map((q) => ({
+              questionNumber: q.questionNumber, text: q.text, type: q.type, maxScore: q.maxScore,
+              modelAnswer: q.modelAnswer, criteria: q.criteria, lesson: q.lesson,
+            })),
+          },
+          (s().pages[id] ?? []).map((url) => ({ base64: url.slice(url.indexOf(',') + 1), dataUrl: url, mediaType: 'image/jpeg' as const })),
+        );
+        if (!sub.studentId && result.studentCodeOnPaper) {
+          const st = s().students.find((x) => x.studentCode === result.studentCodeOnPaper);
+          if (st) Object.assign(sub, { studentId: st.id, studentName: st.name, studentCode: st.studentCode });
+        }
+        s().grades = s().grades.filter((g) => g.submissionId !== id);
+        for (const r of result.questions) {
+          const q = a.questions.find((x) => x.questionNumber === r.questionNumber);
+          if (!q) continue;
+          s().grades.push({
+            id: newId('gr'), submissionId: id, questionId: q.id, questionNumber: q.questionNumber, questionText: q.text,
+            maxScore: q.maxScore, modelAnswer: q.modelAnswer, aiScore: r.score, aiReason: r.reason, aiTranscription: r.transcription,
+            aiConfidence: r.unreadable ? 0.2 : r.confidence === 'high' ? 0.95 : r.confidence === 'medium' ? 0.75 : 0.4,
+            aiCriteria: r.criteria.map((c) => ({ criterion: c.criterion, met: c.met, points: c.pointsAwarded })),
+            finalScore: r.score, teacherNote: r.feedbackForStudent || null, reviewedAt: null,
+          });
+        }
+        const rows = s().grades.filter((g) => g.submissionId === id);
+        sub.totalScore = rows.reduce((n, r) => n + (r.finalScore ?? 0), 0);
+        sub.lowConfidenceUnreviewed = rows.filter((r) => (r.aiConfidence ?? 1) < 0.7).length;
+        sub.status = 'needs_review';
+        if (a.status === 'awaiting_papers') a.status = 'needs_review';
+        return { ok: true };
+      } catch (e) {
+        sub.status = 'failed';
+        return { ok: false, error: e instanceof Error ? e.message : 'تعذّر التصحيح.' };
+      }
+    },
+    getPageUrls: (id) => wait(s().pages[id] ?? []),
+    async assignStudent(id, studentId) {
+      const sub = s().submissions.find((x) => x.id === id);
+      const st = s().students.find((x) => x.id === studentId);
+      if (sub) Object.assign(sub, { studentId: st?.id ?? null, studentName: st?.name ?? 'طالب غير محدد', studentCode: st?.studentCode ?? '' });
+      return wait(undefined);
+    },
+    async deleteSubmission(id) {
+      s().submissions = s().submissions.filter((x) => x.id !== id);
+      s().grades = s().grades.filter((g) => g.submissionId !== id);
       return wait(undefined);
     },
     async approveSubmission(id) {
