@@ -1,10 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ScreenId, LandingPageConfig } from '../../types';
-import {
-  getLandingPageConfig,
-  saveLandingPageConfig,
-  resetLandingPageConfig
-} from '../../mockData';
+import { getLandingPageConfig } from '../../mockData';
+import { loadLandingConfig, mergeLanding, storeLandingConfig } from '../../lib/landing';
 import {
   LayoutTemplate,
   Save,
@@ -38,11 +35,7 @@ export const LandingPageCMS: React.FC<LandingPageCMSProps> = ({ onNavigate }) =>
   const [isDirty, setIsDirty] = useState<boolean>(false);
 
   useEffect(() => {
-    const handleUpdate = () => {
-      setConfig(getLandingPageConfig());
-    };
-    window.addEventListener('dequa_landing_config_updated', handleUpdate);
-    return () => window.removeEventListener('dequa_landing_config_updated', handleUpdate);
+    loadLandingConfig().then(setConfig);
   }, []);
 
   const showToast = (msg: string) => {
@@ -50,19 +43,21 @@ export const LandingPageCMS: React.FC<LandingPageCMSProps> = ({ onNavigate }) =>
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const handleSave = () => {
-    saveLandingPageConfig(config);
-    setIsDirty(false);
-    showToast('تم حفظ ونشر إعدادات الصفحة التعريفية بنجاح!');
+  const handleSave = async () => {
+    try {
+      await storeLandingConfig(config);
+      setIsDirty(false);
+      showToast('تم حفظ ونشر الصفحة التعريفية.');
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'تعذّر الحفظ.');
+    }
   };
 
   const handleReset = () => {
-    if (window.confirm('هل أنت متأكد من استعادة كافة النصوص والإعدادات الافتراضية للمنصة؟')) {
-      const def = resetLandingPageConfig();
-      setConfig(def);
-      setIsDirty(false);
-      showToast('تمت استعادة الإعدادات والنصوص الافتراضية.');
-    }
+    // Restores the default texts in the editor; nothing is published until «حفظ».
+    setConfig(mergeLanding(null));
+    setIsDirty(true);
+    showToast('استُعيدت النصوص الافتراضية. اضغط «حفظ» لنشرها.');
   };
 
   const updateHero = (field: keyof LandingPageConfig['hero'], val: string) => {

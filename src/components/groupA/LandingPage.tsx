@@ -19,7 +19,7 @@ import {
   Camera,
   Play
 } from 'lucide-react';
-import { PLATFORM_CONFIG } from '../../mockData';
+import { useLandingConfig } from '../../lib/landing';
 
 interface LandingPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -30,42 +30,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
   const [activeSubjectTab, setActiveSubjectTab] = useState<'math' | 'physics' | 'chemistry' | 'english'>('math');
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
-  const features = [
-    { title: 'تصحيح فوري فائق الدقة', desc: 'يصحح الخطوات والمعادلات والقوانين والناتج النهائي بدقة تنافس لجان التوجيهي.', icon: CheckCircle2 },
-    { title: 'تقارير واتساب تلقائية', desc: 'تصل تقارير مفصلة لكل طالب وولي أمر ومدرسة فور اعتماد المعلم للدرجات.', icon: Send },
-    { title: 'لوحات أداء ومتابعة', desc: 'تحليل دقيق لأضعف 3 دروس في كل مجموعة ونسب إتقان المهارات والفاقد التعليمي.', icon: BarChart3 },
-    { title: 'متابعة رسوم الطلاب', desc: 'سجّل من دفع ومن تأخر، وأصدر سندات القبض، واعرف نسبة التحصيل الشهرية في مكان واحد.', icon: Wallet },
-    { title: 'إنشاء واجبات وامتحانات', desc: 'أنشئ امتحاناتك بنماذج وزارية متعددة ومعايير تفصيلية أو ولّدها بالذكاء الاصطناعي.', icon: FileText },
-    { title: 'مساعد ذكي خاص بمعلمك', desc: 'اطرح أي سؤال صوتياً أو نصياً ليرفع الدرجات، يعطيك إحصائيات، أو يقترح تدريبات.', icon: Sparkles },
-  ];
-
-  const steps = [
-    { num: '01', title: 'أنشئ الواجب أو الامتحان', desc: 'حدد المادة ومعايير توزيع الدرجات (قانون، تعويض، ناتج) أو ارفع نموذج الامتحان.' },
-    { num: '02', title: 'تسليم الأوراق بسهولة', desc: 'يرفع الطلاب صور حلولهم برابط واتساب مباشر بدون تسجيل، أو يصورها المعلم بكاميرا الهاتف.' },
-    { num: '03', title: 'تصحيح ذكي مع ملاحظات', desc: 'يقرأ الذكاء الاصطناعي الخطوات اليدوية ويضع علامات ✓ و ✗ وملاحظات توجيهية.' },
-    { num: '04', title: 'أوراق مصححة تعود للطالب', desc: 'ترجع الورقة الأصلية محبرة بالقلم الأحمر والدرجة المستحقة مع نقاط التطوير.' },
-    { num: '05', title: 'إرسال تقارير واتساب', desc: 'تقارير فورية لولي الأمر والمدرسة بضغطة زر مع رسالة صوتية مقروءة.' },
-    { num: '06', title: 'اسأل مساعدك الذكي', desc: 'حلل أداء الطلاب وولد تمارين علاجية فورية لمن أخفق في أي مفهوم.' },
-  ];
-
-  const faqs = [
-    {
-      q: 'هل تصحيح الذكاء الاصطناعي دقيق ومعتمد لمناهج التوجيهي؟',
-      a: 'نعم، نموذج «دقة» مدرّب خصيصاً على معايير تصحيح الثانوية العامة الفلسطينية وتوزيع العلامات المعتمد (علامتان للقانون، علامة للتعويض، علامة للناتج). بالإضافة إلى ذلك، لا تُعتمد أي درجة مشكوك فيها أو منخفضة الثقة إلا بمراجعة المعلم وموافقته.',
-    },
-    {
-      q: 'هل أحتاج إلى إنترنت قوي وسريع لاستخدام المنصة؟',
-      a: 'إطلاقاً! المنصة مصممة خصيصاً لظروف قطاع غزة وفلسطين. الصفحات خفيفة للغاية، وعند رفع الأوراق أو تسليمها تعمل ميزة الحفظ المحلي؛ وفي حال انقطاع الإنترنت تُحفظ الأوراق وترفع تلقائياً فور عودة الاتصال.',
-    },
-    {
-      q: 'هل يحتاج الطالب إلى تحميل تطبيق أو فتح حساب؟',
-      a: 'كلا، الطالب لا يحتاج أي حساب أو كلمة مرور أو ربط بجوجل كلاسروم. يصله رابط تسليم مباشر في مجموعة واتساب، يختار اسمه ويلتقط صورة ورقته ويرسلها بلمسة واحدة.',
-    },
-    {
-      q: 'ما هي المواد التي تدعمها منصة دقة حالياً؟',
-      a: 'تدعم المنصة حالياً المواد العلمية والأدبية الأهم: الرياضيات (العلمي والأدبي والصناعي)، الفيزياء، الكيمياء، واللغة الإنجليزية (بما فيها تصحيح مواضيع التعبير Writing وتصنيف الأخطاء لقواعد وإملاء ومفردات).',
-    },
-  ];
+  const cfg = useLandingConfig();
+  const featureIcons = [CheckCircle2, Send, BarChart3, Wallet, FileText, Sparkles];
+  const features = cfg.features.items.map((f, i) => ({ ...f, icon: featureIcons[i % featureIcons.length] }));
+  const steps = cfg.howItWorks.steps;
+  const faqs = cfg.faqs.items;
 
   return (
     <div className="space-y-16 pb-16">
@@ -74,15 +43,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
         <div className="max-w-6xl mx-auto text-center space-y-6">
           <div className="inline-flex items-center gap-2 bg-[#E8F0F8] text-[#1E3A5F] px-4 py-1.5 rounded-full text-xs font-bold border border-blue-200 shadow-2xs">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>المنصة التعليمية العامة لكل مدرّس ومدرسة ومركز تعليمي · لأي صف وأي مادة</span>
+            <span>{cfg.hero.announcementBadge}</span>
           </div>
 
           <h1 className="text-3xl sm:text-5xl font-black text-[#1E3A5F] tracking-tight leading-tight max-w-4xl mx-auto">
-            {PLATFORM_CONFIG.tagline}
+            {cfg.hero.headline}
           </h1>
 
           <p className="text-base sm:text-lg text-slate-600 max-w-3xl mx-auto leading-relaxed">
-            منظومة تصحيح وتقييم ذكية مصممة لكافة المراحل الدراسية والمناهج. تصحيح فوري لخط اليد، رصد دقيق للفاقد التعليمي، ومتابعة درجات الطلاب مع إرسال تقارير واتساب احترافية للأهالي بنقرة واحدة.
+            {cfg.hero.subheadline}
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
@@ -90,7 +59,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
               onClick={() => onNavigate('A3')}
               className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-6 py-3.5 rounded-xl font-bold text-sm transition-all shadow-md hover:shadow-lg cursor-pointer flex items-center gap-2"
             >
-              <span>ابدأ الآن مجاناً</span>
+              <span>{cfg.hero.primaryCtaText}</span>
               <ArrowRight className="w-4 h-4 rtl:rotate-180" />
             </button>
             <button
@@ -100,7 +69,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
               }}
               className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-5 py-3.5 rounded-xl font-semibold text-sm transition-colors cursor-pointer flex items-center gap-2"
             >
-              <span>لمن دِقّـة؟</span>
+              <span>{cfg.hero.secondaryCtaText}</span>
               <ChevronDown className="w-4 h-4 text-[#1E3A5F]" />
             </button>
           </div>
@@ -114,13 +83,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
                     ✓
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm text-slate-900">امتحان الرياضيات - سؤال 1 (الاشتقاق الضمني)</h3>
-                    <p className="text-xs text-slate-500">الطالب: أحمد محمود المصري · ورقة إجابة مصححة بدعم دقة</p>
+                    <h3 className="font-bold text-sm text-slate-900">{cfg.hero.sampleExamTitle}</h3>
+                    <p className="text-xs text-slate-500">الطالب: {cfg.hero.sampleStudentName} · ورقة إجابة مصححة بدعم دقة</p>
                   </div>
                 </div>
                 <div className="text-left">
                   <span className="text-xs text-slate-500 block">الدرجة المعتمدة</span>
-                  <span className="text-xl font-bold text-emerald-600 tabular-nums">20 / 20</span>
+                  <span className="text-xl font-bold text-emerald-600 tabular-nums">{cfg.hero.sampleExamScore}</span>
                 </div>
               </div>
 
@@ -137,7 +106,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
                 </div>
                 <div className="pt-2 border-t border-amber-200/50 flex items-center justify-between text-xs font-sans">
                   <span className="text-red-600 font-semibold italic">
-                    ملاحظة المعلم: "تطبيق متقن لمعايير الاشتقاق والتعويض الدقيق"
+                    ملاحظة المعلم: "{cfg.hero.sampleTeacherNote}"
                   </span>
                   <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded font-bold text-[11px]">
                     فُحص: داخل المنهج المعتمد ✓
@@ -163,16 +132,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
       </section>
 
       {/* Section: لمن دِقّـة؟ (Who is Dequa for? - 3 Cards with practical examples) */}
+      {cfg.sectionVisibility.whoIsItFor && (
       <section id="who-is-it-for" className="max-w-6xl mx-auto px-4 sm:px-6 scroll-mt-24">
         <div className="text-center space-y-2 mb-10">
           <div className="inline-block bg-blue-100 text-[#1E3A5F] text-xs font-bold px-3 py-1 rounded-full">
-            شريحة المستخدمين
+            {cfg.whoIsItFor.sectionBadge}
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-[#1E3A5F]">
-            لمن صُممت منصة دِقّـة؟
+            {cfg.whoIsItFor.sectionTitle}
           </h2>
           <p className="text-sm text-slate-600 max-w-2xl mx-auto">
-            منصة مرنة تخدم التعليم الفردي والمؤسسي، وتتكيف مع احتياجات كل نموذج تعليمي.
+            {cfg.whoIsItFor.sectionSubtitle}
           </p>
         </div>
 
@@ -184,33 +154,25 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
                 <GraduationCap className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-lg font-black text-slate-900">المدرّس الخصوصي والمستقل</h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  للمعلمين الذين يديرون مجموعاتهم الخاصة وحصص التقوية المستقلة.
-                </p>
+                <h3 className="text-lg font-black text-slate-900">{cfg.whoIsItFor.tutor.title}</h3>
+                <p className="text-xs text-slate-500 mt-1">{cfg.whoIsItFor.tutor.subtitle}</p>
               </div>
 
               {/* Real-world example */}
               <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs space-y-1">
-                <span className="font-bold text-slate-700 block">مثال تطبيقي:</span>
+                <span className="font-bold text-slate-700 block">{cfg.whoIsItFor.tutor.exampleTitle}</span>
                 <p className="text-slate-600 text-[11px] leading-relaxed">
-                  مدرّسو الثانوية العامة (التوجيهي) الذين يصححون أسبوعياً مئات الأوراق ويحتاجون متابعة دقيقة لدرجات كل طالب وتحصيل رسوم الجلسات الشهرية.
+                  {cfg.whoIsItFor.tutor.exampleText}
                 </p>
               </div>
 
               <ul className="space-y-2 text-xs text-slate-600 pt-1">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>مجموعات وصفوف غير محدودة</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>فوترة مرنة: {PLATFORM_CONFIG.pricing.tutorMonthlyPerStudent} {PLATFORM_CONFIG.currencySymbol} شهرياً لكل طالب نشط فقط</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>إرسال تقارير واتساب فردية للأهالي</span>
-                </li>
+                {cfg.whoIsItFor.tutor.features.map((f, n) => (
+                  <li key={n} className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{f}</span>
+                  </li>
+                ))}
               </ul>
             </div>
 
@@ -218,7 +180,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
               onClick={() => onNavigate('A3')}
               className="w-full bg-[#1E3A5F] hover:bg-[#152a45] text-white py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer text-center"
             >
-              ابدأ كمعلم مستقل ←
+              {cfg.whoIsItFor.tutor.buttonText}
             </button>
           </div>
 
@@ -233,33 +195,25 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
                 <Building className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-lg font-black text-slate-900">المدرسة (الخاصة والحكومية)</h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  لإدارات المدارس والمشرفين التربويين ورؤساء الأقسام لمراقبة الجودة.
-                </p>
+                <h3 className="text-lg font-black text-slate-900">{cfg.whoIsItFor.school.title}</h3>
+                <p className="text-xs text-slate-500 mt-1">{cfg.whoIsItFor.school.subtitle}</p>
               </div>
 
               {/* Real-world example */}
               <div className="p-3 bg-emerald-50/60 border border-emerald-100 rounded-xl text-xs space-y-1">
-                <span className="font-bold text-emerald-900 block">مثال تطبيقي:</span>
+                <span className="font-bold text-emerald-900 block">{cfg.whoIsItFor.school.exampleTitle}</span>
                 <p className="text-emerald-800 text-[11px] leading-relaxed">
-                  المدارس الخاصة للمرحلة الأساسية (الصفوف 1 - 9) لمتابعة الفاقد التعليمي واختبارات الشعب في كافة المواد، وجدول حراري يكشف أضعف المهارات فوراً.
+                  {cfg.whoIsItFor.school.exampleText}
                 </p>
               </div>
 
               <ul className="space-y-2 text-xs text-slate-600 pt-1">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>إدارة طاقم المعلمين وربط الشعب الدراسية</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>عقد سنوي: {PLATFORM_CONFIG.pricing.schoolYearlyPerStudent} {PLATFORM_CONFIG.currencySymbol} لكل طالب (بدفعتين فصليتين)</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>الأوراق والتقارير تحمل اسم المدرسة وشعارها «بدعم دقة»</span>
-                </li>
+                {cfg.whoIsItFor.school.features.map((f, n) => (
+                  <li key={n} className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{f}</span>
+                  </li>
+                ))}
               </ul>
             </div>
 
@@ -267,7 +221,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
               onClick={() => onNavigate('A3')}
               className="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer text-center"
             >
-              سجّل مدرستك واحجز مكالمة تجهيز ←
+              {cfg.whoIsItFor.school.buttonText}
             </button>
           </div>
 
@@ -278,33 +232,25 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
                 <Users className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-lg font-black text-slate-900">المركز التعليمي والمعهد</h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  للمعاهد الأكاديمية والمراكز الثقافية التي تضم معلمين متعددين ومئات الطلاب.
-                </p>
+                <h3 className="text-lg font-black text-slate-900">{cfg.whoIsItFor.center.title}</h3>
+                <p className="text-xs text-slate-500 mt-1">{cfg.whoIsItFor.center.subtitle}</p>
               </div>
 
               {/* Real-world example */}
               <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs space-y-1">
-                <span className="font-bold text-slate-700 block">مثال تطبيقي:</span>
+                <span className="font-bold text-slate-700 block">{cfg.whoIsItFor.center.exampleTitle}</span>
                 <p className="text-slate-600 text-[11px] leading-relaxed">
-                  مراكز التقوية والدورات المسائية للمناهج المتنوعة مع فرز الطلاب حسب المستويات وشعب المواد المختلفة.
+                  {cfg.whoIsItFor.center.exampleText}
                 </p>
               </div>
 
               <ul className="space-y-2 text-xs text-slate-600 pt-1">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>لوحة تحكم موحدة لإدارة الشعب والمعلمين</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>صلاحيات منفصلة للإدارة والمعلمين</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>توليد تقارير أداء مركزية مطبوعة ورقمية</span>
-                </li>
+                {cfg.whoIsItFor.center.features.map((f, n) => (
+                  <li key={n} className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{f}</span>
+                  </li>
+                ))}
               </ul>
             </div>
 
@@ -312,25 +258,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
               onClick={() => onNavigate('A3')}
               className="w-full bg-[#1E3A5F] hover:bg-[#152a45] text-white py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer text-center"
             >
-              ابدأ لمركزك التعليمي ←
+              {cfg.whoIsItFor.center.buttonText}
             </button>
           </div>
         </div>
       </section>
+      )}
 
       {/* Section: المناهج المدعومة (Supported Curricula) */}
+      {cfg.sectionVisibility.curricula && (
       <section id="curricula-section" className="max-w-6xl mx-auto px-4 sm:px-6">
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50/60 border border-blue-200 rounded-2xl p-6 sm:p-8 space-y-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <span className="text-xs font-bold text-blue-700 bg-blue-100 px-3 py-1 rounded-full">
-                تغطية المناهج والصفوف
+                {cfg.curricula.badge}
               </span>
               <h2 className="text-2xl font-black text-[#1E3A5F] mt-2">
-                المناهج والصفوف الدراسية المدعومة
+                {cfg.curricula.title}
               </h2>
               <p className="text-xs text-slate-600 mt-1 max-w-xl">
-                {PLATFORM_CONFIG.supportedCurriculaSummary}
+                {cfg.curricula.description}
               </p>
             </div>
 
@@ -397,15 +345,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
           </div>
         </div>
       </section>
+      )}
 
       {/* 6 Feature Cards */}
+      {cfg.sectionVisibility.features && (
       <section className="max-w-6xl mx-auto px-4 sm:px-6">
         <div className="text-center space-y-2 mb-10">
           <h2 className="text-2xl sm:text-3xl font-extrabold text-[#1E3A5F]">
-            ماذا تقدّم لك منصة دِقّـة؟
+            {cfg.features.sectionTitle}
           </h2>
           <p className="text-sm text-slate-600">
-            أدوات متكاملة تجعل إدارة طلابك وامتحاناتك أسرع بعشر مرات.
+            {cfg.features.sectionSubtitle}
           </p>
         </div>
 
@@ -427,15 +377,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
           })}
         </div>
       </section>
+      )}
 
       {/* How it Works: 6-Step Loop (01 - 06) */}
+      {cfg.sectionVisibility.howItWorks && (
       <section id="how-it-works" className="max-w-6xl mx-auto px-4 sm:px-6 scroll-mt-24">
         <div className="text-center space-y-2 mb-12">
           <div className="inline-block bg-blue-100 text-[#1E3A5F] text-xs font-bold px-3 py-1 rounded-full">
-            دورة العمل السلسة
+            {cfg.howItWorks.sectionBadge}
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-[#1E3A5F]">
-            كيف تعمل منصة دقة في 6 خطوات بسيطة؟
+            {cfg.howItWorks.sectionTitle}
           </h2>
         </div>
 
@@ -459,6 +411,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
           ))}
         </div>
       </section>
+      )}
 
       {/* Before & After Interactive Paper Comparison */}
       <section className="max-w-5xl mx-auto px-4 sm:px-6">
@@ -692,10 +645,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
       </section>
 
       {/* FAQ Section */}
+      {cfg.sectionVisibility.faqs && (
       <section id="faq-section" className="max-w-4xl mx-auto px-4 sm:px-6 scroll-mt-24 space-y-6">
         <div className="text-center space-y-1">
-          <h2 className="text-2xl font-extrabold text-[#1E3A5F]">الأسئلة الشائعة</h2>
-          <p className="text-xs text-slate-500">كل ما تحتاج معرفته لبدء استخدام منصة دقة</p>
+          <h2 className="text-2xl font-extrabold text-[#1E3A5F]">{cfg.faqs.sectionTitle}</h2>
+          <p className="text-xs text-slate-500">{cfg.faqs.sectionSubtitle}</p>
         </div>
 
         <div className="space-y-3">
@@ -720,6 +674,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
           ))}
         </div>
       </section>
+      )}
 
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white pt-10 pb-6 px-4 sm:px-6 mt-16 text-slate-600 text-xs">
@@ -730,8 +685,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
           </div>
 
           <div className="flex flex-wrap items-center gap-4 sm:gap-6 text-slate-600">
-            <span>واتساب الدعم: <strong className="font-mono text-slate-800 tabular-nums">+970 59-912-3456</strong></span>
-            <span>البريد: <strong className="font-mono text-slate-800">support@daqqa.ps</strong></span>
+            <span>واتساب الدعم: <strong className="font-mono text-slate-800 tabular-nums" dir="ltr">{cfg.footer.whatsappNumber}</strong></span>
+            <span>البريد: <strong className="font-mono text-slate-800">{cfg.footer.contactEmail}</strong></span>
             <button onClick={() => onNavigate('A2')} className="hover:text-[#1E3A5F] cursor-pointer">الأسعار</button>
             <button onClick={() => onNavigate('B11')} className="hover:text-[#1E3A5F] cursor-pointer font-bold text-emerald-700">حسابات ورسوم الطلاب</button>
             <button onClick={() => onNavigate('B5')} className="hover:text-[#1E3A5F] cursor-pointer">تصوير الامتحانات</button>
@@ -739,7 +694,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
           </div>
         </div>
         <div className="max-w-6xl mx-auto text-center text-slate-400 text-[11px] pt-6 mt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>جميع الحقوق محفوظة © 2026 منصة دقة — تصحيح أوراق الامتحانات بالذكاء الاصطناعي للمدارس الخاصة ومدرسي التوجيهي في فلسطين.</span>
+          <span>{cfg.footer.copyright}</span>
           <span className="text-emerald-700 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">نظام مالي وسندات قبض للأستاذ مدمج ✓</span>
         </div>
       </footer>
