@@ -1,0 +1,20 @@
+#subject|اللغة الإنجليزية
+#sem|2
+#book|c6_en6-p2
+U|Unit 10: A visit to the Dead Sea
+O|Introducing the present perfect with ever
+U|Unit 11: Exciting things to do
+O|Identifying exciting activities
+O|Present perfect with never
+U|Unit 12: At the clinic
+O|Talking about illnesses
+O|Present perfect with since and for
+U|Unit 13: Where does rain come from?
+O|Revising present simple facts
+U|Unit 15: Great explorers
+O|Giving opinions
+O|Agreeing / disagreeing
+U|Unit 16: My friends and why I love them
+O|Giving reasons
+U|Unit 17: Good manners
+O|Using adverbs of manner

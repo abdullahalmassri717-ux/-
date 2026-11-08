@@ -1,0 +1,22 @@
+#subject|اللغة الإنجليزية
+#sem|1
+#book|c6_en6-p1
+U|Unit 1: My summer holiday
+O|Asking and answering questions about your holiday (simple past)
+U|Unit 2: Good friends
+O|Talking about what makes a good friend
+O|Dealing with difficult situations
+U|Unit 3: Summer adventures
+O|Talking about dates
+O|Describing adventures and when something happened (past continuous)
+U|Unit 4: Films I like
+O|Using the past continuous with while
+U|Unit 6: Healthy food
+O|Giving advice (should)
+U|Unit 7: The olive trees of Palestine
+O|Asking and giving permission
+O|Making invitations
+O|Offering and accepting help
+U|Unit 8: Signs around us
+O|Asking people to do things
+O|Talking about obligation and prohibition (must / must not)
