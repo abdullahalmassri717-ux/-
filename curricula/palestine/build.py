@@ -1,9 +1,10 @@
 """Builds the curriculum import spreadsheets from the raw table-of-contents files.
 
 Raw files live in raw/<grade-folder>/<subject>[-p1|-p2].txt, one line per item:
-  #subject|<subject name>     #sem|<1, 2 or 0 for a yearly book>     #src|<book PDF>
+  #subject|<subject name>     #sem|<1, 2 or 0 for a yearly book>     #book|<book code on elearn.edu.ps>
   U|<unit>   L|<lesson>   O|<outcome of the current unit>
   G|<general outcome of the whole book; matched to lessons by skill (Arabic books)>
+A unit with no L lines (English books) becomes a single lesson named after the unit.
 
 Output (in the folder above raw/): one .xlsx per grade plus one file with every grade,
 in the column layout of the admin "import curriculum" screen:
@@ -113,7 +114,9 @@ def rows_for_grade(folder: Path):
         for sem, units, general in parts:
             for name, lessons, outcomes in units:
                 n += 1
-                if not name.startswith("الوحدة"):
+                if not lessons:  # books with no lesson list (English): the unit itself is the lesson
+                    lessons = [re.sub(r"^(Unit\s+\d+|الوحدة\s+\S+)\s*:\s*", "", name)]
+                if not re.match(r"^(الوحدة|Unit\s|Literature\s|مدخل)", name):
                     name = f"الوحدة {ORDINALS[min(n, len(ORDINALS)) - 1]}: {name}"
                 if name in seen_units and sem in SEM_NAMES:
                     name = f"{SEM_NAMES[sem]} – {name}"
