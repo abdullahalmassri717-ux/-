@@ -16,7 +16,6 @@ import {
   FileCheck2,
   BrainCircuit,
   Wallet,
-  UserPlus,
   X,
   Phone,
   LayoutTemplate
@@ -61,11 +60,6 @@ export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity): N
       { id: 'B12' as ScreenId, label: 'معاينة الورقة المصححة', icon: FileCheck2 },
       { id: 'C_HUB' as ScreenId, label: 'أدوات الذكاء الاصطناعي', icon: Sparkles },
     ];
-
-    // فريق المساعدين: للمدرّس صاحب الحساب فقط
-    if (!isSchoolTeacher) {
-      items.push({ id: 'B13' as ScreenId, label: 'فريق المساعدين', icon: UserPlus });
-    }
 
     // معلمو المدرسة لا يرون إطلاقاً الاشتراك والفواتير (لا في القائمة ولا في أي مكان)
     if (!isSchoolTeacher) {

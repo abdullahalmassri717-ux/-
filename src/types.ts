@@ -7,7 +7,7 @@ export type UserRole =
   | 'platform_admin';
 
 export type EntityType = 'individual_teacher' | 'school' | 'learning_center';
-export type EntityRole = 'owner' | 'teacher' | 'assistant';
+export type EntityRole = 'owner' | 'teacher';
 
 export interface Entity {
   id: string;
@@ -43,7 +43,6 @@ export type ScreenId =
   | 'B10' // معاينة تقرير ولي الأمر والإرسال
   | 'B11' // الاشتراك والفواتير (للمدرس أو مدير المدرسة فقط)
   | 'B12' // الورقة المصححة
-  | 'B13' // فريق المساعدين
   | 'B14' // شاشة وين وصلنا في المنهاج
   | 'B15' // تشخيص وتحليلات الأستاذ الشاملة (افهم طلابك، أين تركز، والشيء الذي يحتاج تقوية)
   | 'SUPPORT' // الدعم الفني والمساعدة (للمعلم والمدرسة)
@@ -252,31 +251,6 @@ export interface GradingItem {
     structureBand: number; // e.g. 4/5
     rephrasedVersion: string;
   };
-}
-
-export interface Assistant {
-  id: string;
-  name: string;
-  phone: string;
-  assignedGroups: string[];
-  lastActive: string;
-  reviewsCountWeek: number;
-  permissions: {
-    uploadPapers: boolean;
-    reviewGrading: boolean;
-    approveGrades: boolean;
-    sendReports: boolean;
-    viewParentData: boolean;
-  };
-}
-
-export interface AuditLog {
-  id: string;
-  actor: string;
-  action: string;
-  target: string;
-  timestamp: string;
-  details: string;
 }
 
 export interface SchoolTeacher {

@@ -27,7 +27,6 @@ import { ParentReportPage } from './components/groupB/ParentReportPage';
 import { SubscriptionPage } from './components/groupB/SubscriptionPage';
 import { CorrectedPaperViewPage } from './components/groupB/CorrectedPaperViewPage';
 import WhereWeReachedPage from './components/groupB/WhereWeReachedPage';
-import { AssistantsTeamPage } from './components/groupB/AssistantsTeamPage';
 import { TeacherDiagnosticAnalyticsPage } from './components/groupB/TeacherDiagnosticAnalyticsPage';
 
 // Common Components
@@ -72,13 +71,8 @@ export default function App() {
 
   const handleNavigate = (screen: ScreenId) => {
     // School teachers cannot navigate to B11 (Subscriptions & Invoices)
-    if ((screen === 'B11' || screen === 'B13') && activeEntity.type === 'school' && activeEntity.role === 'teacher') {
-      notify(
-        screen === 'B11'
-          ? 'إدارة الاشتراكات والفواتير خاصة بإدارة المدرسة فقط وغير متاحة لمعلمي المدرسة.'
-          : 'إدارة الفريق خاصة بإدارة المدرسة فقط.',
-        'warning'
-      );
+    if (screen === 'B11' && activeEntity.type === 'school' && activeEntity.role === 'teacher') {
+      notify('إدارة الاشتراكات والفواتير خاصة بإدارة المدرسة فقط وغير متاحة لمعلمي المدرسة.', 'warning');
       return;
     }
     setCurrentScreen(screen);
@@ -157,8 +151,6 @@ export default function App() {
         return <SubscriptionPage onNavigate={handleNavigate} activeEntity={activeEntity} />;
       case 'B12':
         return <CorrectedPaperViewPage onNavigate={handleNavigate} />;
-      case 'B13':
-        return <AssistantsTeamPage onNavigate={handleNavigate} />;
       case 'B14':
         return (
           <WhereWeReachedPage 

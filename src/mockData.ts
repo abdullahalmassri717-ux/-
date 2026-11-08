@@ -4,8 +4,6 @@ import {
   Exam,
   QuestionRubric,
   GradingItem,
-  Assistant,
-  AuditLog,
   SchoolTeacher,
   SchoolClass,
   PlatformClient,
@@ -1026,66 +1024,6 @@ export const MOCK_GRADING_ITEMS: GradingItem[] = [
   }
 ];
 
-export const MOCK_ASSISTANTS: Assistant[] = [
-  {
-    id: 'as1',
-    name: 'أ. بلال قديح',
-    phone: '0597112244',
-    assignedGroups: ['مجموعة الأحد والثلاثاء (علمي - أ)', 'مجموعة الإثنين والأربعاء (علمي - ب)'],
-    lastActive: 'منذ ساعتين',
-    reviewsCountWeek: 48,
-    permissions: {
-      uploadPapers: true,
-      reviewGrading: true,
-      approveGrades: true,
-      sendReports: false,
-      viewParentData: false,
-    },
-  },
-  {
-    id: 'as2',
-    name: 'أ. هدى الغصين',
-    phone: '0598334466',
-    assignedGroups: ['مجموعة الخميس (صناعي)'],
-    lastActive: 'منذ يوم',
-    reviewsCountWeek: 34,
-    permissions: {
-      uploadPapers: true,
-      reviewGrading: true,
-      approveGrades: false,
-      sendReports: false,
-      viewParentData: false,
-    },
-  },
-];
-
-export const MOCK_AUDIT_LOGS: AuditLog[] = [
-  {
-    id: 'log1',
-    actor: 'أ. بلال قديح (مساعد)',
-    action: 'تعديل درجة',
-    target: 'الطالب أحمد المصري - سؤال 2',
-    timestamp: 'اليوم، 11:45 ص',
-    details: 'رُفعت الدرجة من 12 إلى 15 بعد التأكد من خطوة التعويض',
-  },
-  {
-    id: 'log2',
-    actor: 'أ. محمد المصري (المعلم)',
-    action: 'اعتماد درجات المجموعة',
-    target: 'مجموعة الأحد والثلاثاء (52 ورقة)',
-    timestamp: 'اليوم، 09:30 ص',
-    details: 'اعتمد تصحيح امتحان الشهر الأول بنجاح',
-  },
-  {
-    id: 'log3',
-    actor: 'الذكاء الاصطناعي (منصة دقة)',
-    action: 'تصحيح تلقائي دفعة أوراق',
-    target: 'امتحان التفاضل - 52 ورقة',
-    timestamp: 'أمس، 08:15 م',
-    details: 'أنجز قراءة واستخراج الإجابات خلال دقيقة و12 ثانية بنسبة ثقة 94%',
-  },
-];
-
 export const MOCK_SCHOOL_INFO = {
   name: 'مدرسة الأمل الخاصة',
   type: 'مدرسة خاصة (الصفوف 1 - 9)',
@@ -1564,7 +1502,7 @@ export const DEFAULT_LANDING_CONFIG: LandingPageConfig = {
       exampleText: 'مراكز التقوية والدورات المسائية للمناهج المتنوعة مع فرز الطلاب حسب المستويات وشعب المواد المختلفة.',
       features: [
         'لوحة تحكم موحدة لإدارة الشعب والمعلمين',
-        'صلاحيات دقيقة للإداريين والمساعدين',
+        'صلاحيات منفصلة للإدارة والمعلمين',
         'توليد تقارير أداء مركزية مطبوعة ورقمية'
       ],
       buttonText: 'ابدأ لمركزك التعليمي ←',
@@ -1598,7 +1536,7 @@ export const DEFAULT_LANDING_CONFIG: LandingPageConfig = {
       { title: 'تصحيح فوري فائق الدقة', desc: 'يصحح الخطوات والمعادلات والقوانين والناتج النهائي بدقة تنافس لجان التوجيهي.' },
       { title: 'تقارير واتساب تلقائية', desc: 'تصل تقارير مفصلة لكل طالب وولي أمر ومدرسة فور اعتماد المعلم للدرجات.' },
       { title: 'لوحات أداء ومتابعة', desc: 'تحليل دقيق لأضعف 3 دروس في كل مجموعة ونسب إتقان المهارات والفاقد التعليمي.' },
-      { title: 'فريق مساعدين بصلاحيات', desc: 'أضف مساعدين لتصوير ومراجعة الأوراق مع تحديد دقيق للصلاحيات وسجل التدقيق.' },
+      { title: 'متابعة رسوم الطلاب', desc: 'سجّل من دفع ومن تأخر، وأصدر سندات القبض، واعرف نسبة التحصيل الشهرية في مكان واحد.' },
       { title: 'إنشاء واجبات وامتحانات', desc: 'أنشئ امتحاناتك بنماذج وزارية متعددة ومعايير تفصيلية أو ولّدها بالذكاء الاصطناعي.' },
       { title: 'مساعد ذكي خاص بمعلمك', desc: 'اطرح أي سؤال صوتياً أو نصياً ليرفع الدرجات، يعطيك إحصائيات، أو يقترح تدريبات.' },
     ],

@@ -7,6 +7,7 @@ import {
   Sparkles,
   BarChart3,
   Users,
+  Wallet,
   FileText,
   Smartphone,
   ChevronDown,
@@ -33,7 +34,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
     { title: 'تصحيح فوري فائق الدقة', desc: 'يصحح الخطوات والمعادلات والقوانين والناتج النهائي بدقة تنافس لجان التوجيهي.', icon: CheckCircle2 },
     { title: 'تقارير واتساب تلقائية', desc: 'تصل تقارير مفصلة لكل طالب وولي أمر ومدرسة فور اعتماد المعلم للدرجات.', icon: Send },
     { title: 'لوحات أداء ومتابعة', desc: 'تحليل دقيق لأضعف 3 دروس في كل مجموعة ونسب إتقان المهارات والفاقد التعليمي.', icon: BarChart3 },
-    { title: 'فريق مساعدين بصلاحيات', desc: 'أضف مساعدين لتصوير ومراجعة الأوراق مع تحديد دقيق للصلاحيات وسجل التدقيق.', icon: Users },
+    { title: 'متابعة رسوم الطلاب', desc: 'سجّل من دفع ومن تأخر، وأصدر سندات القبض، واعرف نسبة التحصيل الشهرية في مكان واحد.', icon: Wallet },
     { title: 'إنشاء واجبات وامتحانات', desc: 'أنشئ امتحاناتك بنماذج وزارية متعددة ومعايير تفصيلية أو ولّدها بالذكاء الاصطناعي.', icon: FileText },
     { title: 'مساعد ذكي خاص بمعلمك', desc: 'اطرح أي سؤال صوتياً أو نصياً ليرفع الدرجات، يعطيك إحصائيات، أو يقترح تدريبات.', icon: Sparkles },
   ];
@@ -298,7 +299,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>صلاحيات دقيقة للإداريين والمساعدين</span>
+                  <span>صلاحيات منفصلة للإدارة والمعلمين</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
