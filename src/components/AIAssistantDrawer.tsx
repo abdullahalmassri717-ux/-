@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ScreenId } from '../types';
+import { useData, errorMessage } from '../data/DataContext';
 import {
   Sparkles,
   X,
@@ -45,115 +46,42 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
   currentScreen,
   onNavigate,
 }) => {
+  const store = useData();
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'm1',
       sender: 'ai',
-      text: `أهلاً بك أستاذ محمد! أنا مساعدك الذكي في منصة دقة. أرى أنك تتصفح الآن الشاشة (${currentScreen}). كيف يمكنني مساعدتك في تصحيح أوراق طلاب التوجيهي أو إدارة مجموعاتك اليوم؟`,
+      text: 'أهلاً بك! أنا مساعد دقة. اسألني عن صياغة الأسئلة ومعايير التصحيح، أفكار لشرح درس، رسالة لأولياء الأمور، أو طريقة استخدام المنصة.',
     },
   ]);
 
   const [input, setInput] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   // Suggested prompts from PDF page 10
   const suggestions = [
-    'مين أضعف 5 طلاب هذا الشهر؟',
-    'ما أشيع خطأ في امتحان الأمس؟',
-    'ارفع درجة سؤال 3 لأحمد إلى 4',
-    'أنشئ واجباً في النهايات لمجموعة الخميس',
+    'اقترح معايير تصحيح لمسألة من 10 درجات',
+    'اكتب رسالة لأولياء الأمور عن موعد امتحان',
+    'كيف أرسل رابط التسليم للطلاب؟',
+    'فكرة بسيطة لشرح درس صعب',
   ];
 
-  const handleSend = (textToSend?: string) => {
+  const handleSend = async (textToSend?: string) => {
     const text = textToSend || input;
     if (!text.trim() || isLoading) return;
-
-    const userMsg: ChatMessage = {
-      id: Date.now().toString(),
-      sender: 'user',
-      text: text,
-    };
-
+    const userMsg: ChatMessage = { id: Date.now().toString(), sender: 'user', text };
+    const history = [...messages.filter((m) => m.id !== 'm1'), userMsg];
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
-
-    // Simulate 1-second AI processing
-    setTimeout(() => {
+    try {
+      const reply = await store.aiAssistant(history.map((m) => ({ role: m.sender === 'user' ? 'user' : 'assistant', text: m.text })));
+      setMessages((prev) => [...prev, { id: `${Date.now()}a`, sender: 'ai', text: reply || 'لم أفهم الطلب، جرّب صياغة أخرى.' }]);
+    } catch (e) {
+      setMessages((prev) => [...prev, { id: `${Date.now()}e`, sender: 'ai', text: errorMessage(e) }]);
+    } finally {
       setIsLoading(false);
-
-      if (text.includes('أضعف 5 طلاب') || text.includes('ضعف')) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            sender: 'ai',
-            text: 'بناءً على نتائج آخر 3 امتحانات في مجموعاتك الأربعة، هؤلاء هم أكثر 5 طلاب بحاجة لتدخل وتدريبات علاجية:',
-            tableData: {
-              headers: ['الطالب', 'المجموعة', 'متوسط الدرجات', 'أصعب موضوع'],
-              rows: [
-                ['عمر شريف قاسم', 'الخميس (صناعي)', '54%', 'قاعدة السلسلة'],
-                ['خليل سمير شعت', 'الخميس (صناعي)', '58%', 'تكامل الاقترانات المثلثية'],
-                ['محمود خليل البطش', 'الأحد والثلاثاء (علمي - أ)', '62%', 'الاشتقاق الضمني'],
-                ['مريم إياد النجار', 'الإثنين والأربعاء (علمي - ب)', '74%', 'الاشتقاق الضمني'],
-                ['رزان كمال الدلو', 'الأحد والثلاثاء (علمي - أ)', '81%', 'المعادلات المرتبطة بالزمن'],
-              ],
-            },
-          },
-        ]);
-      } else if (text.includes('ارفع درجة') || text.includes('تعديل')) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            sender: 'ai',
-            text: 'لقد فحصت ورقة الطالب أحمد المصري في امتحان التفاضل. هذا هو الإجراء المقترح للتعديل وفق طلبك:',
-            actionCard: {
-              title: 'تعديل درجة الطالب: أحمد محمود المصري',
-              description: 'امتحان التفاضل وقواعد الاشتقاق - السؤال 3 (الاشتقاق الضمني)',
-              changeDetails: 'رفع الدرجة من 3/5 إلى 4/5 بعد مراجعة خطوة كتابة القانون.',
-              confirmed: false,
-              cancelled: false,
-            },
-          },
-        ]);
-      } else if (text.includes('أشيع خطأ') || text.includes('خطأ')) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            sender: 'ai',
-            text: 'في امتحان التفاضل الأخير لمجموعة الأحد والثلاثاء، أشيع خطأ وقع فيه 38% من الطلاب هو: نسيان اشتقاق الزاوية أو الأس عند تطبيق قاعدة السلسلة في مشتقة هـ^(2س)، حيث كتبوا المشتقة هـ^(2س) بدلاً من 2 هـ^(2س). يمكنك إنشاء تمارين علاجية مخصصة لهذا الهدف بضغطة زر.',
-          },
-        ]);
-      } else if (text.includes('أنشئ واجباً') || text.includes('واجب')) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            sender: 'ai',
-            text: 'تم تجهيز مسودة واجب منزلي (3 مسائل متدرجة في نهايات الاقترانات الدائرية وقاعدة لوبيتال) لمجموعة الخميس (صناعي). تم حفظ المعايير تلقائياً وإضافتها لإعدادات الامتحان وبنك الأسئلة.',
-            actionCard: {
-              title: 'اعتماد ونشر الواجب على واتساب',
-              description: 'واجب النهايات والاتصال - 3 مسائل - 20 علامة',
-              changeDetails: 'سيتم توليد رابط تسليم وإرساله فوراً لمجموعة واتساب للخميس.',
-              confirmed: false,
-              cancelled: false,
-            },
-          },
-        ]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            sender: 'ai',
-            text: `تم تحليل طلبك بنجاح بالنسبة للشاشة الحالية (${currentScreen}). لقد راجعت معايير تصحيح منهج التوجيهي الفلسطيني وسجلات طلابك، وكل شيء متوافق تماماً مع إجاباتك النموذجية.`,
-          },
-        ]);
-      }
-    }, 1000);
+    }
   };
 
   const handleConfirmAction = (msgId: string) => {
@@ -345,27 +273,10 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="اكتب للمساعد أو اسأله عن درجات الطلاب..."
+                placeholder="اكتب سؤالك للمساعد..."
                 className="flex-1 px-3 py-2 bg-[#F7F8FA] border border-slate-300 rounded-lg text-xs focus:outline-hidden focus:border-[#1E3A5F] transition-colors"
                 disabled={isLoading}
               />
-
-              {/* Simulated Voice Message Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsRecording(!isRecording);
-                  if (!isRecording) {
-                    setInput('ارفع درجة سؤال 3 لأحمد إلى 4');
-                  }
-                }}
-                className={`p-2 rounded-lg text-xs cursor-pointer transition-colors ${
-                  isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                }`}
-                title={isRecording ? 'إيقاف التسجيل الصوتي' : 'تسجيل رسالة صوتية (تحدث للمساعد)'}
-              >
-                {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-              </button>
 
               <button
                 type="submit"
@@ -376,7 +287,7 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
               </button>
             </form>
             <p className="text-[10px] text-slate-400 mt-1.5 text-center">
-              الذكاء الاصطناعي مدرب على منهاج التوجيهي الفلسطيني ومعايير تصحيح الثانوية العامة.
+              قد يخطئ المساعد أحياناً. راجع ما يقترحه قبل استخدامه.
             </p>
           </div>
         </aside>

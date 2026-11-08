@@ -426,6 +426,8 @@ export default function App() {
       <Toaster />
 
       {/* 5. Contextual AI Drawer */}
+      {currentRole !== 'visitor' && currentRole !== 'student' && (
+      <DataProvider org={activeEntity} real={isReal}>
       <AIAssistantDrawer
         isOpen={isAIOpen || currentScreen === 'C4'}
         onClose={() => {
@@ -437,6 +439,8 @@ export default function App() {
         currentScreen={currentScreen}
         onNavigate={handleNavigate}
       />
+      </DataProvider>
+      )}
     </div>
   );
 }

@@ -1,300 +1,253 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ScreenId } from '../../types';
-import { MOCK_STUDENTS, MOCK_GROUPS, MOCK_EXAMS } from '../../mockData';
-import {
-  Sparkles,
-  ArrowRight,
-  Download,
-  Send,
-  CheckCircle2,
-  AlertTriangle,
-  BookOpen,
-  MessageCircle,
-  HelpCircle,
-  Check
-} from 'lucide-react';
+import { ArrowRight, AlertTriangle, BookOpen, Sparkles, Loader2, Printer, MessageCircle, Users, User } from 'lucide-react';
+import { useData, useLoad, errorMessage } from '../../data/DataContext';
+import type { DraftQuestion } from '../../data/ai';
+import type { DiagnosticRow, QuestionGradeRow, StudentHistory } from '../../data/types';
+import { whatsappLink } from '../../data/billing';
+import { getSelected } from '../../data/selection';
 import { notify } from '../../lib/notify';
 
 interface RemedialExercisesToolProps {
   onNavigate: (screen: ScreenId) => void;
 }
 
+type WeakLesson = { title: string; lessonId: string | null; mastery: number };
+
 export const RemedialExercisesTool: React.FC<RemedialExercisesToolProps> = ({ onNavigate }) => {
+  const store = useData();
+  const groupsQ = useLoad((st) => st.listGroups());
+  const studentsQ = useLoad((st) => st.listStudents());
+  const curriculaQ = useLoad((st) => st.listCurricula());
+  const groups = groupsQ.data ?? [];
   const [scope, setScope] = useState<'single_student' | 'whole_group'>('single_student');
-  const [selectedStudentId, setSelectedStudentId] = useState<string>('s2'); // محمود خليل البطش
-  const [selectedGroupId, setSelectedGroupId] = useState<string>('g1');
-  const [selectedExamId, setSelectedExamId] = useState<string>('ex1');
-  const [groupSheetMode, setGroupSheetMode] = useState<'individual' | 'combined'>('individual');
-  const [sentSuccess, setSentSuccess] = useState(false);
+  const [groupId, setGroupId] = useState('');
+  const [studentId, setStudentId] = useState(() => getSelected('student') ?? '');
+  useEffect(() => {
+    if (groupId || !groups.length || !studentsQ.data) return;
+    const preset = studentsQ.data.find((s) => s.id === studentId);
+    setGroupId(preset?.groupId || groups[0].id);
+  }, [groups, groupId, studentsQ.data, studentId]);
+  const group = groups.find((g) => g.id === groupId);
+  const students = (studentsQ.data ?? []).filter((s) => s.groupId === groupId);
+  useEffect(() => {
+    if (studentsQ.data && groupId && !students.some((s) => s.id === studentId)) setStudentId(students[0]?.id ?? '');
+  }, [students, studentId, studentsQ.data, groupId]);
+  const student = students.find((s) => s.id === studentId);
 
-  const student = MOCK_STUDENTS.find(s => s.id === selectedStudentId) || MOCK_STUDENTS[0];
+  // Lesson titles → ids for the group's subject (diagnostic rows carry titles).
+  const lessonIdByTitle = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of curriculaQ.data ?? [])
+      for (const g of c.grades)
+        for (const s of g.subjects) if (s.id === group?.subjectId) for (const u of s.units) for (const l of u.lessons) map.set(l.title, l.id);
+    return map;
+  }, [curriculaQ.data, group?.subjectId]);
 
-  const remedialExercises = [
-    {
-      num: 1,
-      difficulty: 'سهل (تثبيت مفهوم)',
-      text: 'إذا كان س² + 3ص² = 12، جد دص/دس عند النقطة (0, 2).',
-      answerKey: '2س + 6ص ص\' = 0  ⇒  عند (0, 2): 0 + 12 ص\' = 0  ⇒  ص\' = 0.',
-    },
-    {
-      num: 2,
-      difficulty: 'متوسط (وزاري مع كسر)',
-      text: 'إذا كان س / ص + ص / س = 2، أوجد دص/دس عند النقطة (1, 1).',
-      answerKey: 'نوحد المقامات: س² + ص² = 2س ص. بالاشتقاق: 2س + 2ص ص\' = 2ص + 2س ص\'. عند (1, 1) المشتقة = 1.',
-    },
-    {
-      num: 3,
-      difficulty: 'متوسط (تطبيق المشتقة الثانية)',
-      text: 'إذا كان س³ - ص³ = 1، أثبت أن ص\'\' = -2س / ص⁵.',
-      answerKey: '3س² - 3ص² ص\' = 0  ⇒  ص\' = س²/ص². ص\'\' = (2س ص² - س²(2ص ص\')) / ص⁴ = (2س ص³ - 2س⁴) / ص⁵ = -2س/ص⁵.',
-    },
-    {
-      num: 4,
-      difficulty: 'متقدم (متميزين)',
-      text: 'جد معادلة المماس لمنحنى العلاقة الضمنية جا(س ص) = س عند النقطة (1, ط/2).',
-      answerKey: 'جتا(س ص) * (ص + س ص\') = 1. عند (1, ط/2): جتا(ط/2)=0، الميل غير معرّف والمعادلة س = 1.',
-    },
-  ];
+  const historyQ = useLoad(
+    (st) => (scope === 'single_student' && studentId ? st.getStudentHistory(studentId) : Promise.resolve<StudentHistory>({ papers: [], lessons: [] })),
+    [scope, studentId],
+  );
+  const groupRowsQ = useLoad((st) => (scope === 'whole_group' && groupId ? st.listDiagnosticRows(groupId) : Promise.resolve<DiagnosticRow[]>([])), [scope, groupId]);
+  const latestPaper = historyQ.data?.papers[0];
+  const mistakesQ = useLoad(
+    (st) => (latestPaper ? st.listQuestionGrades(latestPaper.submissionId) : Promise.resolve<QuestionGradeRow[]>([])),
+    [latestPaper?.submissionId],
+  );
+
+  const weak: WeakLesson[] = useMemo(() => {
+    if (scope === 'single_student') {
+      return (historyQ.data?.lessons ?? [])
+        .filter((l) => l.mastery < 70)
+        .slice(0, 3)
+        .map((l) => ({ title: l.lesson, lessonId: l.lessonId ?? lessonIdByTitle.get(l.lesson) ?? null, mastery: l.mastery }));
+    }
+    const totals = new Map<string, { got: number; max: number }>();
+    for (const r of groupRowsQ.data ?? []) {
+      if (!r.lesson) continue;
+      const t = totals.get(r.lesson) ?? { got: 0, max: 0 };
+      t.got += r.finalScore;
+      t.max += r.maxScore;
+      totals.set(r.lesson, t);
+    }
+    return [...totals.entries()]
+      .map(([title, t]) => ({ title, lessonId: lessonIdByTitle.get(title) ?? null, mastery: t.max ? Math.round((t.got / t.max) * 100) : 0 }))
+      .filter((l) => l.mastery < 70)
+      .sort((a, b) => a.mastery - b.mastery)
+      .slice(0, 3);
+  }, [scope, historyQ.data, groupRowsQ.data, lessonIdByTitle]);
+
+  // The student's weakest answers on the latest paper, with the model answer and why.
+  const mistakes = (mistakesQ.data ?? [])
+    .filter((g) => g.finalScore !== null && g.finalScore < g.maxScore * 0.6)
+    .sort((a, b) => Number(a.finalScore) / a.maxScore - Number(b.finalScore) / b.maxScore)
+    .slice(0, 2);
+
+  const [exercises, setExercises] = useState<DraftQuestion[]>([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setExercises([]), [scope, studentId, groupId]);
+
+  const generate = async () => {
+    const ids = weak.map((w) => w.lessonId).filter((x): x is string => !!x);
+    if (!group?.subjectId || !ids.length) return notify('لا توجد دروس ضعيفة مرتبطة بالمنهج لهذا الاختيار بعد.');
+    setBusy(true);
+    try {
+      const r = await store.aiGenerateQuestions({ subjectId: group.subjectId, groupId: group.id, lessonIds: ids, count: 5, difficulty: 'easy', purpose: 'remedial' });
+      setExercises(r.questions);
+      if (!r.questions.length) notify('لم تُنتج تمارين. حاول مرة أخرى.', 'warning');
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sheetText = () =>
+    [`تمارين علاجية${student && scope === 'single_student' ? ` لـ ${student.name.split(' ')[0]}` : ''}:`, ...exercises.map((q, i) => `${i + 1}) ${q.text}`)].join('\n\n');
+
+  const sendWhatsApp = () => {
+    if (!student) return;
+    const link = whatsappLink(student.parentPhone, sheetText());
+    if (!link) return notify('رقم ولي الأمر غير صحيح أو غير مسجّل. صحّحه من شاشة الطلاب.', 'warning');
+    window.open(link, '_blank', 'noopener');
+  };
+
+  const loadingWeak = scope === 'single_student' ? historyQ.loading : groupRowsQ.loading;
 
   return (
     <div className="space-y-6 text-right max-w-5xl mx-auto pb-16">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-        <div>
-          <button
-            onClick={() => onNavigate('C_HUB')}
-            className="text-xs text-slate-500 hover:text-[#1E3A5F] flex items-center gap-1 cursor-pointer font-medium mb-1"
-          >
-            <ArrowRight className="w-4 h-4" />
-            <span>العودة لمركز الأدوات الذكية</span>
-          </button>
-          <h1 className="text-xl font-extrabold text-[#1E3A5F]">
-            تمارين علاجية وشرح أخطاء الطلاب
-          </h1>
-          <p className="text-xs text-slate-500">
-            توليد أوراق تدريبية علاجية تستهدف نقاط الضعف المرصودة في الامتحان مع شرح مباشر للأخطاء.
-          </p>
-        </div>
-
-        <span className="text-xs bg-emerald-100 text-emerald-800 font-bold px-3 py-1 rounded-full">
-          متاح الآن
-        </span>
+      <div className="border-b border-slate-200 pb-4 print:hidden">
+        <button onClick={() => onNavigate('C_HUB')} className="text-xs text-slate-500 hover:text-[#1E3A5F] flex items-center gap-1 cursor-pointer font-medium mb-1">
+          <ArrowRight className="w-4 h-4" />
+          <span>العودة للأدوات الذكية</span>
+        </button>
+        <h1 className="text-xl font-extrabold text-[#1E3A5F]">تمارين علاجية حسب نقاط الضعف</h1>
+        <p className="text-xs text-slate-500">نحدد الدروس الأضعف من الأوراق المعتمدة، ثم يكتب الذكاء الاصطناعي تمارين متدرجة منها فقط مع مفتاح الحل.</p>
       </div>
 
-      {/* Scope & Exam Selection Form (PDF requirement: طالب واحد / مجموعة كاملة، ثم الامتحان المرجعي) */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4">
-        <h2 className="font-bold text-slate-900 text-sm">تحديد نطاق التمارين العلاجية</h2>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-          <div>
-            <label className="block text-slate-700 font-bold mb-1">النطاق</label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setScope('single_student')}
-                className={`flex-1 py-2 rounded-lg font-bold border transition-colors cursor-pointer ${
-                  scope === 'single_student' ? 'bg-[#1E3A5F] text-white border-[#1E3A5F]' : 'bg-slate-50 text-slate-700 border-slate-200'
-                }`}
-              >
-                طالب واحد
-              </button>
-              <button
-                type="button"
-                onClick={() => setScope('whole_group')}
-                className={`flex-1 py-2 rounded-lg font-bold border transition-colors cursor-pointer ${
-                  scope === 'whole_group' ? 'bg-[#1E3A5F] text-white border-[#1E3A5F]' : 'bg-slate-50 text-slate-700 border-slate-200'
-                }`}
-              >
-                مجموعة كاملة
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-slate-700 font-bold mb-1">
-              {scope === 'single_student' ? 'اختر الطالب' : 'اختر المجموعة'}
-            </label>
-            {scope === 'single_student' ? (
-              <select
-                value={selectedStudentId}
-                onChange={(e) => setSelectedStudentId(e.target.value)}
-                className="w-full p-2 bg-[#F7F8FA] border border-slate-300 rounded-lg font-bold"
-              >
-                {MOCK_STUDENTS.map(st => (
-                  <option key={st.id} value={st.id}>{st.name} ({st.latestScore}%)</option>
-                ))}
-              </select>
-            ) : (
-              <select
-                value={selectedGroupId}
-                onChange={(e) => setSelectedGroupId(e.target.value)}
-                className="w-full p-2 bg-[#F7F8FA] border border-slate-300 rounded-lg font-bold"
-              >
-                {MOCK_GROUPS.map(g => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-slate-700 font-bold mb-1">الامتحان المرجعي للتحليل</label>
-            <select
-              value={selectedExamId}
-              onChange={(e) => setSelectedExamId(e.target.value)}
-              className="w-full p-2 bg-[#F7F8FA] border border-slate-300 rounded-lg font-bold"
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 text-xs print:hidden">
+        <div className="inline-flex p-1 bg-slate-100 rounded-xl">
+          {[
+            { id: 'single_student' as const, label: 'طالب واحد', icon: User },
+            { id: 'whole_group' as const, label: 'المجموعة كلها', icon: Users },
+          ].map((o) => (
+            <button
+              key={o.id}
+              onClick={() => setScope(o.id)}
+              className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 cursor-pointer ${scope === o.id ? 'bg-[#1E3A5F] text-white' : 'text-slate-600'}`}
             >
-              {MOCK_EXAMS.map(ex => (
-                <option key={ex.id} value={ex.id}>{ex.title}</option>
+              <o.icon className="w-3.5 h-3.5" />
+              <span>{o.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <select value={groupId} onChange={(e) => setGroupId(e.target.value)} className="p-2 border border-slate-200 rounded-lg bg-white font-bold min-w-0" aria-label="المجموعة">
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+          {scope === 'single_student' && (
+            <select value={studentId} onChange={(e) => setStudentId(e.target.value)} className="p-2 border border-slate-200 rounded-lg bg-white font-bold min-w-0" aria-label="الطالب">
+              {!students.length && <option value="">لا يوجد طلاب في المجموعة</option>}
+              {students.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
               ))}
             </select>
-          </div>
+          )}
         </div>
 
-        {/* Automatic Weakness Summary Banner (PDF requirement: ملخص تلقائي: نقاط الضعف: الاشتقاق الضمني 40%، النهايات 55%) */}
-        <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
-            <div>
-              <strong className="block text-red-900 font-bold">
-                ملخّص تشخيص نقاط الضعف التلقائي:
-              </strong>
-              <span>
-                الاشتقاق الضمني والمشتقات العليا (إتقان 40%) · النهايات والاتصال (إتقان 55%)
-              </span>
-            </div>
-          </div>
-          <span className="text-[11px] bg-white border border-red-200 text-red-700 px-2 py-1 rounded font-bold shrink-0">
-            محدد تلقائياً من إجابات الامتحان
-          </span>
-        </div>
-      </div>
-
-      {/* Error Explanation Section (PDF requirement: قسم "شرح الخطأ": إجابته، الإجابة الصحيحة، وشرح قصير لماذا أخطأ وكيف يحل) */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4">
-        <h3 className="font-extrabold text-[#1E3A5F] text-base flex items-center gap-2">
-          <BookOpen className="w-5 h-5 text-blue-600" />
-          <span>قسم شرح الخطأ في الامتحان: كيف يحل الطالب المسألة بالشكل الصحيح؟</span>
-        </h3>
-
-        <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3 text-xs">
-          <div className="font-bold text-slate-900 border-b border-slate-200 pb-2">
-            السؤال الأول: إذا كان س² + ص² = 25، أوجد د²ص / دس² عند النقطة (3, 4).
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Student's Wrong Answer */}
-            <div className="p-3 bg-red-50/70 border border-red-200 rounded-lg space-y-1">
-              <span className="text-red-700 font-bold block text-[11px]">إجابة الطالب في الورقة:</span>
-              <p className="font-mono text-red-900 text-[11px] leading-relaxed">
-                ص'' = (-4 - 3(-3/4)) / 16 = (-4 + 9/4) / 16 = -7 / 64
-              </p>
-            </div>
-
-            {/* Correct Model Answer */}
-            <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-lg space-y-1">
-              <span className="text-emerald-700 font-bold block text-[11px]">الإجابة الوزارية النموذجية:</span>
-              <p className="font-mono text-emerald-900 text-[11px] leading-relaxed">
-                ص'' = (-ص² - س²) / ص³ = -25 / 64
-              </p>
-            </div>
-          </div>
-
-          {/* Explanation Why it happened & How to solve */}
-          <div className="p-3 bg-white border border-blue-200 rounded-lg text-slate-800 space-y-1 text-[11px]">
-            <strong className="block text-[#1E3A5F] font-bold">لماذا أخطأ الطالب وكيف يحل؟</strong>
-            <p className="leading-relaxed">
-              «أخطأ الطالب في توحيد مقامات بسط الكسر: -4 + 9/4 = -16/4 + 9/4 = -7/4 بدلاً من التعويض المباشر بالمعادلة الأصلية س² + ص² = 25. الأسهل دائماً في المشتقة الثانية للدائرة ضرب البسط والمقام في (ص) للاستفادة من معادلة المنحنى المعطاة».
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Remedial Exercises List (PDF requirement: 5-10 تمارين متدرجة الصعوبة مع مفتاح الحل منفصلاً) */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-950 flex items-start gap-2">
+          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
           <div>
-            <h3 className="font-extrabold text-[#1E3A5F] text-base">
-              التمارين العلاجية المقترحة (متدرّجة الصعوبة)
-            </h3>
-            <p className="text-xs text-slate-500">تمارين موجهة لعلاج خلل الاشتقاق الضمني وتوحيد المقامات</p>
+            <strong className="block font-bold">الدروس الأضعف:</strong>
+            {loadingWeak ? (
+              <span>جارٍ التحليل...</span>
+            ) : weak.length ? (
+              <span>{weak.map((w) => `${w.title} (إتقان ${w.mastery}%)`).join(' · ')}</span>
+            ) : (
+              <span>لا توجد أوراق معتمدة كافية، أو لا توجد دروس تحت 70%.</span>
+            )}
           </div>
-          <span className="text-xs bg-blue-50 text-[#1E3A5F] font-bold px-2.5 py-1 rounded-lg">
-            4 مسائل متدرجة
-          </span>
         </div>
+      </div>
 
-        <div className="space-y-3">
-          {remedialExercises.map((ex) => (
-            <div
-              key={ex.num}
-              className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-900">مسألة {ex.num}</span>
-                <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-medium">
-                  {ex.difficulty}
-                </span>
+      {scope === 'single_student' && mistakes.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3 print:hidden">
+          <h3 className="font-extrabold text-[#1E3A5F] text-sm flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-blue-600" />
+            <span>أين أخطأ في آخر امتحان ({latestPaper?.title})</span>
+          </h3>
+          {mistakes.map((m) => (
+            <div key={m.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+              <div className="font-bold text-slate-900">
+                السؤال {m.questionNumber} ({m.finalScore}/{m.maxScore}): {m.questionText}
               </div>
-              <p className="font-medium text-slate-800 text-[12px]">{ex.text}</p>
-              <div className="p-2.5 bg-white border border-slate-200 rounded-lg text-slate-600 font-mono text-[11px]">
-                <strong className="text-slate-800 font-sans block mb-0.5">مفتاح الحل المنفصل:</strong>
-                {ex.answerKey}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg">
+                  <span className="text-red-700 font-bold block text-[11px]">إجابة الطالب:</span>
+                  <p className="text-red-900 whitespace-pre-wrap">{m.aiTranscription || '—'}</p>
+                </div>
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <span className="text-emerald-700 font-bold block text-[11px]">الإجابة النموذجية:</span>
+                  <p className="text-emerald-900 whitespace-pre-wrap">{m.modelAnswer || '—'}</p>
+                </div>
               </div>
+              {(m.teacherNote || m.aiReason) && (
+                <p className="p-2.5 bg-white border border-blue-200 rounded-lg text-slate-800">
+                  <strong className="text-[#1E3A5F]">لماذا: </strong>
+                  {m.teacherNote || m.aiReason}
+                </p>
+              )}
             </div>
           ))}
         </div>
-      </div>
+      )}
 
-      {/* Export & WhatsApp Dispatch Buttons (PDF requirement) */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
-        {scope === 'whole_group' ? (
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-700">خيارات تصدير المجموعة:</span>
-            <button
-              onClick={() => setGroupSheetMode('individual')}
-              className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${
-                groupSheetMode === 'individual' ? 'bg-[#1E3A5F] text-white' : 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              ورقة مخصصة لكل طالب (حسب ضعفه)
-            </button>
-            <button
-              onClick={() => setGroupSheetMode('combined')}
-              className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${
-                groupSheetMode === 'combined' ? 'bg-[#1E3A5F] text-white' : 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              ورقة واحدة موحدة للمجموعة
-            </button>
+      <button
+        onClick={generate}
+        disabled={busy || !weak.some((w) => w.lessonId)}
+        className="w-full bg-[#1E3A5F] hover:bg-[#152a45] text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 print:hidden"
+      >
+        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-amber-300" />}
+        <span>{busy ? 'جارٍ كتابة التمارين وفحصها...' : exercises.length ? 'ولّد تمارين أخرى' : 'ولّد 5 تمارين علاجية متدرجة'}</span>
+      </button>
+
+      {exercises.length > 0 && (
+        <>
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3">
+            <h3 className="font-extrabold text-[#1E3A5F] text-sm">
+              ورقة التمارين{student && scope === 'single_student' ? `: ${student.name}` : group ? `: ${group.name}` : ''}
+            </h3>
+            {exercises.map((q, i) => (
+              <div key={i} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs break-inside-avoid">
+                <span className="font-bold text-slate-900">تمرين {i + 1}</span>
+                <p className="text-slate-800 text-[13px] whitespace-pre-wrap">{q.text}</p>
+                <details>
+                  <summary className="font-bold text-slate-600 cursor-pointer">مفتاح الحل</summary>
+                  <p className="mt-1 p-2 bg-white border border-slate-200 rounded-lg text-slate-600 whitespace-pre-wrap">{q.modelAnswer}</p>
+                </details>
+              </div>
+            ))}
           </div>
-        ) : (
-          <span className="text-slate-500 font-medium">
-            تصدير للطالب: <strong>{student.name}</strong>
-          </span>
-        )}
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => notify('تم تصدير ورقة التمارين العلاجية مع مفتاح الحل بصيغة PDF!')}
-            className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 px-4 py-2 rounded-xl font-bold cursor-pointer flex items-center gap-1.5"
-          >
-            <Download className="w-4 h-4 text-blue-600" />
-            <span>تحميل PDF</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setSentSuccess(true);
-              setTimeout(() => setSentSuccess(false), 2500);
-            }}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold cursor-pointer flex items-center gap-1.5 shadow-2xs"
-          >
-            <MessageCircle className="w-4 h-4" />
-            <span>{sentSuccess ? 'تم الإرسال على واتساب ✓' : 'إرسال على واتساب'}</span>
-          </button>
-        </div>
-      </div>
+          <div className="flex flex-wrap gap-2 text-xs print:hidden">
+            <button onClick={() => window.print()} className="bg-white border border-slate-300 px-4 py-2 rounded-xl font-bold flex items-center gap-1 cursor-pointer">
+              <Printer className="w-4 h-4" />
+              <span>طباعة / حفظ PDF</span>
+            </button>
+            {scope === 'single_student' && student && (
+              <button onClick={sendWhatsApp} className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-1 cursor-pointer">
+                <MessageCircle className="w-4 h-4" />
+                <span>أرسل لولي الأمر على واتساب</span>
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 };

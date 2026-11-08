@@ -38,11 +38,18 @@ function findSubject(subjectId: string | null) {
 }
 
 function demoLessonId(title: string): string | null {
+  // Demo weak-lesson names are free text; match them to a demo lesson by shared words.
+  const words = title.split(/\s+/).filter((w) => w.length >= 4);
+  let fallback: string | null = null;
   for (const c of CURRICULA_DATA)
     for (const g of c.grades)
       for (const s of g.subjects)
-        for (const u of s.units) for (const l of u.lessons) if (l.title === title || title.includes(l.title)) return l.id;
-  return null;
+        for (const u of s.units)
+          for (const l of u.lessons) {
+            fallback ??= l.id;
+            if (l.title === title || words.some((w) => l.title.includes(w))) return l.id;
+          }
+  return fallback;
 }
 
 interface DemoState {
