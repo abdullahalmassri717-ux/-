@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { BookOpen, Plus, ChevronDown, ChevronLeft, Edit3, Trash2, Loader2, Save, Eye, EyeOff } from 'lucide-react';
+import { BookOpen, FileSpreadsheet, Plus, ChevronDown, ChevronLeft, Edit3, Trash2, Loader2, Save, Eye, EyeOff } from 'lucide-react';
 import { ScreenId } from '../../types';
 import { curriculumAdminApi, type CCurriculum, type CLesson, type Level } from '../../data/curriculumAdmin';
 import { notify } from '../../lib/notify';
+import { CurriculumImportPanel } from './CurriculumImportPanel';
 
 interface CurriculumManagementPageProps {
   onNavigate?: (screenId: ScreenId) => void;
@@ -50,6 +51,7 @@ export const CurriculumManagementPage: React.FC<CurriculumManagementPageProps> =
   const [renaming, setRenaming] = useState<{ level: Level; id: string; name: string } | null>(null);
   const [lesson, setLesson] = useState<CLesson | null>(null);
   const [busy, setBusy] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -156,6 +158,21 @@ export const CurriculumManagementPage: React.FC<CurriculumManagementPageProps> =
           منهج ← صف ← مادة ← وحدة ← درس، مع محتوى الدرس ونواتج التعلّم والمصطلحات. المعلمون يرون المواد «المنشورة» فقط.
         </p>
       </div>
+
+      {curriculum && !importing && (
+        <button
+          onClick={() => setImporting(true)}
+          className="bg-[#1E3A5F] text-white px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5"
+        >
+          <FileSpreadsheet className="w-4 h-4" /> استيراد دفعة واحدة من Excel
+        </button>
+      )}
+      {curriculum && importing && (
+        <CurriculumImportPanel curriculum={curriculum} api={api} onClose={() => setImporting(false)} onImported={load} />
+      )}
+      {!curriculum && (
+        <p className="text-xs text-slate-500">ابدأ بإضافة منهج من الخانة أدناه، ثم تستطيع استيراد صفوفه وموادّه ودروسه من ملف Excel.</p>
+      )}
 
       <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs grid grid-cols-1 md:grid-cols-3 gap-4">
         <Selector level="curriculum" items={tree.map((c) => ({ id: c.id, name: c.name }))} value={curriculum?.id} parentId={null} onChange={(id) => (setCId(id), setGId(''), setSId(''))} />
