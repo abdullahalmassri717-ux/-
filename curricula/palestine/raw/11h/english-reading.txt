@@ -1,0 +1,31 @@
+#subject|اللغة الإنجليزية (المطالعة)
+#sem|0
+#book|c11_11h_enr11h
+U|Unit 1: The road to learning
+O|Levels of learning and different learning activities; the structure of explaining texts
+O|Fables: character, setting, plot and meaning in stories
+O|Writing a short story
+U|Unit 2: Taking risks
+O|Adventure and extreme sports vocabulary; explanation texts and accident reports
+O|The form and use of compound adjectives
+O|Writing an accident report and a composition presenting an argument for and against
+U|Unit 3: Tourism: mixed feelings
+O|Attitudes to travel and tourism; working out meaning from context in literature
+O|Linking words for arguments; reporting a meeting
+O|Writing a composition on the advantages and disadvantages of a topic
+U|Literature A: The Norwood Builder
+L|The Norwood Builder
+U|Unit 4: The web of life
+O|Rhyme, repetition and imagery in a poem; biodiversity vocabulary
+O|Compound nouns and pronouns; topic sentences and supporting information
+O|Writing a simple case study and an opinion-based composition
+U|Unit 5: A good read
+O|Genres of fiction; inferring meaning by reading between the lines
+O|Two-word verbs using take
+O|Writing a summary and a comparison essay
+U|Unit 6: Taking the lead
+O|What makes a good leader; a business leader's profile
+O|Using not only … but also; words with the prefix self-
+O|Writing a business plan and a business letter
+U|Literature B: The Call of the Wild
+L|The Call of the Wild

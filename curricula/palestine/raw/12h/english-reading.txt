@@ -1,0 +1,30 @@
+#subject|اللغة الإنجليزية (المطالعة)
+#sem|0
+#book|c12_12h_enr12h
+U|Unit 1: Making changes
+O|New Year customs; making and keeping resolutions; dealing with unfamiliar vocabulary
+O|Question words with the suffix -ever; compound adjectives and verbs
+O|Replying to a letter; writing resolutions
+U|Unit 2: Fitting in
+O|Belonging and online communities; understanding idioms and proverbs
+O|Fixed phrases; sentence linking phrases
+O|Writing a notice and a welcome page for a community website
+U|Unit 3: The global village
+O|The history and effects of globalisation; arguments for and against
+O|Combining opposite ideas; topic sentences; joining sentences into paragraphs
+O|Planning a paragraph and completing an essay
+U|Literature A: Romeo and Juliet
+L|Romeo and Juliet (A)
+U|Unit 4: Money talks
+O|The positives and negatives of money; headlines; synonyms
+O|Noun phrases with the + adjective
+O|Writing a formal letter; comparing formal and informal writing
+U|Unit 5: Winners and losers
+O|Attitudes to winning and losing; comparing texts and opinions; reading a poem
+O|Writing an essay using rhetorical questions and other persuasion techniques
+U|Unit 6: Past history?
+O|Different views of history; the Palestinian Nakba and Diaspora
+O|The work of President Yasser Arafat and Palestinian intellectuals; figurative language
+O|Writing short biographies
+U|Literature B: Romeo and Juliet
+L|Romeo and Juliet (B)
