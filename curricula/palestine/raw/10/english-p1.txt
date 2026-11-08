@@ -1,0 +1,28 @@
+#subject|اللغة الإنجليزية
+#sem|1
+#book|c10_en10-p1
+U|Unit 1: Making contact
+O|talking about plans and schedules
+O|narrating events
+O|noting details on the telephone; writing an email
+O|Structure: present tenses for future meanings; future meanings of going to and will
+U|Unit 2: From here to there
+O|talking about journeys
+O|narrating a story; creating a puzzle
+O|Structure: present perfect and present perfect continuous; past simple or present perfect
+U|Unit 3: Free-time activities
+O|talking about interests
+O|expressing possibility, ability, necessity; suggesting, requesting, offering
+O|describing daily life
+O|Structure: modal verbs for present, future and past
+U|Unit 4: Emergency!
+O|describing work routines
+O|asking about past events; narrating a story
+O|Structure: uses of adjectives; uses of adverbs
+U|Unit 5: Dangerous weather
+O|describing weather conditions; forecasting the weather
+O|Structure: comparison of adjectives and adverbs; (not) as … as; too; (not) enough; so … that, such … that
+O|Writing: describe the climate, adding information from a map
+U|Unit 6: Working for a better world
+O|telling a life story; greeting an old friend
+O|Structure: past simple and past continuous with when, while; past simple and past perfect
