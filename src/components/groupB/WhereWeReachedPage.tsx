@@ -154,13 +154,13 @@ export default function WhereWeReachedPage({
           </div>
 
           {/* Group Switcher */}
-          <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+          <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200 min-w-0 max-w-full">
             <span className="text-xs font-bold text-slate-600">المجموعة:</span>
             <select
               value={selectedGroupId}
               onChange={(e) => setSelectedGroupId(e.target.value)}
               aria-label="اختر المجموعة التعليمية"
-              className="bg-white text-sm font-bold text-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]/20"
+              className="min-w-0 flex-1 max-w-full truncate bg-white text-sm font-bold text-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]/20"
             >
               {groups.map(g => (
                 <option key={g.id} value={g.id}>{g.name} ({g.gradeName})</option>

@@ -485,8 +485,8 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
               key={q.id}
               className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4"
             >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2 min-w-0">
                   <span className="w-6 h-6 rounded-full bg-[#1E3A5F] text-white flex items-center justify-center font-bold text-xs font-mono">
                     {idx + 1}
                   </span>
