@@ -1,0 +1,6 @@
+{
+  "name": "منصة دقة - تصحيح أوراق الامتحانات بالذكاء الاصطناعي",
+  "description": "منصة تصحيح ومتابعة أوراق الامتحانات والواجبات المدرسية والتوجيهي بالذكاء الاصطناعي وتقارير واتساب التلقائية للمعلمين والمدارس.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
