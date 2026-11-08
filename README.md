@@ -1,20 +1,35 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# دقة
 
-# Run and deploy your AI Studio app
+منصة عربية لتصحيح الواجبات والامتحانات الورقية بالذكاء الاصطناعي: المدرّس يصوّر الأوراق (أو يرسلها الطالب من رابط)،
+الذكاء الاصطناعي يقترح الدرجات حسب معايير المدرّس، المدرّس يراجع ويعتمد، ثم تصل التقارير لأولياء الأمور على واتساب.
 
-This contains everything you need to run your app locally.
+## التشغيل على جهازك
 
-View your app in AI Studio: https://ai.studio/apps/d44cc642-0f29-49bf-90c9-a6564f11de55
+```bash
+npm install
+npm run dev        # http://localhost:5173
+```
 
-## Run Locally
+بدون أي مفاتيح تعمل المنصة في **الوضع التجريبي** ببيانات وهمية، وأي رمز من 6 أرقام يدخلك.
 
-**Prerequisites:**  Node.js
+## التشغيل الحقيقي
 
+اتبع [دليل الإطلاق](docs/setup-guide.md): مشروع Supabase، مفتاح Claude، واتساب، ثم النشر.
+تفاصيل تسجيل الدخول في [docs/auth-setup.md](docs/auth-setup.md)، وتفاصيل قاعدة البيانات في [supabase/README.md](supabase/README.md).
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## البنية باختصار
+
+| المجلد | ما فيه |
+|---|---|
+| `src/components` | الشاشات (مقسّمة groupA..E) |
+| `src/data` | طبقة البيانات: نسخة Supabase ونسخة تجريبية بنفس الواجهة |
+| `src/lib` | تسجيل الدخول، الإعدادات، الإشعارات، أدوات مساعدة |
+| `supabase/migrations` | الجداول وصلاحيات كل دور (Row Level Security) |
+| `supabase/functions` | وظائف الخادم: التصحيح، أدوات الذكاء الاصطناعي، تقارير واتساب، رفع الطالب |
+| `supabase/checks` | فحوص الصلاحيات |
+
+## قبل كل تغيير
+
+```bash
+npm run lint && npm run build
+```
