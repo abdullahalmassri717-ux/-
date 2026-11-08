@@ -15,6 +15,7 @@ import {
   Headphones
 } from 'lucide-react';
 import { PLATFORM_CONFIG, MOCK_ENTITIES } from '../mockData';
+import { useAuth } from '../lib/auth';
 
 interface NavbarProps {
   currentRole: UserRole;
@@ -42,6 +43,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenMobileMenu,
 }) => {
   const [showEntityDropdown, setShowEntityDropdown] = useState(false);
+  const auth = useAuth();
+  // A platform admin who also teaches reaches both areas from the header.
+  const canOpenAdmin = auth.mode === 'real' && auth.status === 'signed_in' && !!auth.profile?.isPlatformAdmin;
+  const hasOwnAccount = auth.mode === 'real' && auth.entities.length > 0;
 
   // If visitor: show clean landing nav links
   if (currentRole === 'visitor') {
@@ -277,6 +282,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                     })}
                   </div>
 
+                  {canOpenAdmin && (
+                    <div className="pt-2 border-t border-slate-100">
+                      <button
+                        onClick={() => {
+                          setShowEntityDropdown(false);
+                          onNavigate('E1');
+                        }}
+                        className="w-full text-center py-2 text-purple-800 hover:bg-purple-50 rounded-xl font-bold transition-colors cursor-pointer text-xs"
+                      >
+                        لوحة إدارة المنصة
+                      </button>
+                    </div>
+                  )}
                   <div className="pt-2 border-t border-slate-100">
                     <button
                       onClick={() => {
@@ -299,6 +317,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                 الإدارة المركزية العامة للمنصة
               </span>
             </div>
+          )}
+
+          {currentRole === 'platform_admin' && hasOwnAccount && (
+            <button
+              onClick={() => onNavigate('B1')}
+              className="text-xs font-bold text-[#1E3A5F] border border-slate-200 hover:bg-slate-100 rounded-xl px-2.5 py-1.5 cursor-pointer whitespace-nowrap"
+              title="العودة إلى حسابك كمدرّس أو جهة"
+            >
+              حسابي
+            </button>
           )}
         </div>
 

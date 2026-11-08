@@ -29,9 +29,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
+      # Installs the CLI with long retries: GitHub release downloads sometimes
+      # answer 502/504 for several minutes, which made supabase/setup-cli fail.
+      - name: Install Supabase CLI
+        run: |
+          url=https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 -o /tmp/supabase.tgz "$url"; then break; fi
+            echo "Download failed (attempt $attempt), waiting before trying again..."
+            sleep 30
+          done
+          tar -xzf /tmp/supabase.tgz -C /tmp supabase
+          sudo install /tmp/supabase /usr/local/bin/supabase
+          supabase --version
 
       - name: Check required secrets
         run: |
