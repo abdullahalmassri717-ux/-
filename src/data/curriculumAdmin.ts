@@ -47,6 +47,10 @@ export interface CurriculumAdminApi {
   setSubjectStatus(id: string, status: 'draft' | 'published'): Promise<void>;
   setCurriculumAvailable(id: string, available: boolean): Promise<void>;
   saveLesson(lesson: CLesson): Promise<void>;
+  /** Bulk add for the import: returns the new ids in the same order as `rows`. */
+  addMany(level: Exclude<Level, 'curriculum'>, rows: { parentId: string; name: string; order: number; content?: string }[]): Promise<string[]>;
+  addOutcomes(rows: { lessonId: string; text: string; order: number }[]): Promise<void>;
+  setLessonContent(lessonId: string, content: string): Promise<void>;
 }
 
 const TABLE: Record<Level, { table: string; nameCol: string; parentCol: string | null }> = {
@@ -138,6 +142,36 @@ function realApi(): CurriculumAdminApi {
     async setCurriculumAvailable(id, available) {
       const { error } = await db.from('curricula').update({ is_available: available }).eq('id', id);
       if (error) fail(error, 'تعذّر تحديث الحالة.');
+    },
+    async addMany(level, rows) {
+      if (!rows.length) return [];
+      const t = TABLE[level];
+      const payload = rows.map((r) => {
+        const row: Record<string, unknown> = { [t.nameCol]: r.name.trim(), sort_order: r.order, [t.parentCol!]: r.parentId };
+        if (level === 'lesson' && r.content) row.content = r.content;
+        return row;
+      });
+      const { data, error } = await db.from(t.table).insert(payload).select(`id, ${t.nameCol}, ${t.parentCol}`);
+      if (error) fail(error, 'تعذّر حفظ الاستيراد.');
+      // Map back by parent + name (unique within one import) rather than relying on row order.
+      const byKey = new Map<string, string>();
+      for (const d of (data ?? []) as unknown as Record<string, string>[]) byKey.set(`${d[t.parentCol!]}|${d[t.nameCol]}`, d.id);
+      return rows.map((r) => {
+        const id = byKey.get(`${r.parentId}|${r.name.trim()}`);
+        if (!id) throw new CurriculumError('تعذّر حفظ الاستيراد.');
+        return id;
+      });
+    },
+    async addOutcomes(rows) {
+      if (!rows.length) return;
+      const { error } = await db
+        .from('learning_outcomes')
+        .insert(rows.map((r) => ({ lesson_id: r.lessonId, text: r.text, sort_order: r.order })));
+      if (error) fail(error, 'تعذّر حفظ نواتج التعلّم.');
+    },
+    async setLessonContent(lessonId, content) {
+      const { error } = await db.from('lessons').update({ content }).eq('id', lessonId);
+      if (error) fail(error, 'تعذّر حفظ محتوى الدرس.');
     },
     async saveLesson(l) {
       const up = await db.from('lessons').update({ title: l.title.trim(), content: l.content.trim() || null }).eq('id', l.id);
@@ -247,6 +281,30 @@ function demoApi(): CurriculumAdminApi {
     async saveLesson(l) {
       const f = find(l.id);
       if (f) Object.assign(f.node, l);
+      await wait(null);
+    },
+    async addMany(level, rows) {
+      const ids: string[] = [];
+      for (const r of rows) {
+        const id = await this.add(level, r.parentId, r.name, r.order);
+        if (level === 'lesson' && r.content) {
+          const f = find(id);
+          if (f) f.node.content = r.content;
+        }
+        ids.push(id);
+      }
+      return ids;
+    },
+    async addOutcomes(rows) {
+      for (const r of rows) {
+        const f = find(r.lessonId);
+        if (f) (f.node.outcomes as string[]).push(r.text);
+      }
+      await wait(null);
+    },
+    async setLessonContent(lessonId, content) {
+      const f = find(lessonId);
+      if (f) f.node.content = content;
       await wait(null);
     },
   };
