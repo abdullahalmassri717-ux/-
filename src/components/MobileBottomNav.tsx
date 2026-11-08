@@ -48,7 +48,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         { id: 'B1' as ScreenId, label: 'الرئيسية', icon: LayoutDashboard },
         { id: 'B2' as ScreenId, label: 'الطلاب', icon: Users },
         { id: 'B7' as ScreenId, label: 'رفع أوراق', icon: UploadCloud, primary: true },
-        { id: 'B8' as ScreenId, label: 'التصحيح', icon: CheckSquare, badge: '12' },
+        { id: 'B8' as ScreenId, label: 'التصحيح', icon: CheckSquare },
         { label: 'القائمة', icon: Menu, isMenuToggle: true },
       ];
     }

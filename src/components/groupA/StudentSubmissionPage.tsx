@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { ScreenId } from '../../types';
-import { MOCK_STUDENTS, CURRENT_TEACHER } from '../../mockData';
 import {
   Camera,
   Upload,
@@ -13,6 +13,10 @@ import {
   ArrowUp,
   ArrowDown
 } from 'lucide-react';
+import { prepareImageForGrading } from '../../lib/imageResize';
+import { getLinkInfo, isTooDark, LinkError, submitPaper, type LinkInfo } from '../../lib/studentLink';
+import { listQueued, queuePaper, removeQueued } from '../../lib/offlineQueue';
+import { notify } from '../../lib/notify';
 
 interface StudentSubmissionPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -21,46 +25,83 @@ interface StudentSubmissionPageProps {
 interface PageImage {
   id: string;
   name: string;
-  thumbnail: string;
+  dataUrl: string;
+  base64: string;
   isDark?: boolean;
 }
 
-export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ onNavigate }) => {
-  // The student types a private 4-digit code. The page never lists other students' names.
+export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = () => {
+  const location = useLocation();
+  const linkCode = decodeURIComponent(location.pathname.replace(/^\/s\//, '').replace(/\/+$/, ''));
+  // The student types a private 4-digit code. The page never lists students' names.
   const [studentCodeInput, setStudentCodeInput] = useState<string>('');
-  const [pages, setPages] = useState<PageImage[]>([
-    {
-      id: 'p1',
-      name: 'الصفحة 1 - حل مسائل الاشتقاق الضمني',
-      thumbnail: 'math_paper_scan_1',
-      isDark: false,
-    },
-    {
-      id: 'p2',
-      name: 'الصفحة 2 - مسألة إيجاد المشتقة الثانية',
-      thumbnail: 'math_paper_scan_2',
-      isDark: true, // triggers warning
-    },
-  ]);
+  const [pages, setPages] = useState<PageImage[]>([]);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isOffline, setIsOffline] = useState(false);
+  const [isOffline, setIsOffline] = useState(typeof navigator !== 'undefined' && !navigator.onLine);
+  const [info, setInfo] = useState<LinkInfo | null>(null);
+  const [infoError, setInfoError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [firstName, setFirstName] = useState('');
+  const [savedOffline, setSavedOffline] = useState(false);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const filesRef = useRef<HTMLInputElement>(null);
 
   const codeComplete = studentCodeInput.length === 4;
-  const selectedStudent = codeComplete ? MOCK_STUDENTS.find(s => s.studentCode === studentCodeInput) : undefined;
-  const codeNotFound = codeComplete && !selectedStudent;
+  const maxPages = info?.maxPages ?? 6;
 
-  const handleAddPage = () => {
-    const newPageNum = pages.length + 1;
-    setPages(prev => [
-      ...prev,
-      {
-        id: `p${Date.now()}`,
-        name: `الصفحة ${newPageNum} - إجابة السؤال ${newPageNum}`,
-        thumbnail: `math_paper_scan_${newPageNum}`,
-        isDark: false,
+  useEffect(() => {
+    getLinkInfo(linkCode)
+      .then(setInfo)
+      .catch((e) => setInfoError(e instanceof LinkError && !e.offline ? e.message : 'تعذّر فتح الرابط. تأكد من الإنترنت ثم أعد المحاولة.'));
+  }, [linkCode]);
+
+  // Papers saved while offline are sent once the connection is back.
+  useEffect(() => {
+    const flush = async () => {
+      for (const item of await listQueued('student', linkCode)) {
+        try {
+          const r = await submitPaper(item.target, item.studentCode ?? '', item.pages);
+          await removeQueued(item.id);
+          setFirstName(r.firstName);
+          setSavedOffline(false);
+          notify('وصلت ورقتك المحفوظة بنجاح ✓');
+        } catch (e) {
+          if (e instanceof LinkError && e.offline) return;
+          await removeQueued(item.id);
+          setError(e instanceof Error ? e.message : 'تعذّر إرسال الورقة المحفوظة.');
+        }
       }
-    ]);
+    };
+    const on = () => {
+      setIsOffline(false);
+      void flush();
+    };
+    const off = () => setIsOffline(true);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    if (navigator.onLine) void flush();
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, [linkCode]);
+
+  const handleAddFiles = async (list: FileList | null) => {
+    const files = Array.from(list ?? []).filter((f) => f.type.startsWith('image/'));
+    if (!files.length) return;
+    const room = maxPages - pages.length;
+    if (files.length > room) notify(`الحد الأقصى ${maxPages} صفحات.`, 'warning');
+    const added: PageImage[] = [];
+    for (const file of files.slice(0, Math.max(0, room))) {
+      try {
+        const p = await prepareImageForGrading(file);
+        added.push({ id: `p${Date.now()}${added.length}`, name: `الصفحة ${pages.length + added.length + 1}`, dataUrl: p.dataUrl, base64: p.base64, isDark: await isTooDark(p.dataUrl) });
+      } catch {
+        notify('تعذّرت قراءة إحدى الصور. جرّب صورة أخرى.', 'warning');
+      }
+    }
+    setPages((prev) => [...prev, ...added]);
   };
 
   const handleDeletePage = (id: string) => {
@@ -78,15 +119,60 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ on
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedStudent) return;
+    if (!codeComplete || !pages.length) return;
+    setError(null);
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    const payload = pages.map((p) => ({ base64: p.base64, mediaType: 'image/jpeg' as const }));
+    try {
+      const r = await submitPaper(linkCode, studentCodeInput, payload);
+      setFirstName(r.firstName);
       setIsSubmitted(true);
-    }, 1200);
+    } catch (err) {
+      if (err instanceof LinkError && err.offline) {
+        const ok = await queuePaper({
+          id: `s_${Date.now()}`,
+          kind: 'student',
+          target: linkCode,
+          studentCode: studentCodeInput,
+          pages: pages.map((p) => ({ base64: p.base64, dataUrl: p.dataUrl, mediaType: 'image/jpeg' })),
+          createdAt: new Date().toISOString(),
+        });
+        if (ok) {
+          setSavedOffline(true);
+          setIsSubmitted(true);
+        } else {
+          setError('لا يوجد إنترنت. حاول مرة أخرى عند عودة الاتصال.');
+        }
+      } else {
+        setError(err instanceof Error ? err.message : 'حدث خطأ. حاول مرة أخرى.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  if (infoError) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-16 text-center space-y-3">
+        <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto" />
+        <p className="text-sm font-bold text-slate-800">{infoError}</p>
+      </div>
+    );
+  }
+  if (!info) {
+    return <div className="max-w-md mx-auto px-4 py-16 text-center text-sm text-slate-500">جاري فتح الرابط...</div>;
+  }
+  if (!info.open && !isSubmitted) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-16 text-center space-y-3">
+        <Clock className="w-10 h-10 text-slate-400 mx-auto" />
+        <h1 className="font-extrabold text-base text-[#1E3A5F]">{info.title}</h1>
+        <p className="text-sm text-slate-600">أغلق المدرّس التسليم لهذا {info.kind === 'homework' ? 'الواجب' : 'الامتحان'}.</p>
+      </div>
+    );
+  }
 
   if (isSubmitted) {
     return (
@@ -95,9 +181,13 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ on
           <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-10 h-10" />
           </div>
-          <h2 className="text-2xl font-black text-[#1E3A5F]">وصلت ورقتك بنجاح ✓</h2>
+          <h2 className="text-2xl font-black text-[#1E3A5F]">{savedOffline ? 'حُفظت ورقتك على جهازك' : 'وصلت ورقتك بنجاح ✓'}</h2>
           <p className="text-xs text-slate-600 leading-relaxed">
-            تم استلام <strong>{pages.length} صفحات</strong> للطالب <strong>{selectedStudent?.name}</strong> في امتحان <strong>التفاضل والاشتقاق الضمني</strong> بنجاح.
+            {savedOffline ? (
+              <>لا يوجد إنترنت الآن. ستُرسل ورقتك تلقائياً عند عودة الاتصال، أبقِ هذه الصفحة مفتوحة أو افتحها لاحقاً من نفس الجهاز.</>
+            ) : (
+              <>شكراً {firstName}، استلمنا <strong>{pages.length} صفحات</strong> في <strong>{info.title}</strong>.</>
+            )}
           </p>
 
           <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs text-right space-y-1">
@@ -105,16 +195,19 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ on
               <span>ماذا بعد التسليم؟</span>
             </div>
             <p className="text-[11px] text-emerald-800 leading-normal">
-              يراجع {CURRENT_TEACHER.name} التصحيح ويعتمده، وستصلك ورقتك الأصلية محبرة بالقلم الأحمر مع تفاصيل درجاتك عبر رسالة واتساب على رقم هاتفك المسجل فوراً.
+              يراجع المدرّس التصحيح ويعتمده، ثم تصلك ورقتك مصحّحة بالقلم الأحمر على واتساب.
             </p>
           </div>
 
           <div className="pt-2">
             <button
-              onClick={() => setIsSubmitted(false)}
+              onClick={() => {
+                setIsSubmitted(false);
+                setPages([]);
+              }}
               className="text-xs text-[#1E3A5F] hover:underline font-bold cursor-pointer"
             >
-              تسليم ورقة إضافية أو تعديل الصفحات
+              إعادة التسليم (تستبدل الورقة السابقة)
             </button>
           </div>
         </div>
@@ -124,54 +217,28 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ on
 
   return (
     <div className="max-w-md mx-auto px-4 py-6 space-y-5 text-right">
-      {/* Top Card: Teacher, Exam info & Deadline */}
+      {/* Top Card: exam info */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
-              رابط تسليم الواجب
+              {info.kind === 'homework' ? 'رابط تسليم الواجب' : 'رابط تسليم الامتحان'}
             </span>
-            <h1 className="font-extrabold text-base text-[#1E3A5F] mt-1">
-              واجب منزلي: الاشتقاق الضمني والمعادلات
-            </h1>
-            <p className="text-xs text-slate-500 font-medium">{CURRENT_TEACHER.name} · الرياضيات</p>
+            <h1 className="font-extrabold text-base text-[#1E3A5F] mt-1 break-words">{info.title}</h1>
+            <p className="text-xs text-slate-500 font-medium">{info.organizationName}</p>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-[#E8F0F8] text-[#1E3A5F] flex items-center justify-center font-bold">
+          <div className="w-10 h-10 rounded-xl bg-[#E8F0F8] text-[#1E3A5F] flex items-center justify-center font-bold shrink-0">
             د✓
           </div>
         </div>
-
-        <div className="flex items-center justify-between text-xs text-slate-600">
-          <span className="flex items-center gap-1 text-red-600 font-semibold">
-            <Clock className="w-3.5 h-3.5" />
-            <span>آخر موعد: اليوم حتى 10:00 م</span>
-          </span>
-          <span className="text-slate-400">الدرجة الكلية: 20 علامة</span>
-        </div>
       </div>
 
-      {/* Offline Status Simulation Indicator */}
-      <div className="flex items-center justify-between bg-slate-100 p-2.5 rounded-xl text-xs text-slate-700 border border-slate-200">
-        <div className="flex items-center gap-2">
-          {isOffline ? (
-            <WifiOff className="w-4 h-4 text-red-500" />
-          ) : (
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          )}
-          <span className="text-[11px]">
-            {isOffline
-              ? 'إنترنت ضعيف: سيتم حفظ ورقتك وإرسالها تلقائياً عند عودة الاتصال'
-              : 'متصل بالشبكة (نظام حفظ محلي ضد انقطاع الكهرباء والإنترنت)'}
-          </span>
+      {isOffline && (
+        <div className="flex items-center gap-2 bg-amber-50 p-2.5 rounded-xl text-xs text-amber-900 border border-amber-200">
+          <WifiOff className="w-4 h-4 text-amber-600 shrink-0" />
+          <span className="text-[11px]">لا يوجد إنترنت: عند الإرسال تُحفظ ورقتك على جهازك وتُرسل تلقائياً عند عودة الاتصال.</span>
         </div>
-        <button
-          type="button"
-          onClick={() => setIsOffline(!isOffline)}
-          className="text-[10px] text-blue-700 underline font-medium cursor-pointer"
-        >
-          {isOffline ? 'محاكاة عودة الشبكة' : 'محاكاة انقطاع'}
-        </button>
-      </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* Step 1: Student enters their private 4-digit code */}
@@ -189,51 +256,45 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ on
             autoComplete="off"
             maxLength={4}
             value={studentCodeInput}
-            onChange={(e) => setStudentCodeInput(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
+            onChange={(e) => setStudentCodeInput(e.target.value.replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660)).replace(/[^0-9]/g, '').slice(0, 4))}
             className="w-full p-3 text-center bg-[#F7F8FA] border border-slate-300 rounded-xl font-bold text-xl tracking-[0.5em] tabular-nums focus:bg-white focus:border-[#1E3A5F] focus:outline-none"
             placeholder="••••"
             dir="ltr"
           />
 
-          {selectedStudent && (
-            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>
-                أهلاً <strong>{selectedStudent.name}</strong>. إذا لم يكن هذا اسمك، تأكد من الرمز.
-              </span>
-            </div>
-          )}
-
-          {codeNotFound && (
-            <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>هذا الرمز غير مسجّل في هذه المجموعة. تأكد منه أو اسأل المدرّس.</span>
-            </div>
-          )}
-
-          {!codeComplete && (
-            <p className="text-[10px] text-slate-400">للتجربة: جرّب الرمز {MOCK_STUDENTS[0].studentCode}</p>
-          )}
         </div>
 
         {/* Step 2: Camera / Upload Pages */}
         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold text-slate-800">
-              صفحات الورقة المحلولة ({pages.length} صفحات مضافة):
+              صفحات الورقة المحلولة ({pages.length} من {maxPages}):
             </label>
             <span className="text-[10px] text-slate-500">JPG أو PNG واضحة</span>
           </div>
 
-          {/* Big Camera / Add Pages Button */}
-          <button
-            type="button"
-            onClick={handleAddPage}
-            className="w-full bg-[#1E3A5F] hover:bg-[#152a45] text-white p-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all shadow-xs active:scale-98"
-          >
-            <Camera className="w-5 h-5 text-emerald-400" />
-            <span>صوّر صفحات ورقتك بالكاميرا / أضف صفحة</span>
-          </button>
+          <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { void handleAddFiles(e.target.files); e.target.value = ''; }} />
+          <input ref={filesRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { void handleAddFiles(e.target.files); e.target.value = ''; }} />
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={pages.length >= maxPages}
+              onClick={() => cameraRef.current?.click()}
+              className="bg-[#1E3A5F] hover:bg-[#152a45] disabled:opacity-50 text-white p-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all shadow-xs active:scale-98"
+            >
+              <Camera className="w-5 h-5 text-emerald-400" />
+              <span>صوّر صفحة</span>
+            </button>
+            <button
+              type="button"
+              disabled={pages.length >= maxPages}
+              onClick={() => filesRef.current?.click()}
+              className="bg-white border-2 border-dashed border-slate-300 disabled:opacity-50 text-slate-800 p-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Upload className="w-5 h-5 text-blue-600" />
+              <span>من المعرض</span>
+            </button>
+          </div>
 
           {/* Uploaded Pages List with reorder and delete */}
           <div className="space-y-3">
@@ -283,23 +344,13 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ on
                   </div>
                 </div>
 
-                {/* Simulated Paper Preview Thumbnail */}
-                <div className="h-20 bg-white border border-slate-200 rounded-lg flex items-center justify-center text-slate-400 font-mono text-[11px] relative overflow-hidden">
-                  <div className="absolute inset-0 p-2 opacity-50 font-serif text-[10px] leading-tight select-none pointer-events-none">
-                    2س + 2ص ص' = 0 <br />
-                    ص' = -س / ص <br />
-                    ص'' = (-ص - س ص') / ص²
-                  </div>
-                  <span className="bg-slate-800/60 text-white px-2 py-0.5 rounded text-[10px] z-10 backdrop-blur-xs">
-                    معاينة الصفحة {idx + 1}
-                  </span>
-                </div>
+                <img src={p.dataUrl} alt={`الصفحة ${idx + 1}`} className="w-full max-h-48 object-contain bg-white border border-slate-200 rounded-lg" />
 
                 {/* Tilt / Dark Photo Warning (PDF requirement) */}
                 {p.isDark && (
                   <div className="p-2 bg-amber-50 border border-amber-300 rounded-lg text-amber-800 text-[11px] flex items-center gap-1.5 font-medium">
                     <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>تنبيه: الصورة مظلمة أو مائلة قليلاً — يفضل إعادة التصوير في مكان ذي إضاءة أوضح لضمان دقة القراءة.</span>
+                    <span>تنبيه: الصورة مظلمة — يفضّل إعادة التصوير في إضاءة أوضح لضمان دقة القراءة.</span>
                   </div>
                 )}
               </div>
@@ -307,17 +358,24 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = ({ on
           </div>
         </div>
 
+        {error && (
+          <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={pages.length === 0 || isSubmitting || !selectedStudent}
+          disabled={pages.length === 0 || isSubmitting || !codeComplete}
           className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white py-3.5 rounded-xl font-bold text-sm transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"
         >
           {isSubmitting ? (
             <span>جارِ الرفع والتحقق...</span>
           ) : (
             <>
-              <span>{selectedStudent ? `إرسال الورقة إلى ${CURRENT_TEACHER.name}` : 'اكتب رمزك أولاً'}</span>
+              <span>{!codeComplete ? 'اكتب رمزك أولاً' : !pages.length ? 'أضف صورة ورقتك' : 'إرسال الورقة للمدرّس'}</span>
               <Check className="w-4 h-4" />
             </>
           )}

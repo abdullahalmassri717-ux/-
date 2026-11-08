@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ScreenId } from '../../types';
-import { MOCK_TEACHER_DEEP_ANALYTICS, MOCK_GROUPS } from '../../mockData';
+import { useLoad } from '../../data/DataContext';
+import { setSelected } from '../../data/selection';
+import { computeDiagnostics } from '../../lib/diagnostics';
 import {
   BrainCircuit,
   Target,
@@ -23,7 +25,6 @@ import {
   ThumbsUp,
   XCircle
 } from 'lucide-react';
-import { notify } from '../../lib/notify';
 
 interface TeacherDiagnosticAnalyticsPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -33,7 +34,16 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
   onNavigate 
 }) => {
   const [selectedGroupId, setSelectedGroupId] = useState('all');
-  const analytics = MOCK_TEACHER_DEEP_ANALYTICS;
+  const groupsQ = useLoad((st) => st.listGroups());
+  const studentsQ = useLoad((st) => st.listStudents());
+  const rowsQ = useLoad((st) => st.listDiagnosticRows(selectedGroupId === 'all' ? null : selectedGroupId), [selectedGroupId]);
+  const analytics = useMemo(() => computeDiagnostics(rowsQ.data ?? [], studentsQ.data ?? []), [rowsQ.data, studentsQ.data]);
+  const activeStudents = (studentsQ.data ?? []).length;
+
+  const openStudent = (id: string) => {
+    setSelected('student', id);
+    onNavigate('B3');
+  };
 
   return (
     <div className="space-y-6 text-right max-w-6xl mx-auto pb-16">
@@ -60,10 +70,10 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
           <select
             value={selectedGroupId}
             onChange={(e) => setSelectedGroupId(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
+            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 min-w-0"
           >
-            <option value="all">كافة المجموعات والطلاب (180 طالباً)</option>
-            {MOCK_GROUPS.map(g => (
+            <option value="all">كل المجموعات ({activeStudents} طالباً)</option>
+            {(groupsQ.data ?? []).map(g => (
               <option key={g.id} value={g.id}>{g.name}</option>
             ))}
           </select>
@@ -73,7 +83,7 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
             className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3 py-2 rounded-xl transition-colors flex items-center justify-center gap-1"
           >
             <FileText className="w-3.5 h-3.5 text-emerald-600" />
-            <span>معاينة تقرير الأهل (B10)</span>
+            <span>تقارير أولياء الأمور</span>
           </button>
         </div>
       </div>
@@ -84,12 +94,14 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
           <Sparkles className="w-5 h-5 text-amber-300" />
         </div>
         <div className="space-y-1">
-          <h4 className="font-bold text-sm text-amber-200">الخلاصة التوجيهية للذكاء الاصطناعي هذا الأسبوع:</h4>
+          <h4 className="font-bold text-sm text-amber-200">الخلاصة:</h4>
           <p className="text-xs text-slate-100 leading-relaxed">
-            {analytics.generalInsight}
+            {rowsQ.loading ? 'جارٍ تحليل الأوراق المعتمدة…' : rowsQ.error ?? analytics.generalInsight}
           </p>
         </div>
       </div>
+
+      {!rowsQ.loading && !rowsQ.error && analytics.papers > 0 && (<>
 
       {/* SECTION 1: WHERE TO FOCUS VS WHERE NOT TO FOCUS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -112,34 +124,22 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
                 className="p-4 bg-red-50/50 border border-red-100 rounded-xl space-y-2 text-xs"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="text-[10px] text-slate-500 block">الدرس: {item.lesson}</span>
-                    <h4 className="font-bold text-red-950 text-sm mt-0.5">{item.topic}</h4>
-                  </div>
+                  <h4 className="font-bold text-red-950 text-sm min-w-0">{item.topic}</h4>
                   <span className="bg-red-600 text-white font-mono font-bold text-xs px-2 py-0.5 rounded-md shrink-0">
                     نسبة الخطأ: {item.errorRate}%
                   </span>
                 </div>
 
                 <div className="bg-white p-2.5 rounded-lg border border-red-200/60 text-slate-700 leading-relaxed">
-                  <strong className="text-red-900 block mb-0.5">سبب تعثر الطلاب:</strong>
+                  <strong className="text-red-900 block mb-0.5">ما الذي فاتهم:</strong>
                   {item.reason}
                 </div>
 
                 <div className="text-slate-600">
-                  <strong className="text-[#1E3A5F]">توصية الشرح البديل: </strong>
+                  <strong className="text-[#1E3A5F]">اقتراح: </strong>
                   {item.recommendation}
                 </div>
 
-                <div className="pt-2 flex justify-end">
-                  <button
-                    onClick={() => onNavigate(item.actionScreen as ScreenId)}
-                    className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-colors shadow-2xs"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                    <span>{item.actionLabel}</span>
-                  </button>
-                </div>
               </div>
             ))}
           </div>
@@ -153,7 +153,7 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
               <h3 className="font-black text-base">أين لا تركّز؟ (وفّر وقت حصتك)</h3>
             </div>
             <span className="text-[11px] bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full">
-              مفاهيم متقنة تماماً (+90%)
+              إتقان 85% فأكثر
             </span>
           </div>
 
@@ -164,17 +164,14 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
                 className="p-4 bg-emerald-50/50 border border-emerald-100 rounded-xl space-y-2 text-xs"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="text-[10px] text-slate-500 block">الدرس: {item.lesson}</span>
-                    <h4 className="font-bold text-emerald-950 text-sm mt-0.5">{item.topic}</h4>
-                  </div>
+                  <h4 className="font-bold text-emerald-950 text-sm min-w-0">{item.topic}</h4>
                   <span className="bg-emerald-600 text-white font-mono font-bold text-xs px-2 py-0.5 rounded-md shrink-0">
                     إتقان: {item.masteryRate}%
                   </span>
                 </div>
 
                 <div className="text-slate-600 font-medium">
-                  {item.studentMasteryCount} أجابوا بشكل صحيح كامل دون أي خطوة ناقصة.
+                  {item.studentMasteryCount} حصلوا على 80% فأكثر في هذا الدرس.
                 </div>
 
                 <div className="bg-white p-2.5 rounded-lg border border-emerald-200/60 text-emerald-900 leading-relaxed font-semibold">
@@ -195,7 +192,7 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
               <span>تشخيص وضع الطلاب وتوزيع الفئات</span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              تصنيف طلابك وفق قدرتهم على خوض الامتحانات الوزارية مع تحديد المعرضين للتعثر للتدخل المباشر
+              تصنيف طلابك حسب معدلهم في الأوراق المعتمدة
             </p>
           </div>
         </div>
@@ -217,10 +214,10 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
               </span>
             </div>
             <p className="text-[11px] text-slate-600 leading-relaxed">
-              {analytics.cohortHealth.masteryGroup.description}
+              معدلهم 85% فأكثر في الأوراق المعتمدة.
             </p>
             <div className="pt-1 text-[11px] text-emerald-900 font-bold">
-              الإجراء: {analytics.cohortHealth.masteryGroup.recommendedAction}
+              الإجراء: أسئلة إثرائية أصعب.
             </div>
           </div>
 
@@ -239,10 +236,10 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
               </span>
             </div>
             <p className="text-[11px] text-slate-600 leading-relaxed">
-              {analytics.cohortHealth.steadyGroup.description}
+              معدلهم بين 60% و85%.
             </p>
             <div className="pt-1 text-[11px] text-blue-900 font-bold">
-              الإجراء: {analytics.cohortHealth.steadyGroup.recommendedAction}
+              الإجراء: تمارين على نقاط الضعف المشتركة.
             </div>
           </div>
 
@@ -261,10 +258,10 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
               </span>
             </div>
             <p className="text-[11px] text-slate-600 leading-relaxed">
-              {analytics.cohortHealth.atRiskGroup.description}
+              معدلهم أقل من 60%.
             </p>
             <div className="pt-1 text-[11px] text-red-900 font-bold">
-              الإجراء: {analytics.cohortHealth.atRiskGroup.recommendedAction}
+              الإجراء: متابعة فردية وتمارين علاجية.
             </div>
           </div>
         </div>
@@ -273,13 +270,13 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
         <div className="pt-3 border-t border-slate-100 space-y-3">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-black text-slate-800">
-              قائمة الطلاب الأكثر حاجة لتقوية فورية (عينة التدخل):
+              الطلاب الأكثر حاجة للمتابعة:
             </h4>
             <button
               onClick={() => onNavigate('C2')}
               className="text-xs text-[#1E3A5F] hover:underline font-bold flex items-center gap-1"
             >
-              <span>توليد أوراق تدريبية فردية لهؤلاء الطلاب (C2)</span>
+              <span>أوراق تدريب علاجية</span>
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -295,10 +292,10 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
                   مكمن الخلل: <strong className="text-slate-700">{st.weakPoint}</strong>
                 </div>
                 <button
-                  onClick={() => notify(`تم إرسال تمرين علاجي مقترح على واتساب الطالب ${st.name}`)}
+                  onClick={() => openStudent(st.id)}
                   className="w-full bg-white hover:bg-slate-100 border border-slate-300 text-[#1E3A5F] py-1 rounded-lg font-bold text-[11px] transition-colors"
                 >
-                  إرسال تمرين تعزيز لواتساب الأهل
+                  فتح ملف الطالب
                 </button>
               </div>
             ))}
@@ -313,7 +310,7 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
           <span>خريطة الأخطاء المفاهيمية الشائعة (الأخطاء المنهجية المتكررة)</span>
         </h3>
         <p className="text-xs text-slate-500">
-          رصد آلي لأنماط الأخطاء المشتركة التي وقع فيها أكثر من 20% من طلابك في نفس السؤال
+          معايير تصحيح لم يحققها 20% أو أكثر من طلابك
         </p>
 
         <div className="space-y-3">
@@ -334,7 +331,7 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
               <div className="flex items-center gap-3 shrink-0 mr-7 sm:mr-0">
                 <div className="text-right">
                   <span className="text-xs font-mono font-bold text-amber-900 block">{misc.affectedCount} طالباً</span>
-                  <span className="text-[10px] text-slate-500 font-mono">({misc.percentage}% من المجموعات)</span>
+                  <span className="text-[10px] text-slate-500 font-mono">({misc.percentage}%)</span>
                 </div>
               </div>
             </div>
@@ -347,15 +344,15 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
         <div className="flex items-center gap-2">
           <Clock className="w-5 h-5 text-amber-400" />
           <h3 className="font-black text-base text-amber-300">
-            خطة العمل البيداغوجية المقترحة لجدول تدريسك الأسبوع القادم
+            خطة مقترحة للأسبوع القادم
           </h3>
         </div>
         <p className="text-xs text-slate-300">
-          توجيهات عملية مقترحة لتعديل خطتك التدريسية واستثمار حصصك بكفاءة عالية:
+          خطوات عملية مبنية على نتائج طلابك:
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-          {analytics.aiWeeklyActionPlan.map((action, idx) => (
+          {analytics.actionPlan.map((action, idx) => (
             <div key={idx} className="p-3.5 bg-white/10 rounded-xl border border-white/15 flex items-start gap-2.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
               <span className="leading-relaxed text-slate-100">{action}</span>
@@ -363,6 +360,7 @@ export const TeacherDiagnosticAnalyticsPage: React.FC<TeacherDiagnosticAnalytics
           ))}
         </div>
       </div>
+      </>)}
     </div>
   );
 };

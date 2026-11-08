@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { ScreenId, Exam } from '../../types';
-import { MOCK_EXAMS } from '../../mockData';
+import { ScreenId } from '../../types';
+import { useLoad } from '../../data/DataContext';
+import { setSelected } from '../../data/selection';
+import { notify } from '../../lib/notify';
 import {
   FileText,
   Plus,
@@ -23,7 +25,22 @@ export const ExamsListPage: React.FC<ExamsListPageProps> = ({ onNavigate }) => {
   const [tab, setTab] = useState<'all' | 'exam' | 'homework'>('all');
   const [showNewModal, setShowNewModal] = useState(false);
 
-  const filteredExams = MOCK_EXAMS.filter(e => tab === 'all' || e.type === tab);
+  const examsQ = useLoad((st) => st.listAssessments());
+  const exams = examsQ.data ?? [];
+  const filteredExams = exams.filter(e => tab === 'all' || e.type === tab);
+  const open = (examId: string, screen: ScreenId) => {
+    setSelected('exam', examId);
+    onNavigate(screen);
+  };
+  const copyLink = async (code: string) => {
+    const url = `${window.location.origin}/s/${code}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      notify('تم نسخ رابط التسليم. أرسله للطلاب على واتساب.');
+    } catch {
+      notify(url, 'info');
+    }
+  };
 
   return (
     <div className="space-y-6 text-right">
@@ -113,7 +130,7 @@ export const ExamsListPage: React.FC<ExamsListPageProps> = ({ onNavigate }) => {
             tab === 'all' ? 'bg-[#1E3A5F] text-white' : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          الكل ({MOCK_EXAMS.length})
+          الكل ({exams.length})
         </button>
         <button
           onClick={() => setTab('exam')}
@@ -132,6 +149,16 @@ export const ExamsListPage: React.FC<ExamsListPageProps> = ({ onNavigate }) => {
           الواجبات المنزلية
         </button>
       </div>
+
+      {examsQ.loading && !exams.length && <div className="text-center text-xs text-slate-500 py-10">جاري التحميل...</div>}
+      {examsQ.error && <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl p-3">{examsQ.error}</div>}
+      {!examsQ.loading && !examsQ.error && filteredExams.length === 0 && (
+        <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-8 text-center space-y-2">
+          <FileText className="w-8 h-8 text-slate-300 mx-auto" />
+          <p className="text-sm font-bold text-slate-700">لا توجد واجبات أو امتحانات بعد</p>
+          <button onClick={() => onNavigate('B5')} className="mt-2 bg-[#1E3A5F] text-white px-4 py-2 rounded-lg text-xs font-bold cursor-pointer">إنشاء أول امتحان</button>
+        </div>
+      )}
 
       {/* Exam Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -152,7 +179,7 @@ export const ExamsListPage: React.FC<ExamsListPageProps> = ({ onNavigate }) => {
                 {exam.status === 'needs_review' && (
                   <span className="text-xs bg-amber-100 text-amber-900 font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
                     <Clock className="w-3 h-3 text-[#D97706]" />
-                    يحتاج مراجعة (12 متبقية)
+                    يحتاج مراجعة
                   </span>
                 )}
                 {exam.status === 'completed' && (
@@ -192,13 +219,13 @@ export const ExamsListPage: React.FC<ExamsListPageProps> = ({ onNavigate }) => {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-slate-600">الأوراق المرفوعة:</span>
                   <span className="font-bold text-[#1E3A5F] font-mono tabular-nums">
-                    {exam.uploadedCount} من {exam.totalStudents} ({Math.round((exam.uploadedCount / exam.totalStudents) * 100)}%)
+                    {exam.uploadedCount} من {exam.totalStudents} ({exam.totalStudents ? Math.round((exam.uploadedCount / exam.totalStudents) * 100) : 0}%)
                   </span>
                 </div>
                 <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                   <div
                     className="bg-[#1E3A5F] h-full rounded-full"
-                    style={{ width: `${(exam.uploadedCount / exam.totalStudents) * 100}%` }}
+                    style={{ width: `${exam.totalStudents ? Math.min(100, (exam.uploadedCount / exam.totalStudents) * 100) : 0}%` }}
                   />
                 </div>
               </div>
@@ -208,14 +235,14 @@ export const ExamsListPage: React.FC<ExamsListPageProps> = ({ onNavigate }) => {
             <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100 text-xs">
               {exam.status === 'needs_review' ? (
                 <button
-                  onClick={() => onNavigate('B8')}
+                  onClick={() => open(exam.id, 'B8')}
                   className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2 px-3 rounded-lg font-bold text-center transition-colors cursor-pointer"
                 >
                   مراجعة التصحيح
                 </button>
               ) : (
                 <button
-                  onClick={() => onNavigate('B9')}
+                  onClick={() => open(exam.id, 'B9')}
                   className="flex-1 bg-[#1E3A5F] hover:bg-[#152a45] text-white py-2 px-3 rounded-lg font-bold text-center transition-colors cursor-pointer"
                 >
                   النتائج والتحليل
@@ -223,15 +250,25 @@ export const ExamsListPage: React.FC<ExamsListPageProps> = ({ onNavigate }) => {
               )}
 
               <button
-                onClick={() => onNavigate('B7')}
+                onClick={() => open(exam.id, 'B7')}
                 className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-3 rounded-lg font-semibold cursor-pointer"
                 title="رفع أوراق إضافية"
               >
                 رفع أوراق
               </button>
 
+              {exam.submissionMode === 'link' && (
+                <button
+                  onClick={() => copyLink(exam.submissionCode)}
+                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 py-2 px-3 rounded-lg font-semibold cursor-pointer"
+                  title="نسخ رابط تسليم الطلاب"
+                >
+                  رابط التسليم
+                </button>
+              )}
+
               <button
-                onClick={() => onNavigate('B6')}
+                onClick={() => open(exam.id, 'B6')}
                 className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-2 rounded-lg cursor-pointer"
                 title="طباعة أوراق الإجابة مع كود QR"
               >

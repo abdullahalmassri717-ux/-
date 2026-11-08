@@ -1,3 +1,4 @@
+import { notify } from '../../lib/notify';
 import React from 'react';
 import { ScreenId } from '../../types';
 import {
@@ -25,14 +26,14 @@ export const AIToolsHubPage: React.FC<AIToolsHubPageProps> = ({ onNavigate, onOp
       id: 'C_FILES' as ScreenId,
       title: 'ملفاتي (المراجع وأوراق العمل)',
       desc: 'ارفع ملخصاتك وأسئلتك الخاصة واربطها بدروس المنهاج ليعتمد عليها الذكاء الاصطناعي في التوليد والتصحيح.',
-      phase: 'available',
-      badge: 'متاح الآن',
+      phase: 'soon',
+      badge: 'قريباً',
       icon: FileText,
     },
     {
       id: 'C1' as ScreenId,
       title: 'توليد امتحان ذكي من المنهاج',
-      desc: 'توليد امتحانات متدرجة مضبوطة بالدروس المشروحة مع الإجابات النموذجية وسلالم التصحيح بضغطة زر واحدة.',
+      desc: 'أسئلة من الدروس التي شرحتها فقط، مع نموذج الإجابة ومعايير التصحيح، وفحص ثانٍ أن كل سؤال داخل الدروس.',
       phase: 'available',
       badge: 'متاح الآن',
       icon: Sparkles,
@@ -40,23 +41,23 @@ export const AIToolsHubPage: React.FC<AIToolsHubPageProps> = ({ onNavigate, onOp
     {
       id: 'C2' as ScreenId,
       title: 'تمارين علاجية وشرح الأخطاء',
-      desc: 'تشخيص نقاط الضعف تلقائياً وتوليد أوراق تدريبية مخصصة لكل طالب أو للمجموعة مع الحلول.',
+      desc: 'نحدد أضعف الدروس من الأوراق المصحّحة، ونولّد تمارين متدرجة مع مفتاح الحل لطالب أو لمجموعة.',
       phase: 'available',
       badge: 'متاح الآن',
       icon: Sparkles,
     },
     {
       id: 'C3' as ScreenId,
-      title: 'بنك الأسئلة المبوب ونسب النجاح',
-      desc: 'آلاف الأسئلة المصنفة حسب الدرس وناتج التعلم مع الفلترة بالسنوات الوزارية وأسئلة المعلم.',
+      title: 'بنك الأسئلة',
+      desc: 'أسئلتك وأسئلة امتحاناتك السابقة والأسئلة المولّدة، مرتبة حسب الدرس، وتنشئ منها امتحاناً بضغطة.',
       phase: 'available',
       badge: 'متاح الآن',
       icon: BookOpen,
     },
     {
       id: 'C4' as ScreenId,
-      title: 'المساعد الذكي (محادثة سياقية)',
-      desc: 'المساعد الصوتي والنصي المدرك لسياق الشاشة، ينفذ الأوامر ويعدل الدرجات بتأكيدك.',
+      title: 'المساعد الذكي',
+      desc: 'اسأله عن صياغة الأسئلة والمعايير وأفكار الشرح والرسائل وطريقة استخدام المنصة.',
       phase: 'available',
       badge: 'متاح الآن',
       icon: Bot,
@@ -65,15 +66,15 @@ export const AIToolsHubPage: React.FC<AIToolsHubPageProps> = ({ onNavigate, onOp
     {
       id: 'C5' as ScreenId,
       title: 'تحويل امتحان ورقي قديم',
-      desc: 'التقط صورة لامتحانك الورقي القديم ليحوله الذكاء الاصطناعي لأسئلة رقمية قابلة للتعديل.',
+      desc: 'صوّر امتحاناً قديماً ليحوّله الذكاء الاصطناعي لأسئلة مع درجات ومعايير، تحفظها في البنك أو تنشئ منها امتحاناً.',
       phase: 'available',
       badge: 'متاح الآن',
       icon: ScanLine,
     },
     {
       id: 'C6' as ScreenId,
-      title: 'تجميع الإجابات المتشابهة',
-      desc: 'تصحيح 180 إجابة بـ 6 نقرات فقط من خلال تجميع الحلول المتطابقة في كتل موحدة.',
+      title: 'مراجعة سؤالاً سؤالاً',
+      desc: 'نجمع الإجابات التي حققت نفس معايير التصحيح، فتعتمد درجة المجموعة كلها بضغطة.',
       phase: 'available',
       badge: 'متاح الآن',
       icon: Layers,
@@ -81,25 +82,25 @@ export const AIToolsHubPage: React.FC<AIToolsHubPageProps> = ({ onNavigate, onOp
     {
       id: 'C7' as ScreenId,
       title: 'خطة مذاكرة وبطاقات مراجعة',
-      desc: 'جدول دراسي أسبوعي وبطاقات تلخيصية من صفحة واحدة للمفاهيم التي يعاني منها الطالب.',
-      phase: 'soon',
-      badge: 'قريباً (المرحلة 2)',
+      desc: 'جدول يومي حتى موعد الامتحان يبدأ بأضعف دروس الطالب، مع بطاقات مراجعة سريعة.',
+      phase: 'available',
+      badge: 'متاح الآن',
       icon: Calendar,
     },
     {
       id: 'C8' as ScreenId,
       title: 'الطلاب المعرّضون للخطر',
-      desc: 'نظام رصد مبكر يرتب الطلاب الأكثر تراجعاً ويقترح خطة إنقاذ وتدريبات فورية.',
-      phase: 'soon',
-      badge: 'قريباً (المرحلة 2)',
+      desc: 'رصد مبكر من الأوراق المعتمدة: من تراجعت علاماته أو نزلت تحت 50%، مع إجراء مقترح.',
+      phase: 'available',
+      badge: 'متاح الآن',
       icon: AlertTriangle,
     },
     {
       id: 'C9' as ScreenId,
-      title: 'الرد الآلي لأولياء الأمور على واتساب',
-      desc: 'مجيب آلي يتولى الرد على استفسارات الأهالي المتكررة من واقع سجل الدرجات المعتمد.',
-      phase: 'beta',
-      badge: 'تجريبي',
+      title: 'مساعد الرد على أولياء الأمور',
+      desc: 'الصق رسالة ولي الأمر، فيكتب مسودة رد من بيانات الطالب التي تسمح بها، وأنت ترسلها على واتساب.',
+      phase: 'available',
+      badge: 'متاح الآن',
       icon: BrainCircuit,
     },
   ];
@@ -113,10 +114,10 @@ export const AIToolsHubPage: React.FC<AIToolsHubPageProps> = ({ onNavigate, onOp
           <span>منظومة الذكاء الاصطناعي المدمجة لمنصة دِقّـة</span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-black">
-          مركز الأدوات الذكية للمعلم (المجموعة ج)
+          مركز الأدوات الذكية للمعلم
         </h1>
         <p className="text-xs sm:text-sm text-blue-100 max-w-2xl leading-relaxed">
-          أدوات متطورة تعتمد كلياً على مخرجات التصحيح الوزاري، تمكّنك من توليد الاختبارات، التدريبات العلاجية، وتحويل الملازم الورقية دون جهد.
+          أدوات تعتمد على دروس منهجك وأوراق طلابك المصحّحة: توليد الامتحانات، التمارين العلاجية، تحويل الامتحانات الورقية، ومتابعة الطلاب.
         </p>
       </div>
 
@@ -128,7 +129,9 @@ export const AIToolsHubPage: React.FC<AIToolsHubPageProps> = ({ onNavigate, onOp
             <div
               key={tool.id}
               onClick={() => {
-                if (tool.isDrawer) {
+                if (tool.phase === 'soon') {
+                  notify('هذه الأداة قيد التجهيز وستتوفر قريباً.');
+                } else if (tool.isDrawer) {
                   onOpenAI();
                 } else {
                   onNavigate(tool.id);

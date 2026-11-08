@@ -1,4 +1,5 @@
 import React from 'react';
+import { usePublicSetting } from '../lib/settings';
 import { UserRole, ScreenId } from '../types';
 import {
   LayoutDashboard,
@@ -54,7 +55,7 @@ export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity): N
       { id: 'B15' as ScreenId, label: 'تشخيص طلابي (افهم طلابك)', icon: Target, badge: 'تحليل ذكي', highlight: true },
       { id: 'B4' as ScreenId, label: 'الامتحانات والواجبات', icon: FileText },
       { id: 'B7' as ScreenId, label: 'رفع وتصوير الأوراق', icon: UploadCloud },
-      { id: 'B8' as ScreenId, label: 'مراجعة التصحيح', icon: CheckSquare, badge: '12 متبقية' },
+      { id: 'B8' as ScreenId, label: 'مراجعة التصحيح', icon: CheckSquare },
       { id: 'B9' as ScreenId, label: 'نتائج الامتحان والتحليل', icon: BarChart3 },
       { id: 'B10' as ScreenId, label: 'تقارير واتساب للأهالي', icon: Send },
       { id: 'B12' as ScreenId, label: 'معاينة الورقة المصححة', icon: FileCheck2 },
@@ -67,7 +68,6 @@ export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity): N
         id: 'B11' as ScreenId,
         label: 'رسوم الطلاب والمالية',
         icon: Wallet,
-        badge: '84% تحصيل'
       });
     }
 
@@ -84,9 +84,9 @@ export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity): N
   if (currentRole === 'school_principal' || currentRole === 'school_admin') {
     return [
       { id: 'D1' as ScreenId, label: 'لوحة إدارة المدرسة', icon: Building2 },
-      { id: 'D2' as ScreenId, label: 'المعلمون والصفوف (1 - 9)', icon: GraduationCap },
-      { id: 'D3' as ScreenId, label: 'تقرير الفاقد التعليمي الشامل', icon: BarChart3 },
-      { id: 'D4' as ScreenId, label: 'مقارنة المعلمين والمجموعات', icon: Users, tag: 'قريباً' },
+      { id: 'D2' as ScreenId, label: 'المعلمون والصفوف', icon: GraduationCap },
+      { id: 'D3' as ScreenId, label: 'تقرير المدرسة', icon: BarChart3 },
+      { id: 'D4' as ScreenId, label: 'مقارنة المعلمين والصفوف', icon: Users },
       { id: 'B8' as ScreenId, label: 'مراقبة جودة التصحيح', icon: CheckSquare },
       { id: 'B11' as ScreenId, label: 'عقد واشتراك المدرسة', icon: Wallet },
       { id: 'SUPPORT' as ScreenId, label: 'الدعم الفني للمدرسة', icon: Headphones },
@@ -98,9 +98,9 @@ export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity): N
       { id: 'E1' as ScreenId, label: 'لوحة الإشراف العام', icon: ShieldCheck },
       { id: 'E6' as ScreenId, label: 'إعدادات الصفحة التعريفية (CMS)', icon: LayoutTemplate, badge: 'تحكم' },
       { id: 'E2' as ScreenId, label: 'العملاء والفواتير والتحويلات', icon: CreditCard },
-      { id: 'E3' as ScreenId, label: 'جودة التصحيح وتكلفة AI', icon: BrainCircuit, alertBadge: 'تنبيه فيزياء' },
+      { id: 'E3' as ScreenId, label: 'جودة التصحيح وتكلفة AI', icon: BrainCircuit },
       { id: 'E4' as ScreenId, label: 'إدارة المناهج والكتب', icon: BookOpen, badge: 'جديد' },
-      { id: 'E5' as ScreenId, label: 'إدارة الدعم الفني والتذاكر', icon: Headphones, badge: '3 جديدة' },
+      { id: 'E5' as ScreenId, label: 'إدارة الدعم الفني والتذاكر', icon: Headphones },
     ];
   }
 
@@ -115,6 +115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen = false,
   onMobileClose,
 }) => {
+  const supportPhone = usePublicSetting<{ whatsapp?: string }>('support', { whatsapp: '+970599123456' }).whatsapp;
   // If visitor or student, no persistent sidebar needed
   if (currentRole === 'visitor' || currentRole === 'student') {
     return null;
@@ -190,17 +191,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Support note */}
       <div className="mt-6 p-3 bg-[#F7F8FA] border border-slate-200 rounded-xl text-xs space-y-1.5">
-        <div className="font-bold text-slate-800 flex items-center justify-between">
-          <span>دعم منصة دقة المباشر</span>
-          <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[10px] font-bold">24/7</span>
-        </div>
-        <p className="text-[11px] text-slate-500 leading-relaxed">
-          الدعم الفني متاح عبر واتساب لمدارس قطاع غزة والضفة والقدس.
-        </p>
-        <div className="pt-1 text-[11px] font-mono text-[#1E3A5F] font-bold flex items-center gap-1.5">
-          <Phone className="w-3 h-3 text-emerald-600" />
-          <span>+970 59-912-3456</span>
-        </div>
+        <div className="font-bold text-slate-800">الدعم الفني</div>
+        <p className="text-[11px] text-slate-500 leading-relaxed">افتح تذكرة من «الدعم الفني» أو راسلنا على واتساب.</p>
+        {supportPhone && (
+          <div className="pt-1 text-[11px] font-mono text-[#1E3A5F] font-bold flex items-center gap-1.5" dir="ltr">
+            <Phone className="w-3 h-3 text-emerald-600" />
+            <span>{supportPhone}</span>
+          </div>
+        )}
       </div>
     </div>
   );

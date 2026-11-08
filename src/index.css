@@ -26,3 +26,13 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #94A3B8;
 }
+
+/* Printing answer sheets: only the sheets are printed, one per A4 page. */
+.print-only { display: none; }
+@media print {
+  @page { size: A4; margin: 12mm; }
+  body * { visibility: hidden; }
+  .print-area, .print-area * { visibility: visible; }
+  .print-area { display: block !important; position: absolute; inset: 0; }
+  .print-sheet { break-after: page; page-break-after: always; box-shadow: none !important; border: none !important; }
+}

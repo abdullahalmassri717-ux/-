@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { ScreenId, Student } from '../../types';
-import { MOCK_GROUPS, MOCK_STUDENTS, CURRICULA_DATA } from '../../mockData';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ScreenId } from '../../types';
+import { useData, useLoad, errorMessage } from '../../data/DataContext';
+import type { StudentInput } from '../../data/types';
 import {
   Users,
   Search,
@@ -23,62 +24,172 @@ interface GroupsStudentsPageProps {
   onSelectStudent: (studentId: string) => void;
 }
 
+/** Reads rows pasted from Excel (tab-separated) or a CSV file: name, parent phone, student phone. */
+function parseStudentRows(text: string, groupId: string): StudentInput[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.split(/\t|,|؛|;/).map((c) => c.trim().replace(/^"|"$/g, '')))
+    .filter((cells) => cells[0] && !/اسم|name/i.test(cells[0]))
+    .map((cells) => ({ name: cells[0], parentPhone: cells[1] ?? '', studentPhone: cells[2] ?? '', groupId }));
+}
+
 export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   onNavigate,
   onSelectStudent,
 }) => {
+  const store = useData();
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showExcelModal, setShowExcelModal] = useState(false);
   const [showAddGroupModal, setShowAddGroupModal] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
-  const [newGroupCurriculumId, setNewGroupCurriculumId] = useState('curr_ps');
-  const [newGroupGradeId, setNewGroupGradeId] = useState('g_12_sci');
-  const [newGroupSubjectId, setNewGroupSubjectId] = useState('s_math_12');
-  const [newGroupSchedule, setNewGroupSchedule] = useState('السبت والثلاثاء 4:00 م');
+  const [newGroupCurriculumId, setNewGroupCurriculumId] = useState('');
+  const [newGroupGradeId, setNewGroupGradeId] = useState('');
+  const [newGroupSubjectId, setNewGroupSubjectId] = useState('');
+  const [newGroupSchedule, setNewGroupSchedule] = useState('');
+  // Add-student form
+  const [newStudentName, setNewStudentName] = useState('');
+  const [newStudentGroupId, setNewStudentGroupId] = useState('');
+  const [newParentPhone, setNewParentPhone] = useState('');
+  const [newStudentPhone, setNewStudentPhone] = useState('');
+  const [newParentApproval, setNewParentApproval] = useState(false);
+  // Import form
+  const [importGroupId, setImportGroupId] = useState('');
+  const [importText, setImportText] = useState('');
 
-  // Groups list state to allow dynamic addition
-  const [groups, setGroups] = useState(MOCK_GROUPS);
+  const groupsQ = useLoad((st) => st.listGroups());
+  const studentsQ = useLoad((st) => st.listStudents());
+  const curriculaQ = useLoad((st) => st.listCurricula());
+  const groups = groupsQ.data ?? [];
+  const students = studentsQ.data ?? [];
+  const curricula = useMemo(() => (curriculaQ.data ?? []).filter((c) => c.isAvailable !== false), [curriculaQ.data]);
 
-  const currentGroupObj = groups.find(g => g.name === selectedGroup || g.id === selectedGroup);
+  // Default the curriculum pickers to the first available choice.
+  useEffect(() => {
+    if (newGroupCurriculumId || !curricula.length) return;
+    const c = curricula[0];
+    const g = c.grades[0];
+    setNewGroupCurriculumId(c.id);
+    setNewGroupGradeId(g?.id ?? '');
+    setNewGroupSubjectId(g?.subjects.find((x) => x.status === 'published')?.id ?? '');
+  }, [curricula, newGroupCurriculumId]);
 
-  const filteredStudents = MOCK_STUDENTS.filter((st) => {
-    const matchesGroup = selectedGroup === 'all' || st.group === selectedGroup;
+  const currentGroupObj = groups.find(g => g.id === selectedGroup);
+
+  const filteredStudents = students.filter((st) => {
+    const matchesGroup = selectedGroup === 'all' || st.groupId === selectedGroup;
     const matchesSearch = st.name.includes(searchQuery) || st.studentCode.includes(searchQuery) || st.parentPhone.includes(searchQuery);
     return matchesGroup && matchesSearch;
   });
 
-  const handleCreateGroup = () => {
+  const defaultGroupId = currentGroupObj?.id ?? groups[0]?.id ?? '';
+
+  const openAddStudent = () => {
+    setNewStudentGroupId(defaultGroupId);
+    setShowAddModal(true);
+  };
+  const openImport = () => {
+    setImportGroupId(defaultGroupId);
+    setImportText('');
+    setShowExcelModal(true);
+  };
+
+  const handleCreateGroup = async () => {
     if (!newGroupName.trim()) {
       notify('يرجى إدخال اسم المجموعة');
       return;
     }
-    const curr = CURRICULA_DATA.find(c => c.id === newGroupCurriculumId);
-    const gr = curr?.grades.find(g => g.id === newGroupGradeId);
-    const sub = gr?.subjects.find(s => s.id === newGroupSubjectId);
+    if (!newGroupSubjectId) {
+      notify('اختر الصف والمادة للمجموعة');
+      return;
+    }
+    setSaving(true);
+    try {
+      const group = await store.createGroup({
+        name: newGroupName,
+        gradeId: newGroupGradeId || null,
+        subjectId: newGroupSubjectId || null,
+        schedule: newGroupSchedule,
+      });
+      groupsQ.setData((prev) => [...(prev ?? []), group]);
+      setSelectedGroup(group.id);
+      setShowAddGroupModal(false);
+      setNewGroupName('');
+      setNewGroupSchedule('');
+      notify('تم إنشاء المجموعة');
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    const newGroup = {
-      id: `g_${Date.now()}`,
-      name: newGroupName,
-      curriculumId: newGroupCurriculumId,
-      curriculumName: curr?.name || 'المنهاج الفلسطيني',
-      gradeId: newGroupGradeId,
-      gradeName: gr?.name || 'الصف الثاني عشر',
-      subjectId: newGroupSubjectId,
-      subjectName: sub?.name || 'الرياضيات',
-      schedule: newGroupSchedule,
-      studentCount: 0,
-      taughtLessonsCount: 0,
-      totalLessonsCount: sub?.units.reduce((acc, u) => acc + u.lessons.length, 0) || 20,
-      type: 'tawjihi_scientific',
-      avgScore: 0,
-    };
+  const handleAddStudent = async () => {
+    if (newStudentName.trim().split(/\s+/).length < 2) {
+      notify('اكتب اسم الطالب كاملاً (اسمين على الأقل)');
+      return;
+    }
+    if (!newStudentGroupId) {
+      notify('أنشئ مجموعة أولاً ثم أضف الطالب إليها');
+      return;
+    }
+    setSaving(true);
+    try {
+      await store.createStudent({
+        name: newStudentName,
+        groupId: newStudentGroupId,
+        parentPhone: newParentPhone,
+        studentPhone: newStudentPhone,
+        parentApproval: newParentApproval,
+      });
+      notify('تمت إضافة الطالب، وتولّد رمزه الخاص (4 أرقام) تلقائياً');
+      setShowAddModal(false);
+      setNewStudentName('');
+      setNewParentPhone('');
+      setNewStudentPhone('');
+      setNewParentApproval(false);
+      studentsQ.reload();
+      groupsQ.reload();
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    setGroups([...groups, newGroup]);
-    setSelectedGroup(newGroup.name);
-    setShowAddGroupModal(false);
-    setNewGroupName('');
+  const importRows = parseStudentRows(importText, importGroupId);
+  const handleImport = async () => {
+    if (!importGroupId) {
+      notify('اختر المجموعة أولاً');
+      return;
+    }
+    if (!importRows.length) {
+      notify('الصق أسماء الطلاب أولاً، اسم كل طالب في سطر');
+      return;
+    }
+    setSaving(true);
+    try {
+      const n = await store.createStudents(importRows);
+      notify(`تم استيراد ${n} طالباً بنجاح`);
+      setShowExcelModal(false);
+      studentsQ.reload();
+      groupsQ.reload();
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleImportFile = async (file: File | undefined) => {
+    if (!file) return;
+    if (/\.xlsx?$/i.test(file.name)) {
+      notify('احفظ ملف Excel بصيغة CSV أولاً، أو انسخ الأعمدة والصقها هنا');
+      return;
+    }
+    setImportText(await file.text());
   };
 
   return (
@@ -92,7 +203,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowExcelModal(true)}
+            onClick={openImport}
             className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
@@ -100,7 +211,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
           </button>
 
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={openAddStudent}
             className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
           >
             <Plus className="w-4 h-4" />
@@ -119,15 +230,15 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
               : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
           }`}
         >
-          كل الطلاب ({MOCK_STUDENTS.length})
+          كل الطلاب ({students.length})
         </button>
 
         {groups.map((g) => (
           <button
             key={g.id}
-            onClick={() => setSelectedGroup(g.name)}
+            onClick={() => setSelectedGroup(g.id)}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
-              selectedGroup === g.name
+              selectedGroup === g.id
                 ? 'bg-[#1E3A5F] text-white shadow-2xs'
                 : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
             }`}
@@ -159,19 +270,19 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
               <span className="text-slate-900 font-bold">{currentGroupObj.subjectName}</span>
             </div>
             <p className="text-xs text-slate-500">
-              المواعيد: {currentGroupObj.schedule} · عدد الطلاب: {currentGroupObj.studentCount}
+              {currentGroupObj.schedule && <>المواعيد: {currentGroupObj.schedule} · </>}عدد الطلاب: {currentGroupObj.studentCount}
             </p>
           </div>
 
           <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-xl border border-slate-200/70">
             <div className="text-right">
               <div className="text-xs font-bold text-slate-700">
-                شُرح {currentGroupObj.taughtLessonsCount || 9} من {currentGroupObj.totalLessonsCount || 24} درساً
+                شُرح {currentGroupObj.taughtLessonsCount} من {currentGroupObj.totalLessonsCount} درساً
               </div>
               <div className="w-36 bg-slate-200 h-2 rounded-full overflow-hidden mt-1.5">
                 <div 
                   className="bg-[#1E3A5F] h-full rounded-full transition-all"
-                  style={{ width: `${Math.round(((currentGroupObj.taughtLessonsCount || 9) / (currentGroupObj.totalLessonsCount || 24)) * 100)}%` }}
+                  style={{ width: `${currentGroupObj.totalLessonsCount ? Math.round((currentGroupObj.taughtLessonsCount / currentGroupObj.totalLessonsCount) * 100) : 0}%` }}
                 />
               </div>
             </div>
@@ -334,40 +445,71 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
         ))}
       </div>
 
+      {/* Empty / loading states */}
+      {(studentsQ.loading || groupsQ.loading) && !students.length && (
+        <div className="text-center text-xs text-slate-500 py-10">جاري تحميل الطلاب...</div>
+      )}
+      {(studentsQ.error || groupsQ.error) && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl p-3 flex items-center justify-between">
+          <span>{studentsQ.error || groupsQ.error}</span>
+          <button onClick={() => { studentsQ.reload(); groupsQ.reload(); }} className="font-bold underline cursor-pointer">إعادة المحاولة</button>
+        </div>
+      )}
+      {!studentsQ.loading && !studentsQ.error && filteredStudents.length === 0 && (
+        <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-8 text-center space-y-2">
+          <Users className="w-8 h-8 text-slate-300 mx-auto" />
+          <p className="text-sm font-bold text-slate-700">
+            {groups.length === 0 ? 'ابدأ بإنشاء أول مجموعة' : searchQuery ? 'لا يوجد طالب بهذا البحث' : 'لا يوجد طلاب في هذه المجموعة بعد'}
+          </p>
+          <p className="text-xs text-slate-500">
+            {groups.length === 0 ? 'كل مجموعة مرتبطة بصف ومادة من المنهج.' : 'أضف الطلاب واحداً واحداً أو الصق القائمة من Excel.'}
+          </p>
+          <button
+            onClick={groups.length === 0 ? () => setShowAddGroupModal(true) : openAddStudent}
+            className="mt-2 bg-[#1E3A5F] text-white px-4 py-2 rounded-lg text-xs font-bold cursor-pointer"
+          >
+            {groups.length === 0 ? 'مجموعة جديدة' : 'إضافة طالب'}
+          </button>
+        </div>
+      )}
+
       {/* Add Student Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 text-right space-y-4 shadow-2xl">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 text-right space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <h3 className="font-bold text-base text-[#1E3A5F]">إضافة طالب جديد للمجموعة</h3>
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-700 font-bold mb-1">اسم الطالب الرباعي</label>
-                <input type="text" placeholder="مثال: يحيى خليل السقا" className="w-full p-2 border border-slate-300 rounded-lg" />
+                <label className="block text-slate-700 font-bold mb-1">اسم الطالب</label>
+                <input type="text" value={newStudentName} onChange={(e) => setNewStudentName(e.target.value)} placeholder="مثال: يحيى خليل السقا" className="w-full p-2 border border-slate-300 rounded-lg" />
               </div>
               <div>
                 <label className="block text-slate-700 font-bold mb-1">المجموعة</label>
-                <select className="w-full p-2 border border-slate-300 rounded-lg">
-                  {MOCK_GROUPS.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
+                <select value={newStudentGroupId} onChange={(e) => setNewStudentGroupId(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg">
+                  {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-slate-700 font-bold mb-1">رقم واتساب ولي الأمر (لإرسال التقارير)</label>
-                <input type="tel" placeholder="0599000000" className="w-full p-2 border border-slate-300 rounded-lg font-mono" />
+                <input type="tel" dir="ltr" value={newParentPhone} onChange={(e) => setNewParentPhone(e.target.value)} placeholder="0599000000" className="w-full p-2 border border-slate-300 rounded-lg font-mono text-right" />
               </div>
               <div>
-                <label className="block text-slate-700 font-bold mb-1">الرمز التعريفي للطالب (4 أرقام)</label>
-                <input type="text" defaultValue="5012" className="w-full p-2 border border-slate-300 rounded-lg font-mono" />
+                <label className="block text-slate-700 font-bold mb-1 flex items-center gap-1"><Smartphone className="w-3.5 h-3.5" /> رقم الطالب (اختياري)</label>
+                <input type="tel" dir="ltr" value={newStudentPhone} onChange={(e) => setNewStudentPhone(e.target.value)} placeholder="0599000000" className="w-full p-2 border border-slate-300 rounded-lg font-mono text-right" />
               </div>
+              <label className="flex items-center gap-2 text-slate-700 cursor-pointer">
+                <input type="checkbox" checked={newParentApproval} onChange={(e) => setNewParentApproval(e.target.checked)} />
+                <span>ولي الأمر وافق على استلام التقارير على واتساب</span>
+              </label>
+              <p className="text-[11px] text-slate-500">رمز الطالب الخاص (4 أرقام) يتولّد تلقائياً بعد الحفظ.</p>
             </div>
             <div className="flex items-center gap-2 pt-2">
               <button
-                onClick={() => {
-                  notify('تمت إضافة الطالب وتوليد رمز QR الخاص بورقة إجابته بنجاح!');
-                  setShowAddModal(false);
-                }}
-                className="flex-1 bg-[#1E3A5F] text-white py-2 rounded-lg font-bold text-xs cursor-pointer"
+                disabled={saving}
+                onClick={handleAddStudent}
+                className="flex-1 bg-[#1E3A5F] text-white py-2 rounded-lg font-bold text-xs cursor-pointer disabled:opacity-60"
               >
-                حفظ وإضافة الطالب
+                {saving ? 'جاري الحفظ...' : 'حفظ وإضافة الطالب'}
               </button>
               <button
                 onClick={() => setShowAddModal(false)}
@@ -383,27 +525,41 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
       {/* Excel Import Modal */}
       {showExcelModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 text-right space-y-4 shadow-2xl">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 text-right space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <h3 className="font-bold text-base text-[#1E3A5F] flex items-center gap-2">
               <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-              <span>استيراد قائمة الطلاب من ملف Excel</span>
+              <span>استيراد قائمة الطلاب من Excel</span>
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed">
-              ارفع ملف Excel يحتوي على الأعمدة: [اسم الطالب، رقم هاتف ولي الأمر، المجموعة، الرمز]. سيقوم النظام بإنشاء ملفات الطلاب وتخصيص أكواد QR تلقائياً.
+              انسخ من Excel ثلاثة أعمدة بهذا الترتيب: اسم الطالب، رقم ولي الأمر، رقم الطالب (اختياري)، ثم الصقها هنا. أو ارفع ملف CSV.
             </p>
-            <div className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center space-y-2 bg-slate-50">
-              <FileSpreadsheet className="w-8 h-8 text-slate-400 mx-auto" />
-              <div className="text-xs text-slate-600">اسحب وأفلت ملف .xlsx أو اضغط للاختيار</div>
+            <div className="text-xs">
+              <label className="block text-slate-700 font-bold mb-1">المجموعة</label>
+              <select value={importGroupId} onChange={(e) => setImportGroupId(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg">
+                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
             </div>
+            <textarea
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              rows={6}
+              placeholder={'أحمد محمود المصري\t0599112233\nسارة خالد النجار\t0598223344'}
+              className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono"
+            />
+            <label className="block border-2 border-dashed border-slate-300 rounded-xl p-3 text-center bg-slate-50 cursor-pointer text-xs text-slate-600">
+              <input type="file" accept=".csv,.txt,.xlsx,.xls" className="hidden" onChange={(e) => handleImportFile(e.target.files?.[0])} />
+              أو اضغط لاختيار ملف CSV
+            </label>
+            {importRows.length > 0 && (
+              <p className="text-xs text-emerald-700 font-bold">جاهز لاستيراد {importRows.length} طالباً</p>
+            )}
             <div className="flex items-center gap-2 pt-2">
               <button
-                onClick={() => {
-                  notify('تم استيراد 48 طالباً بنجاح وتوزيعهم على المجموعات.');
-                  setShowExcelModal(false);
-                }}
-                className="flex-1 bg-emerald-700 text-white py-2 rounded-lg font-bold text-xs cursor-pointer"
+                disabled={saving}
+                onClick={handleImport}
+                className="flex-1 bg-emerald-700 text-white py-2 rounded-lg font-bold text-xs cursor-pointer disabled:opacity-60"
               >
-                بدء الاستيراد
+                {saving ? 'جاري الاستيراد...' : 'بدء الاستيراد'}
               </button>
               <button
                 onClick={() => setShowExcelModal(false)}
@@ -419,7 +575,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
       {/* Add Group Modal Bound to Curriculum (Requirement: إلزامية تحديد المنهج والصف والمادة) */}
       {showAddGroupModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 text-right space-y-4 shadow-2xl">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 text-right space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-[#1E3A5F]" />
@@ -454,7 +610,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                   onChange={(e) => {
                     const cId = e.target.value;
                     setNewGroupCurriculumId(cId);
-                    const c = CURRICULA_DATA.find(x => x.id === cId);
+                    const c = curricula.find(x => x.id === cId);
                     if (c && c.grades.length > 0) {
                       setNewGroupGradeId(c.grades[0].id);
                       const publishedSubjects = c.grades[0].subjects.filter(s => s.status === 'published');
@@ -465,7 +621,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                   }}
                   className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white"
                 >
-                  {CURRICULA_DATA.filter(c => c.isAvailable).map(c => (
+                  {curricula.map(c => (
                     <option key={c.id} value={c.id}>{c.name} ({c.country})</option>
                   ))}
                 </select>
@@ -480,14 +636,14 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                     onChange={(e) => {
                       const gId = e.target.value;
                       setNewGroupGradeId(gId);
-                      const curr = CURRICULA_DATA.find(c => c.id === newGroupCurriculumId);
+                      const curr = curricula.find(c => c.id === newGroupCurriculumId);
                       const gr = curr?.grades.find(g => g.id === gId);
                       const pub = gr?.subjects.filter(s => s.status === 'published') || [];
                       if (pub.length > 0) setNewGroupSubjectId(pub[0].id);
                     }}
                     className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white"
                   >
-                    {CURRICULA_DATA.find(c => c.id === newGroupCurriculumId)?.grades.map(g => (
+                    {curricula.find(c => c.id === newGroupCurriculumId)?.grades.map(g => (
                       <option key={g.id} value={g.id}>{g.name}</option>
                     ))}
                   </select>
@@ -501,7 +657,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                     onChange={(e) => setNewGroupSubjectId(e.target.value)}
                     className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white"
                   >
-                    {CURRICULA_DATA.find(c => c.id === newGroupCurriculumId)
+                    {curricula.find(c => c.id === newGroupCurriculumId)
                       ?.grades.find(g => g.id === newGroupGradeId)
                       ?.subjects.filter(s => s.status === 'published')
                       .map(s => (
@@ -526,8 +682,9 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
             <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
               <button
                 type="button"
+                disabled={saving}
                 onClick={handleCreateGroup}
-                className="flex-1 bg-[#1E3A5F] hover:bg-[#152a45] text-white py-2.5 rounded-lg font-bold text-xs transition-colors shadow-sm cursor-pointer"
+                className="disabled:opacity-60 flex-1 bg-[#1E3A5F] hover:bg-[#152a45] text-white py-2.5 rounded-lg font-bold text-xs transition-colors shadow-sm cursor-pointer"
               >
                 إنشاء المجموعة وربط المنهاج
               </button>

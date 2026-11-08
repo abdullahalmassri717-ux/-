@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ScreenId, SupportTicket, Entity } from '../../types';
-import { MOCK_SUPPORT_TICKETS } from '../../mockData';
+import { supportApi } from '../../data/support';
+import { usePublicSetting } from '../../lib/settings';
+import { errorMessage } from '../../data/DataContext';
 import {
   Headphones,
   MessageCircle,
@@ -31,7 +33,22 @@ export const TechnicalSupportPage: React.FC<TechnicalSupportPageProps> = ({
   onNavigate, 
   activeEntity 
 }) => {
-  const [tickets, setTickets] = useState<SupportTicket[]>(MOCK_SUPPORT_TICKETS);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [busy, setBusy] = useState(false);
+  const supportContact = usePublicSetting<{ whatsapp?: string }>('support', { whatsapp: '970599123456' });
+
+  const loadTickets = useCallback(async (selectId?: string) => {
+    try {
+      const list = await supportApi().listTickets();
+      setTickets(list);
+      if (selectId) setSelectedTicket(list.find((t) => t.id === selectId) ?? null);
+    } catch (e) {
+      notify(errorMessage(e, 'تعذّر تحميل التذاكر.'));
+    }
+  }, []);
+  useEffect(() => {
+    loadTickets();
+  }, [loadTickets]);
   const [activeTab, setActiveTab] = useState<'tickets' | 'faq' | 'contact'>('tickets');
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [showNewTicketModal, setShowNewTicketModal] = useState(false);
@@ -65,7 +82,7 @@ export const TechnicalSupportPage: React.FC<TechnicalSupportPageProps> = ({
     },
     {
       q: 'كيف يمكن لمديرة المدرسة إضافة معلمين أو تغيير الشعب المخصصة لهم؟',
-      a: 'من لوحة مدير المدرسة (D2)، يمكن إضافة رقم هاتف المعلم وسيصله رابط تفعيل فوري مع كلمة مرور مؤقتة، وتظهر له فوراً الشعب المرتبطة به دون رؤية أي بيانات مالية.',
+      a: 'من شاشة «المعلمون والصفوف» يضيف المدير رقم واتساب المعلم ويرسل له الدعوة. عندما يدخل المعلم برقمه (برمز تحقق على واتساب، بدون كلمة مرور) يرى الصفوف المسندة إليه فقط، ولا يرى أي بيانات مالية.',
     },
     {
       q: 'ما هي سرعة استجابة فريق الدعم الفني لحالات الامتحانات المباشرة؟',
@@ -73,72 +90,53 @@ export const TechnicalSupportPage: React.FC<TechnicalSupportPageProps> = ({
     },
   ];
 
-  const handleCreateTicket = (e: React.FormEvent) => {
+  const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSubject.trim() || !newDescription.trim()) return;
-
-    const newTicket: SupportTicket = {
-      id: `tkt_${Date.now()}`,
-      ticketNumber: `TKT-2026-0${Math.floor(100 + Math.random() * 900)}`,
-      senderName: activeEntity?.principalOrOwnerName || 'أ. محمد المصري',
-      senderRole: activeEntity?.type === 'school' ? 'school' : 'teacher',
-      entityName: activeEntity?.name || 'حساب المعلم',
-      entityType: activeEntity?.type || 'individual_teacher',
-      phone: '0599123456',
-      subject: newSubject,
-      category: newCategory,
-      priority: newPriority,
-      status: 'open',
-      createdAt: 'الآن',
-      description: newDescription,
-      attachedExamOrPaper: newAttachedPaper || undefined,
-      replies: [],
-    };
-
-    setTickets([newTicket, ...tickets]);
-    setShowNewTicketModal(false);
-    setNewSubject('');
-    setNewDescription('');
-    setNewAttachedPaper('');
-    setSelectedTicket(newTicket);
+    setBusy(true);
+    try {
+      const body = newAttachedPaper.trim() ? `${newDescription}\n\nمرتبط بـ: ${newAttachedPaper.trim()}` : newDescription;
+      const id = await supportApi().createTicket({
+        organizationId: activeEntity?.id ?? null,
+        subject: newSubject,
+        category: newCategory,
+        priority: newPriority,
+        body,
+      });
+      setShowNewTicketModal(false);
+      setNewSubject('');
+      setNewDescription('');
+      setNewAttachedPaper('');
+      await loadTickets(id);
+      notify('تم إرسال التذكرة. سيرد عليك فريق الدعم هنا.');
+    } catch (err) {
+      notify(errorMessage(err, 'تعذّر إنشاء التذكرة.'));
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const handleSendReply = () => {
+  const handleSendReply = async () => {
     if (!replyText.trim() || !selectedTicket) return;
-
-    const updatedReply = {
-      id: `rep_${Date.now()}`,
-      sender: 'user' as const,
-      senderName: activeEntity?.principalOrOwnerName || 'أ. محمد المصري',
-      message: replyText,
-      time: 'الآن',
-    };
-
-    const updatedTickets = tickets.map(t => {
-      if (t.id === selectedTicket.id) {
-        return {
-          ...t,
-          replies: [...(t.replies || []), updatedReply],
-          status: 'in_progress' as const,
-        };
-      }
-      return t;
-    });
-
-    setTickets(updatedTickets);
-    setSelectedTicket({
-      ...selectedTicket,
-      replies: [...(selectedTicket.replies || []), updatedReply],
-      status: 'in_progress',
-    });
-    setReplyText('');
+    setBusy(true);
+    try {
+      await supportApi().reply(selectedTicket.id, replyText);
+      setReplyText('');
+      await loadTickets(selectedTicket.id);
+    } catch (err) {
+      notify(errorMessage(err, 'تعذّر إرسال الرد.'));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const openWhatsAppSupport = () => {
     const msg = encodeURIComponent(
       `مرحباً فريق دعم منصة دقة،\nأنا ${activeEntity?.principalOrOwnerName || 'معلم بالمنصة'} من جهة (${activeEntity?.name || 'حساب تعليمي'}).\nأحتاج مساعدة فنية في المنصة.`
     );
-    window.open(`https://wa.me/970599123456?text=${msg}`, '_blank');
+    const number = (supportContact.whatsapp ?? '').replace(/\D/g, '');
+    if (!number) return notify('رقم واتساب الدعم غير مضاف بعد. افتح تذكرة وسنرد عليك هنا.');
+    window.open(`https://wa.me/${number}?text=${msg}`, '_blank');
   };
 
   const filteredFaqs = faqs.filter(f => 

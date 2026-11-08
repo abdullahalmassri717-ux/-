@@ -76,7 +76,8 @@ export function screenForPath(pathname: string): ScreenId {
   return PATH_TO_SCREEN.get(path) ?? 'A1';
 }
 
-// Until real sign-in exists, the area of the address decides which role is shown.
+// The area of the address decides which role's screens are shown. With real
+// sign-in, App.tsx also checks the signed-in account may open that area.
 export function roleForPath(pathname: string): UserRole {
   const path = normalize(pathname);
   if (path.startsWith('/s/')) return 'student';

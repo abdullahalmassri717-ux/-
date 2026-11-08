@@ -1,12 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { pathForScreen, roleForPath, screenForPath } from './routes';
 import { UserRole, ScreenId, Entity } from './types';
+import { DataProvider } from './data/DataContext';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AIAssistantDrawer } from './components/AIAssistantDrawer';
-import { MOCK_ENTITIES } from './mockData';
+import { MOCK_ENTITIES, PLATFORM_CONFIG } from './mockData';
+import { useAuth } from './lib/auth';
 
 // Group A Components
 import { LandingPage } from './components/groupA/LandingPage';
@@ -18,6 +20,7 @@ import { StudentSubmissionPage } from './components/groupA/StudentSubmissionPage
 // Group B Components
 import { TeacherDashboard } from './components/groupB/TeacherDashboard';
 import { GroupsStudentsPage } from './components/groupB/GroupsStudentsPage';
+import { getSelected, setSelected } from './data/selection';
 import { StudentProfilePage } from './components/groupB/StudentProfilePage';
 import { ExamsListPage } from './components/groupB/ExamsListPage';
 import { CreateExamPage } from './components/groupB/CreateExamPage';
@@ -55,10 +58,35 @@ import { CurriculumManagementPage } from './components/groupE/CurriculumManageme
 import { Sparkles } from 'lucide-react';
 import { notify } from './lib/notify';
 
+const ACTIVE_ENTITY_KEY = 'daqa.activeEntityId';
+
+function readSavedEntityId(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_ENTITY_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveEntityId(id: string) {
+  try {
+    localStorage.setItem(ACTIVE_ENTITY_KEY, id);
+  } catch {
+    // Private browsing: the choice just isn't remembered.
+  }
+}
+
+// Org owners of a school or centre manage it from the school dashboard.
+const isOrgOwner = (entity: Entity | undefined) =>
+  !!entity && entity.role === 'owner' && entity.type !== 'individual_teacher';
+
 export default function App() {
-  // The web address decides the screen. Until real sign-in exists, it also decides the role.
+  // The web address decides the screen and the role's area. With a real Supabase
+  // project, the signed-in account also decides which areas may be opened.
   const location = useLocation();
   const navigate = useNavigate();
+  const auth = useAuth();
+  const isReal = auth.mode === 'real';
   const currentScreen: ScreenId = screenForPath(location.pathname);
   const [currentRole, setCurrentRole] = useState<UserRole>(() => roleForPath(location.pathname));
   const setCurrentScreen = (screen: ScreenId) => navigate(pathForScreen(screen));
@@ -67,21 +95,96 @@ export default function App() {
   const [isAIOpen, setIsAIOpen] = useState<boolean>(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState<boolean>(false);
 
-  // Active Entity state for multi-tenancy & account switcher
-  const [activeEntity, setActiveEntity] = useState<Entity>(() =>
+  // Active Entity state for multi-tenancy & account switcher (demo mode)
+  const [demoEntity, setDemoEntity] = useState<Entity>(() =>
     roleForPath(location.pathname) === 'school_principal'
       ? MOCK_ENTITIES.find((e) => e.type === 'school') || MOCK_ENTITIES[0]
       : MOCK_ENTITIES[0]
   );
+  // Real mode: the organizations come from the account; we remember the chosen one.
+  const [activeEntityId, setActiveEntityId] = useState<string | null>(readSavedEntityId);
+  const entities: Entity[] = isReal ? auth.entities : MOCK_ENTITIES;
+  const activeEntity: Entity = useMemo(() => {
+    if (!isReal) return demoEntity;
+    return (
+      auth.entities.find((e) => e.id === activeEntityId) ??
+      auth.entities[0] ?? {
+        // Signed in without any organization yet (e.g. platform admin only).
+        id: '',
+        name: auth.profile?.fullName || 'حسابي',
+        type: 'individual_teacher',
+        logo: '/dequa-logo.png',
+        role: 'owner',
+        billingPlan: 'monthly_per_student',
+        pricePerStudent: PLATFORM_CONFIG.pricing.tutorMonthlyPerStudent,
+        currency: PLATFORM_CONFIG.currencySymbol,
+        activeStudentsCount: 0,
+        region: '',
+        principalOrOwnerName: auth.profile?.fullName || '',
+      }
+    );
+  }, [isReal, demoEntity, auth.entities, auth.profile, activeEntityId]);
+  const setActiveEntity = (entity: Entity) => {
+    if (isReal) {
+      setActiveEntityId(entity.id);
+      saveEntityId(entity.id);
+    } else {
+      setDemoEntity(entity);
+    }
+  };
+
+  // Where a signed-in account starts.
+  const homePath = (): string => {
+    if (auth.entities.length === 0) return auth.profile?.isPlatformAdmin ? '/admin' : '/register';
+    return isOrgOwner(activeEntity) ? '/school' : '/app';
+  };
+
+  // Real mode: keep people inside the areas their account may open.
+  useEffect(() => {
+    if (!isReal || auth.status === 'loading') return;
+    const path = location.pathname.replace(/\/+$/, '') || '/';
+    const area = roleForPath(path);
+    const isProtected = area === 'teacher' || area === 'school_principal' || area === 'platform_admin';
+
+    if (auth.status === 'signed_out') {
+      if (isProtected) navigate(`/login?next=${encodeURIComponent(path)}`, { replace: true });
+      return;
+    }
+
+    // Signed in
+    if (path === '/login') {
+      const next = new URLSearchParams(location.search).get('next');
+      const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : null;
+      navigate(safeNext && roleForPath(safeNext) !== 'visitor' ? safeNext : homePath(), { replace: true });
+      return;
+    }
+    if (area === 'platform_admin' && !auth.profile?.isPlatformAdmin) {
+      navigate(homePath(), { replace: true });
+      return;
+    }
+    if ((area === 'teacher' || area === 'school_principal') && auth.entities.length === 0) {
+      navigate(homePath(), { replace: true });
+      return;
+    }
+    if (area === 'school_principal' && !isOrgOwner(activeEntity)) {
+      navigate('/app', { replace: true });
+    }
+  }, [isReal, auth.status, auth.entities, auth.profile, activeEntity, location.pathname, location.search]);
 
   // Keep the role in step with the area of the site the address points to
   // (e.g. opening a student link, or pressing the browser's back button).
   useEffect(() => {
     const areaRole = roleForPath(location.pathname);
-    if (areaRole === 'visitor') return; // public pages keep whoever is signed in
+    if (areaRole === 'visitor') {
+      // Public pages keep whoever is signed in. With real sign-in, someone who is
+      // signed out (or has no organization yet) sees the visitor header.
+      const hasAccountArea = auth.status === 'signed_in' && auth.entities.length > 0;
+      if (isReal && !hasAccountArea && currentRole !== 'visitor') setCurrentRole('visitor');
+      return;
+    }
     if (areaRole === 'teacher' && currentRole === 'teacher') return;
     if (areaRole !== currentRole) setCurrentRole(areaRole);
-  }, [location.pathname]);
+  }, [location.pathname, isReal, auth.status, auth.entities]);
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -110,7 +213,7 @@ export default function App() {
 
   const handleSwitchEntity = (entity: Entity) => {
     setActiveEntity(entity);
-    if (entity.type === 'school') {
+    if (entity.type !== 'individual_teacher') {
       if (entity.role === 'owner') {
         setCurrentRole('school_admin');
         setCurrentScreen('D1');
@@ -132,7 +235,18 @@ export default function App() {
       case 'A2':
         return <PricingPage onNavigate={handleNavigate} />;
       case 'A3':
-        return <RegisterPage onNavigate={handleNavigate} onRoleChange={handleRoleChange} />;
+        return (
+          <RegisterPage
+            onNavigate={handleNavigate}
+            onRoleChange={handleRoleChange}
+            onOrganizationCreated={(id, kind) => {
+              setActiveEntityId(id);
+              saveEntityId(id);
+              setCurrentRole(kind === 'individual_teacher' ? 'teacher' : 'school_principal');
+              navigate(kind === 'individual_teacher' ? '/app' : '/school');
+            }}
+          />
+        );
       case 'A4':
         return <LoginPage onNavigate={handleNavigate} onRoleChange={handleRoleChange} />;
       case 'A5':
@@ -145,11 +259,14 @@ export default function App() {
         return (
           <GroupsStudentsPage
             onNavigate={handleNavigate}
-            onSelectStudent={(id) => setSelectedStudentId(id)}
+            onSelectStudent={(id) => {
+              setSelected('student', id);
+              setSelectedStudentId(id);
+            }}
           />
         );
       case 'B3':
-        return <StudentProfilePage studentId={selectedStudentId} onNavigate={handleNavigate} />;
+        return <StudentProfilePage studentId={getSelected('student') ?? selectedStudentId} onNavigate={handleNavigate} />;
       case 'B4':
         return <ExamsListPage onNavigate={handleNavigate} />;
       case 'B5':
@@ -245,16 +362,19 @@ export default function App() {
         currentRole={currentRole}
         currentScreen={currentScreen}
         activeEntity={activeEntity}
+        availableEntities={entities}
         onSwitchEntity={(entityId: string) => {
-          const ent = MOCK_ENTITIES.find(e => e.id === entityId) || MOCK_ENTITIES[0];
-          handleSwitchEntity(ent);
+          const ent = entities.find(e => e.id === entityId);
+          if (ent) handleSwitchEntity(ent);
         }}
         onNavigate={handleNavigate}
         onOpenAI={() => setIsAIOpen(true)}
         onOpenMobileMenu={() => setIsMobileDrawerOpen(true)}
         onLogout={() => {
+          // Leave the private area first, so signing out doesn't bounce to the login page.
           setCurrentRole('visitor');
           navigate('/');
+          if (isReal) void auth.signOut();
         }}
       />
 
@@ -262,7 +382,13 @@ export default function App() {
       <div className={`flex-1 flex w-full mx-auto ${currentScreen === 'A1' ? '' : 'max-w-7xl'}`}>
         {/* Main Content Viewport */}
         <main className={currentScreen === 'A1' ? 'flex-1 min-w-0' : 'flex-1 p-3 sm:p-6 lg:p-8 min-w-0'}>
-          {renderScreen()}
+          {isReal && roleForPath(location.pathname) !== 'visitor' && roleForPath(location.pathname) !== 'student' && auth.status !== 'signed_in' ? (
+            <div className="py-24 text-center text-sm text-slate-500">جاري التحميل...</div>
+          ) : (
+            <DataProvider org={activeEntity} real={isReal}>
+              {renderScreen()}
+            </DataProvider>
+          )}
         </main>
 
         {/* Right Desktop Sidebar & Mobile Full Drawer */}
@@ -300,6 +426,8 @@ export default function App() {
       <Toaster />
 
       {/* 5. Contextual AI Drawer */}
+      {currentRole !== 'visitor' && currentRole !== 'student' && (
+      <DataProvider org={activeEntity} real={isReal}>
       <AIAssistantDrawer
         isOpen={isAIOpen || currentScreen === 'C4'}
         onClose={() => {
@@ -311,6 +439,8 @@ export default function App() {
         currentScreen={currentScreen}
         onNavigate={handleNavigate}
       />
+      </DataProvider>
+      )}
     </div>
   );
 }

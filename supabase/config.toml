@@ -1,0 +1,24 @@
+# إعدادات Supabase CLI للتطوير المحلي (القيم غير المذكورة تأخذ الافتراضي).
+project_id = "daqa"
+
+[db]
+major_version = 17
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+# رابط تسليم الطالب يعمل بدون حساب، والدالة نفسها تتحقق من رمز الطالب.
+[functions.student-submit]
+verify_jwt = false
+import_map = "./functions/deno.json"
+
+# الدوال تشترك في ملف واحد لتعريف المكتبات.
+[functions.grade-submission]
+import_map = "./functions/deno.json"
+
+[functions.ai-tools]
+import_map = "./functions/deno.json"
+
+[functions.send-reports]
+import_map = "./functions/deno.json"
