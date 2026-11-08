@@ -134,8 +134,11 @@ export default function App() {
   };
 
   // Where a signed-in account starts.
+  // Platform admins start in the admin dashboard; the «حسابي» button in its header
+  // takes them to their own organization.
   const homePath = (): string => {
-    if (auth.entities.length === 0) return auth.profile?.isPlatformAdmin ? '/admin' : '/register';
+    if (auth.profile?.isPlatformAdmin) return '/admin';
+    if (auth.entities.length === 0) return '/register';
     return isOrgOwner(activeEntity) ? '/school' : '/app';
   };
 
