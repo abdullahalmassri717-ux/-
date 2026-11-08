@@ -1,0 +1,20 @@
+#subject|اللغة الإنجليزية
+#sem|2
+#book|c9_en9-p2
+U|Unit 8: What if?
+O|Talking about rules, possibilities and imagined situations (conditionals 0, 1, 2)
+O|Putting forward a view with supporting arguments
+U|Unit 9: Helping hands: making friends
+O|Inviting and offering
+O|Defining by describing (relative clauses)
+U|Unit 10: Wildlife in danger
+O|Requesting and giving explanations
+O|Describing processes and proposing solutions (continuous passive)
+U|Unit 11: A garden for all
+O|Confirming facts and shared ideas (tag questions)
+O|Suggesting ideas and agreeing a plan
+U|Unit 12: Be happy!
+O|Agreeing, disagreeing and advising
+U|Unit 13: Good news from the hospital
+O|Reporting statements, requests and questions
+O|Arranging appointments

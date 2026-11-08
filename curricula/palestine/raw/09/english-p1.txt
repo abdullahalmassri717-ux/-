@@ -1,0 +1,22 @@
+#subject|اللغة الإنجليزية
+#sem|1
+#book|c9_en9-p1
+U|Unit 1: Getting to Palestine
+O|Talking about future arrangements and schedules
+O|Planning a day trip
+U|Unit 2: I feel at home already!
+O|Talking about completed actions and actions still to do
+O|Writing a progress report
+U|Unit 3: Be fit, but be safe
+O|Advising and instructing
+O|Comparing things and actions (as ... as, too, enough)
+O|Completing a fitness report
+U|Unit 4: A great leader
+O|Talking about completed and continuing actions in the past
+O|Telling a story (past simple, past continuous, past perfect)
+U|Unit 5: A day in Istanbul
+O|Talking about quantities
+O|Giving directions and planning a tour
+U|Unit 6: Palestinian success stories
+O|Explaining a process in the present and in the past (passive)
+O|Explaining a special building
