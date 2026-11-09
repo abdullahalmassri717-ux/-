@@ -91,7 +91,8 @@ export default function App() {
   const isReal = auth.mode === 'real';
   const currentScreen: ScreenId = screenForPath(location.pathname);
   const [currentRole, setCurrentRole] = useState<UserRole>(() => roleForPath(location.pathname));
-  const setCurrentScreen = (screen: ScreenId) => navigate(pathForScreen(screen));
+  const setCurrentScreen = (screen: ScreenId) =>
+    navigate(pathForScreen(screen, roleForPath(location.pathname) === 'school_principal'));
   const [selectedStudentId, setSelectedStudentId] = useState<string>('s1');
   const [isEnglish, setIsEnglish] = useState<boolean>(false);
   const [isAIOpen, setIsAIOpen] = useState<boolean>(false);
@@ -100,7 +101,7 @@ export default function App() {
   // Active Entity state for multi-tenancy & account switcher (demo mode)
   const [demoEntity, setDemoEntity] = useState<Entity>(() =>
     roleForPath(location.pathname) === 'school_principal'
-      ? MOCK_ENTITIES.find((e) => e.type === 'school') || MOCK_ENTITIES[0]
+      ? MOCK_ENTITIES.find(isOrgOwner) || MOCK_ENTITIES[0]
       : MOCK_ENTITIES[0]
   );
   // Real mode: the organizations come from the account; we remember the chosen one.
@@ -221,15 +222,15 @@ export default function App() {
     setActiveEntity(entity);
     if (entity.type !== 'individual_teacher') {
       if (entity.role === 'owner') {
-        setCurrentRole('school_admin');
-        setCurrentScreen('D1');
+        setCurrentRole('school_principal');
+        navigate(pathForScreen('D1'));
       } else {
         setCurrentRole('teacher');
-        setCurrentScreen('B1');
+        navigate(pathForScreen('B1'));
       }
     } else {
       setCurrentRole('teacher');
-      setCurrentScreen('B1');
+      navigate(pathForScreen('B1'));
     }
   };
 

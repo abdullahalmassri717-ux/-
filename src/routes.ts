@@ -56,16 +56,32 @@ export const SCREEN_PATHS: Record<ScreenId, string> = {
   E6: '/admin/landing',
 };
 
-const PATH_TO_SCREEN = new Map<string, ScreenId>(
-  Object.entries(SCREEN_PATHS).map(([screen, path]) => [path, screen as ScreenId])
-);
+// A school or centre owner also opens a few shared screens (quality of grading,
+// contract & billing, support, classes, parent reports). Inside the school area
+// they get their own addresses, so the school sidebar and layout stay in place
+// instead of jumping to the teacher's area.
+export const SCHOOL_SCREEN_PATHS: Partial<Record<ScreenId, string>> = {
+  B2: '/school/classes',
+  B8: '/school/quality',
+  B10: '/school/parent-reports',
+  B11: '/school/billing',
+  SUPPORT: '/school/support',
+};
+
+const PATH_TO_SCREEN = new Map<string, ScreenId>([
+  ...Object.entries(SCREEN_PATHS).map(([screen, path]) => [path, screen as ScreenId] as const),
+  ...Object.entries(SCHOOL_SCREEN_PATHS).map(([screen, path]) => [path as string, screen as ScreenId] as const),
+]);
 
 const normalize = (pathname: string) => {
   const trimmed = pathname.replace(/\/+$/, '');
   return trimmed === '' ? '/' : trimmed;
 };
 
-export function pathForScreen(screen: ScreenId): string {
+// `inSchoolArea`: the person is currently in the school area, so shared screens
+// open at their school address when there is one.
+export function pathForScreen(screen: ScreenId, inSchoolArea = false): string {
+  if (inSchoolArea && SCHOOL_SCREEN_PATHS[screen]) return SCHOOL_SCREEN_PATHS[screen]!;
   return SCREEN_PATHS[screen] ?? '/';
 }
 
