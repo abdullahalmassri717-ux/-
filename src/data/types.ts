@@ -174,7 +174,11 @@ export interface DataStore extends BillingStore, SchoolStore, AiStore {
   listGroups(): Promise<Group[]>;
   createGroup(input: NewGroupInput): Promise<Group>;
   updateGroup(id: string, input: Partial<NewGroupInput>): Promise<void>;
+  /** «إيقاف»: the group's students stop being billed (unless in another group); its data stays. */
   archiveGroup(id: string): Promise<void>;
+  /** Paused groups, so the teacher can turn them back on. */
+  listArchivedGroups(): Promise<{ id: string; name: string }[]>;
+  restoreGroup(id: string): Promise<void>;
   // Students
   listStudents(): Promise<StudentRow[]>;
   getStudent(id: string): Promise<StudentRow | null>;

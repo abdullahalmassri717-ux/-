@@ -321,6 +321,11 @@ export const AdminOrgsTab: React.FC<{ onChanged?: () => void }> = ({ onChanged }
                   </strong>
                   {dialog.quote.billingCycle === 'yearly' ? ' (مقسوم على عدد الدفعات)' : ''}
                 </div>
+                {dialog.quote.pausedDays > 0 && (
+                  <div className="text-amber-800">
+                    الاشتراك كان موقوفاً {dialog.quote.pausedDays} من {dialog.quote.periodDays} يوماً، وخُصمت هذه الأيام.
+                  </div>
+                )}
                 <div className="text-sm">
                   المبلغ المحسوب:{' '}
                   <strong className="font-mono text-[#1E3A5F]">

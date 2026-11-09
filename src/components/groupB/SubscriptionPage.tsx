@@ -24,6 +24,8 @@ import {
   CalendarPlus,
   Loader2,
   XCircle,
+  PauseCircle,
+  PlayCircle,
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
 import { InvoiceSheet } from '../common/InvoiceSheet';
@@ -94,6 +96,9 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
     reference: '',
   });
   const [busy, setBusy] = useState(false);
+  // Pause a monthly subscription (vacation months).
+  const [pauseForm, setPauseForm] = useState<{ from: string; until: string } | null>(null);
+  const [pauseBusy, setPauseBusy] = useState(false);
 
   const filtered = rows.filter((r) => {
     const st = r.status === 'none' ? 'unpaid' : r.status;
@@ -125,6 +130,34 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
 
   const voucherText = (v: { row: TuitionRow; payment: TuitionPayment }) =>
     `سند قبض رقم ${v.payment.receiptNumber}\nوصلنا من الطالب/ة ${v.row.studentName} مبلغ ${fmt(v.payment.amount)} ${sym}\nعن رسوم شهر ${monthLabel(month)}\nبتاريخ ${dateLabel(v.payment.paidOn)}\n— ${activeEntity?.name ?? ''}`;
+
+  const handlePause = async () => {
+    if (!pauseForm) return;
+    setPauseBusy(true);
+    try {
+      await store.pauseSubscription(pauseForm.from || null, pauseForm.until || null);
+      notify('تم إيقاف الاشتراك. أيام الإيقاف لا تُحسب في الفاتورة.', 'success');
+      setPauseForm(null);
+      billingQ.reload();
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setPauseBusy(false);
+    }
+  };
+
+  const handleResume = async () => {
+    setPauseBusy(true);
+    try {
+      await store.resumeSubscription();
+      notify('رجع الاشتراك يعمل من اليوم.', 'success');
+      billingQ.reload();
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setPauseBusy(false);
+    }
+  };
 
   const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -653,6 +686,46 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
                   </div>
                 </div>
 
+                {plan?.cycle === 'monthly' && (
+                  <div className={`border rounded-2xl p-5 shadow-2xs space-y-3 ${billing.pause ? 'bg-amber-50 border-amber-300' : 'bg-white border-slate-200'}`}>
+                    <h3 className="font-extrabold text-[#1E3A5F] text-base flex items-center gap-2">
+                      <PauseCircle className="w-5 h-5 text-amber-600" />
+                      <span>إيقاف الاشتراك مؤقتاً</span>
+                    </h3>
+                    {billing.pause ? (
+                      <>
+                        <p className="text-xs text-amber-900 leading-relaxed font-bold">
+                          {billing.pause.active ? 'اشتراكك موقوف الآن' : `اشتراكك سيتوقف من ${dateLabel(billing.pause.startsOn)}`}
+                          {billing.pause.endsOn ? ` حتى ${dateLabel(billing.pause.endsOn)}` : ' حتى ترجعه بنفسك'}.
+                        </p>
+                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                          أيام الإيقاف لا تُحسب في الفاتورة. خلالها لا تستقبل أوراقاً جديدة، وكل طلابك ودرجاتك محفوظة.
+                        </p>
+                        <button
+                          disabled={pauseBusy}
+                          onClick={handleResume}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 disabled:opacity-60 cursor-pointer"
+                        >
+                          <PlayCircle className="w-4 h-4" /> {billing.pause.active ? 'أرجِع الاشتراك الآن' : 'ألغِ الإيقاف'}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          في أشهر الإجازة أو إذا توقفت عن التدريس، أوقف اشتراكك ولن تدفع عن أيام الإيقاف. طلابك ودرجاتك تبقى محفوظة، وترجع متى بدك.
+                          لإيقاف طالب أو مجموعة فقط، عطّلهم من شاشة «المجموعات والطلاب».
+                        </p>
+                        <button
+                          onClick={() => setPauseForm({ from: '', until: '' })}
+                          className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <PauseCircle className="w-4 h-4" /> إيقاف الاشتراك
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-2xs space-y-4">
                   <h3 className="font-extrabold text-[#1E3A5F] text-base flex items-center gap-2">
                     <Building className="w-5 h-5 text-blue-700" />
@@ -1001,6 +1074,48 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
             <button onClick={() => setRemindOpen(false)} className="w-full bg-slate-100 text-slate-700 py-2.5 rounded-xl text-xs font-bold">
               إغلاق
             </button>
+          </div>
+        </div>
+      )}
+
+      {pauseForm && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-right space-y-4 shadow-2xl">
+            <h3 className="font-bold text-base text-[#1E3A5F]">إيقاف الاشتراك مؤقتاً</h3>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">يبدأ الإيقاف من</label>
+                <input
+                  type="date"
+                  value={pauseForm.from}
+                  onChange={(e) => setPauseForm({ ...pauseForm, from: e.target.value })}
+                  className="w-full p-2 border border-slate-300 rounded-lg"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">اتركه فارغاً ليبدأ من اليوم.</p>
+              </div>
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">يرجع الاشتراك بعد</label>
+                <input
+                  type="date"
+                  value={pauseForm.until}
+                  onChange={(e) => setPauseForm({ ...pauseForm, until: e.target.value })}
+                  className="w-full p-2 border border-slate-300 rounded-lg"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">آخر يوم في الإيقاف. اتركه فارغاً إذا بدك توقف لحد ما ترجعه بنفسك (مثل الإلغاء، بس بياناتك بتضل محفوظة).</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                disabled={pauseBusy}
+                onClick={handlePause}
+                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-lg font-bold text-xs cursor-pointer disabled:opacity-60"
+              >
+                {pauseBusy ? 'لحظة...' : 'أوقف الاشتراك'}
+              </button>
+              <button onClick={() => setPauseForm(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-4 rounded-lg font-medium text-xs cursor-pointer">
+                إلغاء
+              </button>
+            </div>
           </div>
         </div>
       )}
