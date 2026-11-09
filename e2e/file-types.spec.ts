@@ -64,3 +64,27 @@ test('a file split by class can still go into existing groups one class at a tim
   await expect(page.getByText('جاهز لاستيراد 1 طالباً')).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test('a school imports students by class, then gives a teacher a class and subject', async ({ page }) => {
+  const errors = watchErrors(page);
+  await open(page, '/school/classes');
+  await page.getByRole('button', { name: 'استيراد من Excel' }).click();
+  await page.locator('input[type=file][accept*=".xlsx"]').setInputFiles(fixture('students-by-class.xlsx'));
+  // A school picks no subject here: teachers and subjects come later.
+  await expect(page.getByText('شو المواد اللي بتدرّسها')).toHaveCount(0);
+  await page.getByRole('button', { name: 'أنشئ المجموعات واستورد 3 طالب' }).click();
+  await expect(toast(page, /أنشأنا 2 مجموعة وأضفنا 3 طالباً/)).toBeVisible();
+
+  // Demo data lives in memory, so move through the app instead of reloading.
+  await page.evaluate(() => {
+    history.pushState({}, '', '/school/teachers');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await page.getByRole('button', { name: 'الصفوف', exact: true }).first().click();
+  await page.locator('select').filter({ hasText: 'اختر الصف' }).selectOption({ label: 'المرحلة الثالثة – الصف 6 (1 طالب)' });
+  await page.locator('select').filter({ hasText: 'اختر المادة' }).selectOption({ index: 1 });
+  await page.getByRole('button', { name: 'أسند', exact: true }).click();
+  await expect(toast(page, /أسندنا «المرحلة الثالثة – الصف 6 – /)).toBeVisible();
+  await expect(page.locator('label', { hasText: 'المرحلة الثالثة – الصف 6 – ' }).locator('input')).toBeChecked();
+  expect(errors).toEqual([]);
+});

@@ -233,7 +233,9 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     const { error } = await db.from('students').insert(rows);
     if (error) fail(error, 'تعذّر حفظ الطالب.');
     const links = rows
-      .map((r, idx) => ({ group_id: inputs[idx].groupId, student_id: r.id, organization_id: orgId }))
+      .flatMap((r, idx) =>
+        [...new Set([inputs[idx].groupId, ...(inputs[idx].extraGroupIds ?? [])])].map((g) => ({ group_id: g, student_id: r.id, organization_id: orgId })),
+      )
       .filter((l) => l.group_id);
     if (links.length) {
       const { error: linkError } = await db.from('group_students').insert(links);

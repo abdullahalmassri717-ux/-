@@ -38,6 +38,8 @@ export interface NewGroupInput {
 export interface StudentInput {
   name: string;
   groupId: string;
+  /** More groups to put the new student in at the same time (e.g. the other subjects of their class). */
+  extraGroupIds?: string[];
   parentPhone?: string;
   studentPhone?: string;
   parentApproval?: boolean;
