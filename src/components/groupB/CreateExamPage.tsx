@@ -5,6 +5,7 @@ import { setSelected } from '../../data/selection';
 import { takeExamDraft } from '../../data/examDraft';
 import type { DraftQuestion as AiDraft } from '../../data/ai';
 import { prepareImageForGrading, type PreparedImage } from '../../lib/imageResize';
+import { filesToPageImages, pdfErrorText, PAGE_FILE_ACCEPT } from '../../lib/pdfPages';
 
 type DraftQuestion = QuestionRubric & { lessonId: string | null };
 
@@ -107,14 +108,15 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
 
   const handleAddPhotos = async (files: FileList | null) => {
     if (!files?.length) return;
-    const room = 6 - capturedPhotos.length;
-    const picked = [...files].slice(0, Math.max(room, 0));
-    if (files.length > picked.length) notify('يمكن رفع 6 صفحات كحد أقصى', 'warning');
+    const room = Math.max(6 - capturedPhotos.length, 0);
     try {
-      const prepared = await Promise.all(picked.map((f) => prepareImageForGrading(f)));
+      const r = await filesToPageImages([...files], room);
+      if (r.truncated) notify('يمكن رفع 6 صفحات كحد أقصى', 'warning');
+      if (r.skipped) notify('اختر صوراً أو ملف PDF فقط.', 'warning');
+      const prepared = await Promise.all(r.images.map((f) => prepareImageForGrading(f)));
       setCapturedPhotos((prev) => [...prev, ...prepared]);
-    } catch {
-      notify('أحد الملفات ليس صورة. اختر صوراً فقط.', 'warning');
+    } catch (e) {
+      notify(pdfErrorText(e, 'تعذّرت قراءة أحد الملفات. اختر صوراً أو ملف PDF.'), 'warning');
     }
   };
 
@@ -680,11 +682,10 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
                 {capturedPhotos.length < 6 && (
                   <label className="aspect-[3/4] rounded-lg border-2 border-dashed border-emerald-300 bg-emerald-50 flex flex-col items-center justify-center gap-1 text-emerald-800 text-[11px] font-bold cursor-pointer">
                     <Camera className="w-6 h-6" />
-                    <span>{capturedPhotos.length ? 'صفحة أخرى' : 'صوّر أو اختر صورة'}</span>
+                    <span>{capturedPhotos.length ? 'صفحة أخرى' : 'صوّر أو اختر صورة أو PDF'}</span>
                     <input
                       type="file"
-                      accept="image/*"
-                      capture="environment"
+                      accept={PAGE_FILE_ACCEPT}
                       multiple
                       className="sr-only"
                       onChange={(e) => {
