@@ -38,6 +38,7 @@ import { TeacherDiagnosticAnalyticsPage } from './components/groupB/TeacherDiagn
 // Common Components
 import { TechnicalSupportPage } from './components/common/TechnicalSupportPage';
 import { Toaster } from './components/common/Toaster';
+import { InstallAppBanner } from './components/common/InstallAppBanner';
 import { OrgStatusGate } from './components/common/OrgStatusGate';
 
 // Group C Components
@@ -457,6 +458,11 @@ export default function App() {
       )}
 
       <Toaster />
+
+      {/* Install-as-app invitation (not on the student submission page) */}
+      {currentRole !== 'student' && (
+        <InstallAppBanner aboveBottomNav={currentRole !== 'visitor'} />
+      )}
 
       {/* 5. Contextual AI Drawer */}
       {currentRole !== 'visitor' && currentRole !== 'student' && (
