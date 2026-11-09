@@ -19,7 +19,8 @@ import {
   Pencil,
   Trash2,
   Ban,
-  RotateCcw
+  RotateCcw,
+  PauseCircle
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
 import { rowsFromFile } from '../../data/curriculumImport';
@@ -91,11 +92,15 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   const [editApproval, setEditApproval] = useState(false);
   const [confirming, setConfirming] = useState<{ kind: 'disable' | 'delete'; student: StudentRow } | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  // Pause / resume a whole group
+  const [pausingGroup, setPausingGroup] = useState<{ id: string; name: string } | null>(null);
 
   const groupsQ = useLoad((st) => st.listGroups());
   const studentsQ = useLoad((st) => st.listStudents());
   const archivedQ = useLoad((st) => st.listArchivedStudents());
   const archived = archivedQ.data ?? [];
+  const archivedGroupsQ = useLoad((st) => st.listArchivedGroups());
+  const archivedGroups = archivedGroupsQ.data ?? [];
   const curriculaQ = useLoad((st) => st.listCurricula());
   const groups = groupsQ.data ?? [];
   const students = studentsQ.data ?? [];
@@ -245,6 +250,33 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
     studentsQ.reload();
     archivedQ.reload();
     groupsQ.reload();
+    archivedGroupsQ.reload();
+  };
+
+  const handlePauseGroup = async () => {
+    if (!pausingGroup) return;
+    setSaving(true);
+    try {
+      await store.archiveGroup(pausingGroup.id);
+      notify(`تم إيقاف ${pausingGroup.name}. تجدها في «المجموعات الموقوفة».`, 'success');
+      setPausingGroup(null);
+      setSelectedGroup('all');
+      reloadAll();
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRestoreGroup = async (g: { id: string; name: string }) => {
+    try {
+      await store.restoreGroup(g.id);
+      notify(`رجعت ${g.name} تعمل من جديد`, 'success');
+      reloadAll();
+    } catch (e) {
+      notify(errorMessage(e));
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -533,6 +565,12 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
             <p className="text-xs text-slate-500">
               {currentGroupObj.schedule && <>المواعيد: {currentGroupObj.schedule} · </>}عدد الطلاب: {currentGroupObj.studentCount}
             </p>
+            <button
+              onClick={() => setPausingGroup({ id: currentGroupObj.id, name: currentGroupObj.name.split('(')[0].trim() })}
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 hover:underline cursor-pointer"
+            >
+              <PauseCircle className="w-3.5 h-3.5" /> إيقاف المجموعة
+            </button>
           </div>
 
           <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-xl border border-slate-200/70">
@@ -757,6 +795,26 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
         </div>
       )}
 
+      {/* Paused groups */}
+      {archivedGroups.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+          <p className="p-3.5 text-xs font-bold text-slate-700 flex items-center gap-1.5 border-b border-slate-100">
+            <PauseCircle className="w-4 h-4 text-amber-600" />
+            المجموعات الموقوفة ({archivedGroups.length})
+          </p>
+          <div className="divide-y divide-slate-100">
+            {archivedGroups.map((g) => (
+              <div key={g.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="font-bold text-slate-700 min-w-0">{g.name}</span>
+                <button onClick={() => handleRestoreGroup(g)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold cursor-pointer">
+                  <RotateCcw className="w-3.5 h-3.5" /> تفعيل
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Disabled students */}
       {archived.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
@@ -846,6 +904,30 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                 {saving ? 'جاري الحفظ...' : 'حفظ التعديلات'}
               </button>
               <button onClick={() => setEditing(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-4 rounded-lg font-medium text-xs cursor-pointer">
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm pausing a group */}
+      {pausingGroup && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-right space-y-4 shadow-2xl">
+            <h3 className="font-bold text-base text-amber-800">إيقاف {pausingGroup.name}؟</h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              تختفي المجموعة من القوائم، وطلابها لا يُحسبون في الاشتراك (إلا إذا كانوا في مجموعة ثانية شغّالة). الطلاب والدرجات والامتحانات محفوظة، وترجعها متى بدك من «المجموعات الموقوفة».
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                disabled={saving}
+                onClick={handlePauseGroup}
+                className="flex-1 text-white py-2 rounded-lg font-bold text-xs cursor-pointer disabled:opacity-60 bg-amber-600 hover:bg-amber-700"
+              >
+                {saving ? 'لحظة...' : 'نعم، أوقف المجموعة'}
+              </button>
+              <button onClick={() => setPausingGroup(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-4 rounded-lg font-medium text-xs cursor-pointer">
                 إلغاء
               </button>
             </div>

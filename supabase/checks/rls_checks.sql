@@ -297,4 +297,27 @@ select public.admin_delete_org(tests.org('learning_center'), 'مركز معدّ�
 select tests.eq((select count(*) from public.organizations where name = 'مركز معدّل'), 0::bigint, 'الحذف: حُذفت الجهة');
 rollback;
 
+-- ---------------------------------------------------------------- إيقاف الاشتراك الشهري (أشهر الإجازة)
+begin;
+select tests.login('+970590000001');
+set local role authenticated;
+select tests.eq((public.my_usage_quote(tests.org('individual_teacher')) ->> 'amount')::numeric > 0, true, 'إيقاف: قبل الإيقاف يوجد مبلغ');
+select public.pause_subscription(tests.org('individual_teacher'), null, null);
+select tests.eq((public.my_subscription_pause(tests.org('individual_teacher')) ->> 'active')::boolean, true, 'إيقاف: الاشتراك موقوف الآن');
+select tests.eq((public.my_usage_quote(tests.org('individual_teacher')) ->> 'amount')::numeric, 0::numeric, 'إيقاف: أيام الإيقاف لا تُحسب');
+select tests.throws($$insert into public.submissions (organization_id, assessment_id, student_id, source, status)
+  select tests.org('individual_teacher'), 'd551edb9-e5a0-493c-8826-0650045af756', s.id, 'teacher_scan', 'uploaded'
+    from public.students s where s.organization_id = tests.org('individual_teacher')
+     and not exists (select 1 from public.submissions x where x.student_id = s.id and x.assessment_id = 'd551edb9-e5a0-493c-8826-0650045af756')
+   limit 1$$, 'إيقاف: لا أوراق جديدة خلال الإيقاف');
+select tests.throws($$select public.pause_subscription(tests.org('individual_teacher'), null, null)$$, 'إيقاف: لا إيقافين معاً');
+select public.resume_subscription(tests.org('individual_teacher'));
+select tests.eq(public.my_subscription_pause(tests.org('individual_teacher')) is null, true, 'إرجاع: الاشتراك عاد');
+select tests.eq((public.my_usage_quote(tests.org('individual_teacher')) ->> 'amount')::numeric > 0, true, 'إرجاع: الحساب عاد طبيعياً');
+select tests.throws($$select public.pause_subscription(tests.org('individual_teacher'), current_date - 1, null)$$, 'إيقاف: لا يبدأ في الماضي');
+select tests.throws($$select public.pause_subscription(tests.org('school'), null, null)$$, 'إيقاف: ليس لغير المالك');
+select tests.login('+970590000099');
+select tests.throws($$select public.pause_subscription(tests.org('school'), null, null)$$, 'إيقاف: الاشتراك السنوي لا يُوقف');
+rollback;
+
 \echo 'كل الفحوص نجحت ✓'

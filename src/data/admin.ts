@@ -103,6 +103,9 @@ export interface UsageQuote {
   units: number;
   unitPrice: number;
   amount: number;
+  /** Days the monthly subscription was paused in this period (not billed). */
+  pausedDays: number;
+  periodDays: number;
 }
 
 export interface GradingQuality {
@@ -193,6 +196,8 @@ const toQuote = (d: Record<string, unknown> | null): UsageQuote | null =>
         units: Number(d.units ?? 0),
         unitPrice: Number(d.unit_price ?? 0),
         amount: Number(d.amount ?? 0),
+        pausedDays: Number(d.paused_days ?? 0),
+        periodDays: Number(d.period_days ?? 0),
       }
     : null;
 export { toQuote };
@@ -561,6 +566,9 @@ function demoApi(): AdminApi {
       units,
       unitPrice,
       amount: Math.round((units * unitPrice * 100) / (plan.billingCycle === 'yearly' ? Math.max(1, plan.installments) : 1)) / 100,
+
+      pausedDays: 0,
+      periodDays: 1,
     };
   };
   const addInvoice = (orgId: string, amount: number, note: string, q: UsageQuote | null) => {

@@ -23,6 +23,34 @@ test.describe('teacher', () => {
     expect(errors).toEqual([]);
   });
 
+  test('pauses and resumes the monthly subscription', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/app/billing');
+    await page.getByRole('button', { name: 'اشتراكي في دقة' }).click();
+    await page.getByRole('button', { name: 'إيقاف الاشتراك' }).click();
+    await page.getByRole('button', { name: 'أوقف الاشتراك' }).click();
+    await expect(toast(page, /تم إيقاف الاشتراك/)).toBeVisible();
+    await expect(page.getByText(/اشتراكك موقوف الآن/)).toBeVisible();
+    await page.getByRole('button', { name: 'أرجِع الاشتراك الآن' }).click();
+    await expect(toast(page, /رجع الاشتراك/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'إيقاف الاشتراك' })).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
+  test('pauses a group and turns it back on', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/app/groups');
+    await page.getByRole('button', { name: /^كل الطلاب/ }).locator('xpath=following-sibling::button[1]').click();
+    await page.getByRole('button', { name: 'إيقاف المجموعة' }).click();
+    await page.getByRole('button', { name: 'نعم، أوقف المجموعة' }).click();
+    await expect(toast(page, /تم إيقاف/)).toBeVisible();
+    await expect(page.getByText(/المجموعات الموقوفة \(1\)/)).toBeVisible();
+    await page.getByRole('button', { name: 'تفعيل' }).first().click();
+    await expect(toast(page, /تعمل من جديد/)).toBeVisible();
+    await expect(page.getByText(/المجموعات الموقوفة/)).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+
   test('opens a student profile from the list', async ({ page, isMobile }) => {
     const errors = watchErrors(page);
     await open(page, '/app/groups');

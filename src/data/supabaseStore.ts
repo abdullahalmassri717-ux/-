@@ -541,7 +541,23 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
 
     async archiveGroup(id) {
       const { error } = await db.from('groups').update({ archived_at: new Date().toISOString() }).eq('id', id);
-      if (error) fail(error, 'تعذّر أرشفة المجموعة.');
+      if (error) fail(error, 'تعذّر إيقاف المجموعة.');
+    },
+
+    async listArchivedGroups() {
+      const { data, error } = await db
+        .from('groups')
+        .select('id, name')
+        .eq('organization_id', orgId)
+        .not('archived_at', 'is', null)
+        .order('name');
+      if (error) fail(error, 'تعذّر تحميل المجموعات الموقوفة.');
+      return (data ?? []) as { id: string; name: string }[];
+    },
+
+    async restoreGroup(id) {
+      const { error } = await db.from('groups').update({ archived_at: null }).eq('id', id);
+      if (error) fail(error, 'تعذّر تفعيل المجموعة.');
     },
 
     async listStudents() {
