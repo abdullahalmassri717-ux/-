@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
 import { rowsFromFile } from '../../data/curriculumImport';
-import { classesIn, parseStudentTable, textToRows } from '../../lib/studentImport';
+import { classesIn, gradeNumber, parseStudentTable, textToRows } from '../../lib/studentImport';
 
 interface GroupsStudentsPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -71,6 +71,10 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   // When the file holds several classes, one class is imported at a time into its own group.
   const [importClass, setImportClass] = useState('');
   const [importedClasses, setImportedClasses] = useState<string[]>([]);
+  // A file split by class: by default make one group per class and import everything at once.
+  const [importManual, setImportManual] = useState(false);
+  const [bulkCurriculumId, setBulkCurriculumId] = useState('');
+  const [bulkSubject, setBulkSubject] = useState('');
   const [importText, setImportText] = useState('');
   const [linkExisting, setLinkExisting] = useState(true);
 
@@ -154,6 +158,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
     setImportText('');
     setImportClass('');
     setImportedClasses([]);
+    setImportManual(false);
     setLinkExisting(true);
     setShowExcelModal(true);
   };
@@ -319,6 +324,64 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
     .filter((list): list is StudentRow[] => !!list && list.length === 1)
     .map((list) => list[0]);
   const matchedKeys = new Set(importMatched.map((st) => nameKey(st.name)));
+
+  // --- One group per class in the file -------------------------------------
+  const bulkCurriculum = curricula.find((c) => c.id === bulkCurriculumId) ?? curricula[0];
+  // Subjects taught in most of the file's grades come first.
+  const bulkSubjects = useMemo(() => {
+    const fileGrades = new Set(importClasses.map((c) => gradeNumber(c.label)));
+    const score = new Map<string, number>();
+    bulkCurriculum?.grades.forEach((g) => {
+      const inFile = fileGrades.has(gradeNumber(g.name)) ? 1 : 0;
+      g.subjects.forEach((s) => s.status === 'published' && score.set(s.name, (score.get(s.name) ?? 0) + inFile));
+    });
+    return [...score].sort((a, b) => b[1] - a[1]).map(([name]) => name);
+  }, [bulkCurriculum, importClasses]);
+  const subjectName = bulkSubjects.includes(bulkSubject) ? bulkSubject : bulkSubjects[0] ?? '';
+  const bulkPlan = importClasses.map((c) => {
+    const n = gradeNumber(c.label);
+    const grade = n === null ? undefined : bulkCurriculum?.grades.find((g) => gradeNumber(g.name) === n);
+    const subject = grade?.subjects.find((s) => s.status === 'published' && s.name === subjectName);
+    const name = subjectName ? `${c.label} – ${subjectName}` : c.label;
+    return { ...c, name, grade, subject, existing: groups.find((g) => g.name === name) };
+  });
+  const handleBulkImport = async () => {
+    setSaving(true);
+    let made = 0;
+    let added = 0;
+    let linkedCount = 0;
+    try {
+      for (const plan of bulkPlan) {
+        let groupId = plan.existing?.id;
+        if (!groupId) {
+          const g = await store.createGroup({ name: plan.name, gradeId: plan.grade?.id ?? null, subjectId: plan.subject?.id ?? null, schedule: '' });
+          groupId = g.id;
+          made++;
+        }
+        const rows = parsedImport.filter((r) => r.classLabel === plan.label);
+        const linked: string[] = [];
+        const fresh: StudentInput[] = [];
+        for (const r of rows) {
+          const same = studentsByName.get(nameKey(r.name));
+          if (linkExisting && same?.length === 1) linked.push(same[0].id);
+          else fresh.push({ name: r.name, parentPhone: r.parentPhone, studentPhone: r.studentPhone, groupId });
+        }
+        if (fresh.length) added += await store.createStudents(fresh);
+        if (linked.length) linkedCount += await store.addStudentsToGroup(groupId, linked);
+      }
+      notify(
+        `تم! أنشأنا ${made} مجموعة وأضفنا ${added} طالباً` + (linkedCount ? `، وربطنا ${linkedCount} طالباً مسجّلاً مسبقاً` : ''),
+        'success',
+      );
+      setShowExcelModal(false);
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setSaving(false);
+      groupsQ.reload();
+      studentsQ.reload();
+    }
+  };
   const handleImport = async () => {
     if (!importGroupId) {
       notify('اختر المجموعة أولاً');
@@ -949,6 +1012,69 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
               className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono"
             />
 
+            {importClasses.length > 0 && !importManual ? (
+              <div className="text-xs space-y-3">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 space-y-1">
+                  <p className="font-bold text-emerald-900">
+                    ملفك مقسّم على {importClasses.length === 1 ? 'صف واحد' : `${importClasses.length} صفوف`} ({parsedImport.length} طالب).
+                  </p>
+                  <p className="text-emerald-900/80 leading-relaxed">
+                    بننشئ مجموعة لكل صف ونضيف طلابه فيها، بضغطة وحدة. المجموعة هي الصف مع المادة اللي بتدرّسها.
+                  </p>
+                </div>
+                {curricula.length > 1 && (
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">المنهاج</label>
+                    <select value={bulkCurriculum?.id ?? ''} onChange={(e) => setBulkCurriculumId(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg bg-white">
+                      {curricula.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                {bulkSubjects.length > 0 && (
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">شو المادة اللي بتدرّسها لهالصفوف؟</label>
+                    <select value={subjectName} onChange={(e) => setBulkSubject(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg bg-white">
+                      {bulkSubjects.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+                )}
+                <ul className="bg-slate-50 border border-slate-200 rounded-lg p-2 space-y-1 text-slate-700 max-h-40 overflow-y-auto">
+                  {bulkPlan.map((p) => (
+                    <li key={p.label} className="flex justify-between gap-2">
+                      <span className="truncate">{p.name}</span>
+                      <span className="text-slate-500 shrink-0">{p.count} طالب{p.existing ? ' · موجودة' : ''}</span>
+                    </li>
+                  ))}
+                </ul>
+                {subjectName && bulkPlan.some((p) => !p.subject) && (
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    بعض الصفوف ما لقينا لها مادة «{subjectName}» بالمنهاج، فبننشئ مجموعتها بدون ربط بالمادة.
+                  </p>
+                )}
+                {parsedImport.some((r) => studentsByName.get(nameKey(r.name))?.length === 1) && (
+                  <label className="flex items-start gap-2 text-slate-700 cursor-pointer">
+                    <input type="checkbox" checked={linkExisting} onChange={(e) => setLinkExisting(e.target.checked)} className="mt-0.5" />
+                    <span>الأسماء المسجّلة مسبقاً نربطها بنفس الطالب ونفس رمزه بدل ما ننشئه مرة ثانية.</span>
+                  </label>
+                )}
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    disabled={saving}
+                    onClick={handleBulkImport}
+                    className="flex-1 bg-emerald-700 text-white py-2.5 rounded-lg font-bold cursor-pointer disabled:opacity-60"
+                  >
+                    {saving ? 'جاري الاستيراد...' : `أنشئ المجموعات واستورد ${parsedImport.length} طالب`}
+                  </button>
+                  <button onClick={() => setShowExcelModal(false)} className="bg-slate-100 text-slate-700 py-2.5 px-4 rounded-lg font-medium cursor-pointer">
+                    إلغاء
+                  </button>
+                </div>
+                <button type="button" onClick={() => setImportManual(true)} className="w-full text-center text-[11px] text-slate-500 underline cursor-pointer">
+                  أو اختر بنفسك مجموعة موجودة لكل صف
+                </button>
+              </div>
+            ) : (
+              <>
             {multiClass && (
               <div className="text-xs space-y-1.5 bg-blue-50/60 border border-blue-200 rounded-xl p-2.5">
                 <p className="font-bold text-slate-800">ملفك فيه {importClasses.length} صفوف. نستورد كل صف لمجموعته، صفاً صفاً:</p>
@@ -1025,6 +1151,8 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                 إلغاء
               </button>
             </div>
+              </>
+            )}
           </div>
         </div>
       )}

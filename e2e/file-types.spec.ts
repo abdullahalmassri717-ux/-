@@ -38,20 +38,29 @@ test('teacher imports students from an Excel file', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test('an Excel file with stage and grade columns is imported one class at a time', async ({ page }) => {
+test('an Excel file with stage and grade columns makes one group per class in one click', async ({ page }) => {
   const errors = watchErrors(page);
   await open(page, '/app/groups');
   await page.getByRole('button', { name: 'استيراد من Excel' }).click();
   await page.locator('input[type=file][accept*=".xlsx"]').setInputFiles(fixture('students-by-class.xlsx'));
+  await expect(page.getByText('ملفك مقسّم على 2 صفوف')).toBeVisible();
+  await page.getByRole('button', { name: 'أنشئ المجموعات واستورد 3 طالب' }).click();
+  await expect(toast(page, /أنشأنا 2 مجموعة وأضفنا 3 طالباً/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /المرحلة الرابعة – الصف 7/ }).first()).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('a file split by class can still go into existing groups one class at a time', async ({ page }) => {
+  const errors = watchErrors(page);
+  await open(page, '/app/groups');
+  await page.getByRole('button', { name: 'استيراد من Excel' }).click();
+  await page.locator('input[type=file][accept*=".xlsx"]').setInputFiles(fixture('students-by-class.xlsx'));
+  await page.getByRole('button', { name: 'أو اختر بنفسك مجموعة موجودة لكل صف' }).click();
   await expect(page.getByText('ملفك فيه 2 صفوف')).toBeVisible();
-  await expect(page.getByText('جاهز لاستيراد 2 طالباً')).toBeVisible();
-  // The name column is found even though it is the third column.
   await expect(page.locator('li', { hasText: 'طارق نبيل عاشور' })).toBeVisible();
   await page.locator('select').filter({ hasText: 'اختر المجموعة' }).selectOption({ index: 1 });
   await page.getByRole('button', { name: 'بدء الاستيراد' }).click();
   await expect(toast(page, /تم استيراد 2 طالباً/)).toBeVisible();
-  // The dialog moves on to the next class.
   await expect(page.getByText('جاهز لاستيراد 1 طالباً')).toBeVisible();
-  await expect(page.locator('li', { hasText: 'فاطمة سعيد الدحدوح' })).toBeVisible();
   expect(errors).toEqual([]);
 });
