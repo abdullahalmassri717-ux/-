@@ -93,3 +93,31 @@ export function classesIn(students: ImportedStudent[]): { label: string; count: 
   for (const s of students) if (s.classLabel) m.set(s.classLabel, (m.get(s.classLabel) ?? 0) + 1);
   return [...m].map(([label, count]) => ({ label, count }));
 }
+
+// ---------------------------------------------------------------------------
+// Matching a class from the file ("المرحلة الأولى – الصف 1") to a curriculum grade ("الصف الأول الأساسي").
+
+const ORDINALS: [RegExp, number][] = [
+  [/الحادي\s*عشر|الحاديه?\s*عشر/, 11],
+  [/الثاني\s*عشر|الثانيه?\s*عشر|التوجيهي/, 12],
+  [/الأول|الاول|الأولى|الاولى/, 1],
+  [/الثاني|الثانية|الثانيه/, 2],
+  [/الثالث/, 3],
+  [/الرابع/, 4],
+  [/الخامس/, 5],
+  [/السادس/, 6],
+  [/السابع/, 7],
+  [/الثامن/, 8],
+  [/التاسع/, 9],
+  [/العاشر/, 10],
+];
+
+/** The grade number in a class or grade name: "الصف 7" → 7, "الصف السابع الأساسي" → 7. */
+export function gradeNumber(text: string): number | null {
+  // Prefer the part that says "صف" (the stage part may hold another ordinal).
+  const part = text.split(/\s[–-]\s|،|\|/).find((p) => /صف|grade|class/i.test(p)) ?? text;
+  const digits = toLatinDigits(part).match(/\d{1,2}/);
+  if (digits) return Number(digits[0]);
+  for (const [re, n] of ORDINALS) if (re.test(part)) return n;
+  return null;
+}
