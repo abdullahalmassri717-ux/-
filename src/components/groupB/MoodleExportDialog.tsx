@@ -33,7 +33,7 @@ export const MoodleExportDialog: React.FC<Props> = ({ exam, submissions, onClose
   const [showSteps, setShowSteps] = useState(false);
 
   const subStudentIds = new Set(submissions.map((s) => s.studentId).filter(Boolean) as string[]);
-  const students = (studentsQ.data ?? []).filter((s) => s.groupId === exam.groupId || subStudentIds.has(s.id));
+  const students = (studentsQ.data ?? []).filter((s) => s.groupIds.includes(exam.groupId) || subStudentIds.has(s.id));
   const total = exam.totalScore || 0;
 
   // Students' links decide which identifier the file uses (the most common one).

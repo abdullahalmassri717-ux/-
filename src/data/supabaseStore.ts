@@ -195,7 +195,8 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     'id, full_name, student_code, parent_phone, student_phone, parent_whatsapp_consent, status, moodle_identifier, moodle_identifier_kind, group_students(group_id, left_at, groups(name, archived_at))';
 
   function toStudent(s: StudentDb, scores: Map<string, { pct: number; trend: 'up' | 'down' | 'steady' }>): StudentRow {
-    const membership = (s.group_students ?? []).find((m) => !m.left_at && !one(m.groups)?.archived_at);
+    const memberships = (s.group_students ?? []).filter((m) => !m.left_at && !one(m.groups)?.archived_at);
+    const membership = memberships[0];
     const score = scores.get(s.id);
     const pct = score?.pct ?? 0;
     return {
@@ -203,6 +204,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       name: s.full_name,
       group: one(membership?.groups)?.name ?? '',
       groupId: membership?.group_id ?? '',
+      groupIds: memberships.map((m) => m.group_id),
       parentPhone: localPhone(s.parent_phone),
       studentPhone: localPhone(s.student_phone),
       studentCode: s.student_code,
@@ -594,6 +596,37 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
             .upsert({ group_id: input.groupId, student_id: id, organization_id: orgId, left_at: null }, { onConflict: 'group_id,student_id' });
           if (joinError) fail(joinError, 'تعذّر نقل الطالب.');
         }
+      }
+    },
+
+    async addStudentsToGroup(groupId, studentIds) {
+      const ids = [...new Set(studentIds)];
+      if (!ids.length) return 0;
+      const { error } = await db
+        .from('group_students')
+        .upsert(
+          ids.map((id) => ({ group_id: groupId, student_id: id, organization_id: orgId, left_at: null })),
+          { onConflict: 'group_id,student_id' },
+        );
+      if (error) fail(error, 'تعذّر إضافة الطلاب إلى المجموعة.');
+      return ids.length;
+    },
+
+    async setStudentGroups(studentId, groupIds) {
+      // Leave the groups that were unticked. RLS limits this to groups the user can see,
+      // so a teacher never takes a student out of another teacher's group.
+      let leave = db.from('group_students').update({ left_at: new Date().toISOString() }).eq('student_id', studentId).is('left_at', null);
+      if (groupIds.length) leave = leave.not('group_id', 'in', `(${groupIds.join(',')})`);
+      const { error: leaveError } = await leave;
+      if (leaveError) fail(leaveError, 'تعذّر حفظ مجموعات الطالب.');
+      if (groupIds.length) {
+        const { error } = await db
+          .from('group_students')
+          .upsert(
+            groupIds.map((g) => ({ group_id: g, student_id: studentId, organization_id: orgId, left_at: null })),
+            { onConflict: 'group_id,student_id' },
+          );
+        if (error) fail(error, 'تعذّر حفظ مجموعات الطالب.');
       }
     },
 

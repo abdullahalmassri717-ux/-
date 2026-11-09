@@ -66,10 +66,10 @@ interface DemoState {
 
 function initialState(): DemoState {
   const groups = MOCK_GROUPS.map((g) => ({ ...g }));
-  const students: StudentRow[] = MOCK_STUDENTS.map((s) => ({
-    ...s,
-    groupId: groups.find((g) => g.name === s.group)?.id ?? '',
-  }));
+  const students: StudentRow[] = MOCK_STUDENTS.map((s) => {
+    const groupId = groups.find((g) => g.name === s.group)?.id ?? '';
+    return { ...s, groupId, groupIds: groupId ? [groupId] : [] };
+  });
   const taughtG1: TaughtLessons = {};
   Object.entries(MOCK_GROUP_PROGRESS_G1).forEach(([lessonId, p]) => {
     if (p.status !== 'not_taught') taughtG1[lessonId] = new Date().toISOString();
@@ -150,7 +150,7 @@ export function createDemoStore(): DataStore {
       const lessons = ['قواعد الاشتقاق الأساسية', 'الاشتقاق الضمني', 'قاعدة السلسلة', 'المعدلات المرتبطة بالزمن'];
       const misses = ['توحيد المقامات في المشتقة الثانية', 'نسيان ضرب مشتقة الداخل', 'العلاقة الهندسية المساعدة', 'إشارة السالب عند اشتقاق جتا'];
       const rows = s().students
-        .filter((st) => !groupId || st.groupId === groupId)
+        .filter((st) => !groupId || st.groupIds.includes(groupId))
         .flatMap((st) =>
           lessons.map((lesson, i) => {
             const level = Math.max(0.2, Math.min(1, (st.latestScore + (i === 0 ? 15 : i === 1 ? -25 : i === 2 ? -10 : -15)) / 100));
@@ -247,6 +247,7 @@ export function createDemoStore(): DataStore {
           name: i.name.trim(),
           group: group?.name ?? '',
           groupId: i.groupId,
+          groupIds: i.groupId ? [i.groupId] : [],
           parentPhone: i.parentPhone ?? '',
           studentPhone: i.studentPhone ?? '',
           studentCode: code,
@@ -269,18 +270,38 @@ export function createDemoStore(): DataStore {
         if (input.studentPhone !== undefined) st.studentPhone = input.studentPhone;
         if (input.parentApproval !== undefined) st.parentApproval = input.parentApproval;
         if (input.moodle !== undefined) st.moodle = input.moodle?.value.trim() ? { ...input.moodle, value: input.moodle.value.trim() } : null;
-        if (input.groupId !== undefined) {
-          st.groupId = input.groupId;
-          st.group = s().groups.find((g) => g.id === input.groupId)?.name ?? '';
-        }
+        if (input.groupId !== undefined) await this.setStudentGroups(id, input.groupId ? [input.groupId] : []);
       }
+      return wait(undefined);
+    },
+    async addStudentsToGroup(groupId, studentIds) {
+      let n = 0;
+      for (const id of new Set(studentIds)) {
+        const st = s().students.find((x) => x.id === id);
+        if (!st || st.groupIds.includes(groupId)) continue;
+        await this.setStudentGroups(id, [...st.groupIds, groupId]);
+        n += 1;
+      }
+      return wait(n);
+    },
+    async setStudentGroups(studentId, groupIds) {
+      const st = s().students.find((x) => x.id === studentId);
+      if (!st) return wait(undefined);
+      for (const g of s().groups) {
+        const was = st.groupIds.includes(g.id);
+        const now = groupIds.includes(g.id);
+        if (was && !now) g.studentCount = Math.max(0, g.studentCount - 1);
+        if (!was && now) g.studentCount += 1;
+      }
+      st.groupIds = [...new Set(groupIds)];
+      st.groupId = st.groupIds[0] ?? '';
+      st.group = s().groups.find((g) => g.id === st.groupId)?.name ?? '';
       return wait(undefined);
     },
     async archiveStudent(id) {
       const st = s().students.find((x) => x.id === id);
       if (st) s().archivedStudents.push(st);
-      const g = s().groups.find((x) => x.id === st?.groupId);
-      if (g) g.studentCount = Math.max(0, g.studentCount - 1);
+      for (const g of s().groups) if (st?.groupIds.includes(g.id)) g.studentCount = Math.max(0, g.studentCount - 1);
       s().students = s().students.filter((x) => x.id !== id);
       return wait(undefined);
     },
@@ -288,14 +309,13 @@ export function createDemoStore(): DataStore {
     async restoreStudent(id) {
       const st = s().archivedStudents.find((x) => x.id === id);
       if (st) s().students.push(st);
-      const g = s().groups.find((x) => x.id === st?.groupId);
-      if (g) g.studentCount += 1;
+      for (const g of s().groups) if (st?.groupIds.includes(g.id)) g.studentCount += 1;
       s().archivedStudents = s().archivedStudents.filter((x) => x.id !== id);
       return wait(undefined);
     },
     async deleteStudent(id) {
-      const g = s().groups.find((x) => x.id === s().students.find((st) => st.id === id)?.groupId);
-      if (g) g.studentCount = Math.max(0, g.studentCount - 1);
+      const gone = s().students.find((st) => st.id === id);
+      for (const g of s().groups) if (gone?.groupIds.includes(g.id)) g.studentCount = Math.max(0, g.studentCount - 1);
       s().students = s().students.filter((x) => x.id !== id);
       s().archivedStudents = s().archivedStudents.filter((x) => x.id !== id);
       return wait(undefined);

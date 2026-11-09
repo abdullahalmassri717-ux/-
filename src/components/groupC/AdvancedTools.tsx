@@ -23,7 +23,7 @@ function useStudentPicker() {
     const preset = all.find((s) => s.id === studentId);
     setGroupId(preset?.groupId || groups[0].id);
   }, [groups, all, groupId, studentId]);
-  const students = all.filter((s) => s.groupId === groupId);
+  const students = all.filter((s) => s.groupIds.includes(groupId));
   useEffect(() => {
     if (studentsQ.data && !students.some((s) => s.id === studentId)) setStudentId(students[0]?.id ?? '');
   }, [students, studentId, studentsQ.data]);

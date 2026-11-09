@@ -56,7 +56,7 @@ export const UploadPapersPage: React.FC<UploadPapersPageProps> = ({ onNavigate }
   const studentsQ = useLoad((st) => st.listStudents());
   const submissions = subsQ.data ?? [];
   const groupStudents = useMemo(
-    () => (studentsQ.data ?? []).filter((s) => s.groupId === selectedExam?.groupId),
+    () => (studentsQ.data ?? []).filter((s) => !!selectedExam && s.groupIds.includes(selectedExam.groupId)),
     [studentsQ.data, selectedExam?.groupId],
   );
 
