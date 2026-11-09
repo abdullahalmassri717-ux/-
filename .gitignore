@@ -11,3 +11,7 @@ dist
 
 # Real student papers for the accuracy test (private, minors)
 grading-test/
+
+# Playwright end-to-end check results
+test-results/
+playwright-report/

@@ -78,6 +78,10 @@ function saveEntityId(id: string) {
   }
 }
 
+// A teacher who is a member (not the owner) of a school or centre.
+const isOrgTeacher = (entity: Entity | undefined) => !!entity && entity.role === 'teacher';
+const BILLING_OWNER_ONLY = 'الاشتراك والفواتير خاصة بإدارة الجهة فقط، ولا تظهر لمعلميها.';
+
 // Org owners of a school or centre manage it from the school dashboard.
 const isOrgOwner = (entity: Entity | undefined) =>
   !!entity && entity.role === 'owner' && entity.type !== 'individual_teacher';
@@ -177,6 +181,14 @@ export default function App() {
     }
   }, [isReal, auth.status, auth.entities, auth.profile, activeEntity, location.pathname, location.search]);
 
+  // Opening the billing address directly (bookmark, shared link) is blocked too.
+  useEffect(() => {
+    if (currentScreen === 'B11' && isOrgTeacher(activeEntity) && roleForPath(location.pathname) === 'teacher') {
+      notify(BILLING_OWNER_ONLY, 'warning');
+      navigate(pathForScreen('B1'), { replace: true });
+    }
+  }, [currentScreen, activeEntity, location.pathname]);
+
   // Keep the role in step with the area of the site the address points to
   // (e.g. opening a student link, or pressing the browser's back button).
   useEffect(() => {
@@ -198,9 +210,9 @@ export default function App() {
   }, [location.pathname]);
 
   const handleNavigate = (screen: ScreenId) => {
-    // School teachers cannot navigate to B11 (Subscriptions & Invoices)
-    if (screen === 'B11' && activeEntity.type === 'school' && activeEntity.role === 'teacher') {
-      notify('إدارة الاشتراكات والفواتير خاصة بإدارة المدرسة فقط وغير متاحة لمعلمي المدرسة.', 'warning');
+    // Teachers of a school or centre never see its subscription and invoices.
+    if (screen === 'B11' && isOrgTeacher(activeEntity)) {
+      notify(BILLING_OWNER_ONLY, 'warning');
       return;
     }
     setExamScope(null);
