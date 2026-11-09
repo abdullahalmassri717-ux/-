@@ -268,6 +268,7 @@ export function createDemoStore(): DataStore {
         if (input.parentPhone !== undefined) st.parentPhone = input.parentPhone;
         if (input.studentPhone !== undefined) st.studentPhone = input.studentPhone;
         if (input.parentApproval !== undefined) st.parentApproval = input.parentApproval;
+        if (input.moodle !== undefined) st.moodle = input.moodle?.value.trim() ? { ...input.moodle, value: input.moodle.value.trim() } : null;
         if (input.groupId !== undefined) {
           st.groupId = input.groupId;
           st.group = s().groups.find((g) => g.id === input.groupId)?.name ?? '';

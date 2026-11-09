@@ -7,9 +7,19 @@ import type { Curriculum, Exam, Group, QuestionRubric, Student } from '../types'
 
 export type { Curriculum, Group };
 
+/** Which Moodle user field identifies the student in a grade import. */
+export type MoodleIdKind = 'email' | 'username' | 'idnumber';
+
+export interface MoodleLink {
+  kind: MoodleIdKind;
+  value: string;
+}
+
 export interface StudentRow extends Student {
   /** The student's current group (first active one); '' when not in a group. */
   groupId: string;
+  /** The student's account on the school's Moodle, when the teacher linked it. */
+  moodle?: MoodleLink | null;
 }
 
 export interface NewGroupInput {
@@ -26,6 +36,8 @@ export interface StudentInput {
   parentPhone?: string;
   studentPhone?: string;
   parentApproval?: boolean;
+  /** null removes the link. */
+  moodle?: MoodleLink | null;
 }
 
 export interface AssessmentRow extends Exam {
