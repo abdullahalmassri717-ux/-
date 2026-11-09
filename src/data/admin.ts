@@ -117,6 +117,23 @@ export interface GradingQuality {
   byModel: { model: string; runs: number; costUsd: number }[];
   byDay: { day: string; runs: number; costUsd: number }[];
   bySubject: { subject: string; answers: number; edited: number }[];
+  /** Real AI grading cost per organization, to compare with what it pays. */
+  byOrg: OrgGradingCost[];
+  /** Dollar to shekel rate from platform settings (AI is billed in dollars). */
+  usdToIls: number;
+}
+
+export interface OrgGradingCost {
+  orgId: string;
+  name: string;
+  kind: string;
+  papers: number;
+  pages: number;
+  escalated: number;
+  costUsd: number;
+  activeStudents: number;
+  /** Invoiced to the organization in the same period (in the platform currency). */
+  billed: number;
 }
 
 export interface NewOrgInput {
@@ -399,8 +416,13 @@ function realApi(): AdminApi {
       if (error) fail(error, 'تعذّر حفظ الباقة.');
     },
     async gradingQuality(days) {
-      const { data, error } = await db.rpc('admin_grading_quality', { p_days: days });
+      const [{ data, error }, byOrgRes] = await Promise.all([
+        db.rpc('admin_grading_quality', { p_days: days }),
+        db.rpc('admin_grading_cost_by_org', { p_days: days }),
+      ]);
       if (error) fail(error, 'تعذّر تحميل بيانات الجودة.');
+      if (byOrgRes.error) fail(byOrgRes.error, 'تعذّر تحميل تكلفة الجهات.');
+      const o = (byOrgRes.data ?? {}) as { usd_to_ils?: number; orgs?: Record<string, unknown>[] };
       const d = (data ?? {}) as Record<string, unknown>;
       const n = (k: string) => Number(d[k] ?? 0);
       return {
@@ -415,6 +437,18 @@ function realApi(): AdminApi {
         byModel: ((d.by_model ?? []) as { model: string; runs: number; cost_usd: number }[]).map((x) => ({ model: x.model, runs: x.runs, costUsd: Number(x.cost_usd) })),
         byDay: ((d.by_day ?? []) as { day: string; runs: number; cost_usd: number }[]).map((x) => ({ day: x.day, runs: x.runs, costUsd: Number(x.cost_usd) })),
         bySubject: (d.by_subject ?? []) as GradingQuality['bySubject'],
+        usdToIls: Number(o.usd_to_ils ?? 3.7),
+        byOrg: (o.orgs ?? []).map((x) => ({
+          orgId: String(x.org_id),
+          name: String(x.name ?? ''),
+          kind: String(x.kind ?? ''),
+          papers: Number(x.papers ?? 0),
+          pages: Number(x.pages ?? 0),
+          escalated: Number(x.escalated ?? 0),
+          costUsd: Number(x.cost_usd ?? 0),
+          activeStudents: Number(x.active_students ?? 0),
+          billed: Number(x.billed ?? 0),
+        })),
       };
     },
   };
@@ -697,6 +731,11 @@ function demoApi(): AdminApi {
         bySubject: [
           { subject: 'الرياضيات', answers: 2400, edited: 96 },
           { subject: 'اللغة الإنجليزية', answers: 1490, edited: 92 },
+        ],
+        usdToIls: 3.7,
+        byOrg: [
+          { orgId: 'o1', name: 'مدرسة النور الخاصة', kind: 'school', papers: 290, pages: 560, escalated: 25, costUsd: 6.9, activeStudents: 180, billed: 4500 },
+          { orgId: 'o2', name: 'أ. محمد سالم', kind: 'individual_teacher', papers: 122, pages: 230, escalated: 12, costUsd: 2.94, activeStudents: 55, billed: 275 },
         ],
       }),
   };

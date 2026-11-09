@@ -163,7 +163,7 @@ export async function gradeSubmission(
         ai_confidence: r.unreadable ? 0.2 : CONFIDENCE_VALUE[r.confidence],
         ai_criteria: r.criteria.map((c) => ({ criterion: c.criterion, met: c.met, points: c.pointsAwarded })),
         ai_feedback: { forStudent: r.feedbackForStudent, unreadable: r.unreadable },
-        ai_model: result.model,
+        ai_model: r.model ?? result.model,
         graded_at: now,
       };
       const reviewedId = reviewed.get(q.id);
@@ -191,7 +191,7 @@ export async function gradeSubmission(
       model: result.model,
       attempts: result.attempts,
       cost_usd: result.totalCostUsd,
-      escalated: result.attempts.length > 1,
+      escalated: result.escalatedQuestions.length > 0,
     });
     return { ok: true, status };
   } catch (error) {
