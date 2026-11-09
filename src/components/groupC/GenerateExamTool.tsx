@@ -58,7 +58,10 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
     return null;
   }, [curriculaQ.data, subjectId]);
   const allLessons = useMemo(
-    () => (subject?.units ?? []).flatMap((u) => u.lessons.map((l) => ({ id: l.id, title: l.title, outcome: l.learningOutcomes?.[0] ?? l.outcomes?.[0] ?? '' }))),
+    () =>
+      (subject?.units ?? []).flatMap((u) =>
+        u.lessons.map((l) => ({ id: l.id, title: l.title, unitId: u.id, unitTitle: u.title, outcome: l.learningOutcomes?.[0] ?? l.outcomes?.[0] ?? '' })),
+      ),
     [subject],
   );
   const lessonTitle = (id: string | null) => allLessons.find((l) => l.id === id)?.title ?? 'غير محدد';
@@ -96,6 +99,19 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
 
   const toggleLesson = (id: string) =>
     setSelectedLessons((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  // Midterm / final: pick whole units at once.
+  const visibleUnits = useMemo(() => {
+    const units: { id: string; title: string; lessons: typeof visibleLessons }[] = [];
+    for (const l of visibleLessons) {
+      const last = units[units.length - 1];
+      if (last?.id === l.unitId) last.lessons.push(l);
+      else units.push({ id: l.unitId, title: l.unitTitle, lessons: [l] });
+    }
+    return units;
+  }, [visibleLessons]);
+  const setUnitSelected = (ids: string[], on: boolean) =>
+    setSelectedLessons((prev) => (on ? [...new Set([...prev, ...ids])] : prev.filter((x) => !ids.includes(x))));
+  const taughtIds = allLessons.filter((l) => taught[l.id]).map((l) => l.id);
 
   const handleGenerate = async () => {
     if (!group || !subjectId) return notify('اختر مجموعة مرتبطة بمادة أولاً');
@@ -275,9 +291,9 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
               <input
                 type="number"
                 min={1}
-                max={15}
+                max={25}
                 value={qCount}
-                onChange={(e) => setQCount(Math.min(15, Math.max(1, Number(e.target.value) || 1)))}
+                onChange={(e) => setQCount(Math.min(25, Math.max(1, Number(e.target.value) || 1)))}
                 className="w-full p-2 border border-slate-300 rounded-lg"
               />
             </label>
@@ -306,14 +322,37 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
                 <span className="text-xs font-bold text-slate-700">الدروس:</span>
                 <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold">{selectedLessons.length} مختارة</span>
               </div>
-              {!scope && <button
-                type="button"
-                onClick={() => setShowAllLessons(!showAllLessons)}
-                className="text-xs text-[#1E3A5F] hover:underline font-bold cursor-pointer"
-              >
-                {showAllLessons ? 'الدروس المشروحة فقط' : 'أظهر كل دروس المادة'}
-              </button>}
+              {!scope && (
+                <div className="flex flex-wrap items-center gap-3">
+                  {taughtIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLessons(taughtIds)}
+                      className="text-xs text-emerald-700 hover:underline font-bold cursor-pointer"
+                    >
+                      كل الدروس المشروحة ({taughtIds.length})
+                    </button>
+                  )}
+                  {selectedLessons.length > 0 && (
+                    <button type="button" onClick={() => setSelectedLessons([])} className="text-xs text-slate-500 hover:underline font-bold cursor-pointer">
+                      إلغاء الاختيار
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowAllLessons(!showAllLessons)}
+                    className="text-xs text-[#1E3A5F] hover:underline font-bold cursor-pointer"
+                  >
+                    {showAllLessons ? 'الدروس المشروحة فقط' : 'أظهر كل دروس المادة'}
+                  </button>
+                </div>
+              )}
             </div>
+            {selectedLessons.length > 40 && (
+              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-2">
+                اخترت {selectedLessons.length} درساً. الحد الأقصى 40 درساً في الامتحان الواحد، فقلّل الاختيار قليلاً.
+              </p>
+            )}
             {!visibleLessons.length && scope ? (
               <div className="p-4 border border-dashed border-slate-300 rounded-xl text-xs text-slate-500 text-center">
                 {curriculaQ.loading ? 'جاري تحميل الدرس...' : 'لم نجد هذا الدرس في مادة المجموعة. ارجع إلى «وين وصلنا» واختره من جديد.'}
@@ -326,28 +365,58 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-64 overflow-y-auto p-1 border border-slate-200 rounded-xl">
-                {visibleLessons.map((lesson) => {
-                  const isTaught = !!taught[lesson.id];
-                  const isSelected = selectedLessons.includes(lesson.id);
+              <div className="max-h-96 overflow-y-auto p-1 border border-slate-200 rounded-xl space-y-3">
+                {visibleUnits.map((unit) => {
+                  const ids = unit.lessons.map((l) => l.id);
+                  const picked = ids.filter((id) => selectedLessons.includes(id)).length;
+                  const all = picked === ids.length;
                   return (
-                    <label
-                      key={lesson.id}
-                      className={`p-3 rounded-xl border text-xs cursor-pointer transition-all flex items-center justify-between gap-2 ${
-                        isSelected ? 'border-[#1E3A5F] bg-blue-50/50' : 'border-slate-200 bg-white hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <input type="checkbox" checked={isSelected} onChange={() => toggleLesson(lesson.id)} className="rounded text-[#1E3A5F] shrink-0" />
-                        <div className="min-w-0">
-                          <span className="font-bold text-slate-900 block">{lesson.title}</span>
-                          {lesson.outcome && <span className="text-[10px] text-slate-400 block truncate">{lesson.outcome}</span>}
-                        </div>
+                    <div key={unit.id} className="space-y-2">
+                      {(visibleUnits.length > 1 || ids.length > 1) && (
+                        <label className="flex items-center justify-between gap-2 px-2 pt-1 text-xs cursor-pointer">
+                          <span className="flex items-center gap-2 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={all}
+                              ref={(el) => {
+                                if (el) el.indeterminate = picked > 0 && !all;
+                              }}
+                              onChange={() => setUnitSelected(ids, !all)}
+                              className="rounded text-[#1E3A5F] shrink-0"
+                            />
+                            <span className="font-extrabold text-[#1E3A5F] truncate">{unit.title || 'بدون وحدة'}</span>
+                          </span>
+                          <span className="text-[10px] text-slate-500 shrink-0">
+                            {picked}/{ids.length} · {all ? 'الوحدة كاملة' : 'اختر الوحدة كاملة'}
+                          </span>
+                        </label>
+                      )}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {unit.lessons.map((lesson) => {
+                          const isTaught = !!taught[lesson.id];
+                          const isSelected = selectedLessons.includes(lesson.id);
+                          return (
+                            <label
+                              key={lesson.id}
+                              className={`p-3 rounded-xl border text-xs cursor-pointer transition-all flex items-center justify-between gap-2 ${
+                                isSelected ? 'border-[#1E3A5F] bg-blue-50/50' : 'border-slate-200 bg-white hover:bg-slate-50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <input type="checkbox" checked={isSelected} onChange={() => toggleLesson(lesson.id)} className="rounded text-[#1E3A5F] shrink-0" />
+                                <div className="min-w-0">
+                                  <span className="font-bold text-slate-900 block">{lesson.title}</span>
+                                  {lesson.outcome && <span className="text-[10px] text-slate-400 block truncate">{lesson.outcome}</span>}
+                                </div>
+                              </div>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${isTaught ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>
+                                {isTaught ? 'مشروح ✓' : 'لم يُشرح'}
+                              </span>
+                            </label>
+                          );
+                        })}
                       </div>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${isTaught ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>
-                        {isTaught ? 'مشروح ✓' : 'لم يُشرح'}
-                      </span>
-                    </label>
+                    </div>
                   );
                 })}
               </div>
@@ -356,7 +425,7 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
 
           <button
             type="button"
-            disabled={isGenerating || !selectedLessons.length}
+            disabled={isGenerating || !selectedLessons.length || selectedLessons.length > 40}
             onClick={handleGenerate}
             className="w-full bg-[#1E3A5F] hover:bg-[#152a45] text-white py-3 rounded-xl font-bold text-xs transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
