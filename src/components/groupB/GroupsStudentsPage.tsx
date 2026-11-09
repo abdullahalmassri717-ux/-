@@ -23,20 +23,13 @@ import {
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
 import { rowsFromFile } from '../../data/curriculumImport';
+import { classesIn, parseStudentTable, textToRows } from '../../lib/studentImport';
 
 interface GroupsStudentsPageProps {
   onNavigate: (screen: ScreenId) => void;
   onSelectStudent: (studentId: string) => void;
 }
 
-/** Reads rows pasted from Excel (tab-separated) or a CSV file: name, parent phone, student phone. */
-function parseStudentRows(text: string, groupId: string): StudentInput[] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.split(/\t|,|؛|;/).map((c) => c.trim().replace(/^"|"$/g, '')))
-    .filter((cells) => cells[0] && !/اسم|name/i.test(cells[0]))
-    .map((cells) => ({ name: cells[0], parentPhone: cells[1] ?? '', studentPhone: cells[2] ?? '', groupId }));
-}
 
 /** Compares names the way people type them: spaces, hamza forms, taa marbuta and alef maqsura don't matter. */
 const nameKey = (name: string) =>
@@ -75,6 +68,9 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   const [copyFromGroupId, setCopyFromGroupId] = useState('');
   // Import form
   const [importGroupId, setImportGroupId] = useState('');
+  // When the file holds several classes, one class is imported at a time into its own group.
+  const [importClass, setImportClass] = useState('');
+  const [importedClasses, setImportedClasses] = useState<string[]>([]);
   const [importText, setImportText] = useState('');
   const [linkExisting, setLinkExisting] = useState(true);
 
@@ -156,6 +152,8 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   const openImport = () => {
     setImportGroupId(defaultGroupId);
     setImportText('');
+    setImportClass('');
+    setImportedClasses([]);
     setLinkExisting(true);
     setShowExcelModal(true);
   };
@@ -179,6 +177,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
       });
       groupsQ.setData((prev) => [...(prev ?? []), group]);
       setSelectedGroup(group.id);
+      if (showExcelModal) setImportGroupId(group.id);
       setShowAddGroupModal(false);
       setNewGroupName('');
       setNewGroupSchedule('');
@@ -296,7 +295,19 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
     }
   };
 
-  const importRows = parseStudentRows(importText, importGroupId);
+  const parsedImport = useMemo(() => parseStudentTable(textToRows(importText)), [importText]);
+  const importClasses = useMemo(() => classesIn(parsedImport), [parsedImport]);
+  const multiClass = importClasses.length > 1;
+  // A new file picks its first class not imported yet.
+  useEffect(() => {
+    if (!multiClass) return setImportClass('');
+    if (!importClasses.some((c) => c.label === importClass)) {
+      setImportClass((importClasses.find((c) => !importedClasses.includes(c.label)) ?? importClasses[0]).label);
+    }
+  }, [importClasses]);
+  const importRows: StudentInput[] = parsedImport
+    .filter((r) => !multiClass || r.classLabel === importClass)
+    .map((r) => ({ name: r.name, parentPhone: r.parentPhone, studentPhone: r.studentPhone, groupId: importGroupId }));
   // Names that match a saved student: link them to that same student (same code, billed once).
   const studentsByName = useMemo(() => {
     const m = new Map<string, StudentRow[]>();
@@ -314,7 +325,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
       return;
     }
     if (!importRows.length) {
-      notify('الصق أسماء الطلاب أولاً، اسم كل طالب في سطر');
+      notify('ارفع ملف Excel أو الصق أسماء الطلاب أولاً');
       return;
     }
     setSaving(true);
@@ -328,7 +339,16 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
           ? `تمت إضافة ${n} طالباً جديداً، وربط ${linked.length} طالباً موجوداً مسبقاً بنفس رموزهم`
           : `تم استيراد ${n} طالباً بنجاح`,
       );
-      setShowExcelModal(false);
+      // Several classes in the file: stay open on the next class, so it goes into its own group.
+      const done = [...importedClasses, importClass];
+      const next = multiClass ? importClasses.find((c) => !done.includes(c.label)) : undefined;
+      if (next) {
+        setImportedClasses(done);
+        setImportClass(next.label);
+        setImportGroupId('');
+      } else {
+        setShowExcelModal(false);
+      }
       studentsQ.reload();
       groupsQ.reload();
     } catch (e) {
@@ -915,27 +935,72 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
               <span>استيراد قائمة الطلاب من Excel</span>
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed">
-              انسخ من Excel ثلاثة أعمدة بهذا الترتيب: اسم الطالب، رقم ولي الأمر، رقم الطالب (اختياري)، ثم الصقها هنا. أو ارفع ملف CSV.
+              ارفع ملف Excel فيه أسماء الطلاب، أو انسخ الأعمدة من Excel والصقها هنا. نعرف عمود الاسم وعمود الرقم تلقائياً مهما كان ترتيب الأعمدة.
             </p>
-            <div className="text-xs">
-              <label className="block text-slate-700 font-bold mb-1">المجموعة</label>
-              <select value={importGroupId} onChange={(e) => setImportGroupId(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg">
-                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
-            </div>
+            <label className="block border-2 border-dashed border-emerald-300 rounded-xl p-3 text-center bg-emerald-50 cursor-pointer text-xs text-emerald-800 font-bold">
+              <input type="file" accept=".csv,.txt,.xlsx,.xls" className="hidden" onChange={(e) => { void handleImportFile(e.target.files?.[0]); e.target.value = ''; }} />
+              اضغط لاختيار ملف Excel أو CSV
+            </label>
             <textarea
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
-              rows={6}
-              placeholder={'أحمد محمود المصري\t0599112233\nسارة خالد النجار\t0598223344'}
+              rows={4}
+              placeholder={'أو الصق هنا، مثلاً:\nأحمد محمود المصري\t0599112233\nسارة خالد النجار\t0598223344'}
               className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono"
             />
-            <label className="block border-2 border-dashed border-slate-300 rounded-xl p-3 text-center bg-slate-50 cursor-pointer text-xs text-slate-600">
-              <input type="file" accept=".csv,.txt,.xlsx,.xls" className="hidden" onChange={(e) => handleImportFile(e.target.files?.[0])} />
-              أو اضغط لاختيار ملف Excel أو CSV
-            </label>
+
+            {multiClass && (
+              <div className="text-xs space-y-1.5 bg-blue-50/60 border border-blue-200 rounded-xl p-2.5">
+                <p className="font-bold text-slate-800">ملفك فيه {importClasses.length} صفوف. نستورد كل صف لمجموعته، صفاً صفاً:</p>
+                <select value={importClass} onChange={(e) => setImportClass(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg bg-white">
+                  {importClasses.map((c) => (
+                    <option key={c.label} value={c.label}>
+                      {importedClasses.includes(c.label) ? '✓ ' : ''}{c.label} ({c.count} طالب)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="text-xs space-y-1.5">
+              <label className="block text-slate-700 font-bold">
+                {multiClass ? `إلى أي مجموعة يدخل طلاب «${importClass}»؟` : 'إلى أي مجموعة يدخل هؤلاء الطلاب؟'}
+              </label>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                المجموعة هي الصف أو الشعبة التي تدرّسها مع المادة، مثل «سابع أ – رياضيات». منها تعرف المنصة منهاج الطلاب وتجمع درجاتهم.
+              </p>
+              {groups.length === 0 ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 space-y-2">
+                  <p className="text-amber-900 font-bold">ما عندك أي مجموعة بعد. أنشئ مجموعة أولاً، ثم نكمل الاستيراد من هنا.</p>
+                  <button type="button" onClick={() => setShowAddGroupModal(true)} className="w-full bg-[#1E3A5F] text-white py-2 rounded-lg font-bold cursor-pointer">
+                    أنشئ مجموعة الآن
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <select value={importGroupId} onChange={(e) => setImportGroupId(e.target.value)} className="flex-1 min-w-0 p-2 border border-slate-300 rounded-lg">
+                    <option value="">اختر المجموعة…</option>
+                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </select>
+                  <button type="button" onClick={() => setShowAddGroupModal(true)} className="shrink-0 border border-slate-300 px-2.5 py-2 rounded-lg font-bold text-slate-700 cursor-pointer">
+                    + مجموعة جديدة
+                  </button>
+                </div>
+              )}
+            </div>
+
             {importRows.length > 0 && (
-              <p className="text-xs text-emerald-700 font-bold">جاهز لاستيراد {importRows.length} طالباً</p>
+              <div className="text-xs space-y-1">
+                <p className="text-emerald-700 font-bold">جاهز لاستيراد {importRows.length} طالباً. أول الأسماء كما قرأناها:</p>
+                <ul className="bg-slate-50 border border-slate-200 rounded-lg p-2 space-y-0.5 text-slate-700">
+                  {importRows.slice(0, 3).map((r, i) => (
+                    <li key={i} className="flex justify-between gap-2">
+                      <span className="truncate">{r.name}</span>
+                      <span dir="ltr" className="text-slate-500 shrink-0">{r.parentPhone || 'بدون رقم'}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             {importMatched.length > 0 && (
               <label className="flex items-start gap-2 text-xs text-slate-700 bg-blue-50/60 border border-blue-200 rounded-xl p-2.5 cursor-pointer">

@@ -37,3 +37,21 @@ test('teacher imports students from an Excel file', async ({ page }) => {
   await expect(toast(page, /تم استيراد 2 طالباً|تمت إضافة 2/)).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test('an Excel file with stage and grade columns is imported one class at a time', async ({ page }) => {
+  const errors = watchErrors(page);
+  await open(page, '/app/groups');
+  await page.getByRole('button', { name: 'استيراد من Excel' }).click();
+  await page.locator('input[type=file][accept*=".xlsx"]').setInputFiles(fixture('students-by-class.xlsx'));
+  await expect(page.getByText('ملفك فيه 2 صفوف')).toBeVisible();
+  await expect(page.getByText('جاهز لاستيراد 2 طالباً')).toBeVisible();
+  // The name column is found even though it is the third column.
+  await expect(page.locator('li', { hasText: 'طارق نبيل عاشور' })).toBeVisible();
+  await page.locator('select').filter({ hasText: 'اختر المجموعة' }).selectOption({ index: 1 });
+  await page.getByRole('button', { name: 'بدء الاستيراد' }).click();
+  await expect(toast(page, /تم استيراد 2 طالباً/)).toBeVisible();
+  // The dialog moves on to the next class.
+  await expect(page.getByText('جاهز لاستيراد 1 طالباً')).toBeVisible();
+  await expect(page.locator('li', { hasText: 'فاطمة سعيد الدحدوح' })).toBeVisible();
+  expect(errors).toEqual([]);
+});
