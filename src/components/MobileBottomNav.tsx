@@ -56,7 +56,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     if (currentRole === 'school_principal' || currentRole === 'school_admin') {
       return [
         { id: 'D1' as ScreenId, label: 'لوحة المدرسة', icon: Building2 },
-        { id: 'D2' as ScreenId, label: 'الصفوف 1-9', icon: GraduationCap },
+        { id: 'D2' as ScreenId, label: 'المعلمون', icon: GraduationCap },
         { id: 'D3' as ScreenId, label: 'التقرير', icon: CheckSquare },
         { label: 'القائمة', icon: Menu, isMenuToggle: true },
       ];

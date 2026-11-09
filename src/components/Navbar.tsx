@@ -246,17 +246,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <div
                           key={ent.id}
                           onClick={() => {
+                            // The app opens the right area for this organization
+                            // (school dashboard for owners of a school or centre).
                             onSwitchEntity?.(ent.id);
-                            if (ent.type === 'school' && ent.role === 'teacher') {
-                              onRoleChange?.('teacher');
-                              onNavigate('B1');
-                            } else if (ent.type === 'school' && ent.role === 'owner') {
-                              onRoleChange?.('school_principal');
-                              onNavigate('D1');
-                            } else {
-                              onRoleChange?.('teacher');
-                              onNavigate('B1');
-                            }
                             setShowEntityDropdown(false);
                           }}
                           className={`p-2.5 rounded-xl flex items-center justify-between cursor-pointer transition-colors ${

@@ -46,7 +46,8 @@ interface SidebarProps {
 
 export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity): NavItem[] => {
   if (currentRole === 'teacher') {
-    const isSchoolTeacher = activeEntity?.type === 'school' && activeEntity.role === 'teacher';
+    // A teacher who is a member (not the owner) of a school or centre.
+    const isOrgTeacher = activeEntity?.role === 'teacher';
 
     const items: NavItem[] = [
       { id: 'B1' as ScreenId, label: 'لوحة المتابعة الرئيسية', icon: LayoutDashboard },
@@ -62,8 +63,8 @@ export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity): N
       { id: 'C_HUB' as ScreenId, label: 'أدوات الذكاء الاصطناعي', icon: Sparkles },
     ];
 
-    // معلمو المدرسة لا يرون إطلاقاً الاشتراك والفواتير (لا في القائمة ولا في أي مكان)
-    if (!isSchoolTeacher) {
+    // معلمو المدرسة أو المركز لا يرون إطلاقاً الاشتراك والفواتير (لا في القائمة ولا في أي مكان)
+    if (!isOrgTeacher) {
       items.push({
         id: 'B11' as ScreenId,
         label: 'رسوم الطلاب والمالية',
