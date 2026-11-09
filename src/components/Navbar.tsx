@@ -52,7 +52,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   if (currentRole === 'visitor') {
     return (
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3 md:gap-6">
           {/* Brand Logo with the official logo */}
           <div 
             onClick={() => onNavigate('A1')}
@@ -61,7 +61,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <img
               src="/dequa-logo.png"
               alt="منصة دقة - DEQUA"
-              className="h-10 sm:h-12 w-auto object-contain"
+              className="h-9 sm:h-12 w-auto object-contain"
             />
           </div>
 
@@ -124,16 +124,20 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               الدعم الفني
             </button>
-            <button 
-              onClick={() => onNavigate('A4')}
-              className="hover:text-[#1E3A5F] transition-colors whitespace-nowrap shrink-0 cursor-pointer text-slate-800 font-bold"
-            >
-              تسجيل الدخول
-            </button>
           </nav>
 
           {/* Primary Action Button */}
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => onNavigate('A4')}
+              className={`border px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 active:scale-95 ${
+                currentScreen === 'A4'
+                  ? 'bg-[#E8F0F8] border-blue-300 text-[#1E3A5F]'
+                  : 'bg-white hover:bg-slate-50 border-slate-300 text-[#1E3A5F]'
+              }`}
+            >
+              تسجيل الدخول
+            </button>
             <button
               onClick={() => onNavigate('A3')}
               className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5 active:scale-95"
