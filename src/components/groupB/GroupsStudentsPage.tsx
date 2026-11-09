@@ -22,6 +22,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
+import { rowsFromFile } from '../../data/curriculumImport';
 
 interface GroupsStudentsPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -339,11 +340,13 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
 
   const handleImportFile = async (file: File | undefined) => {
     if (!file) return;
-    if (/\.xlsx?$/i.test(file.name)) {
-      notify('احفظ ملف Excel بصيغة CSV أولاً، أو انسخ الأعمدة والصقها هنا');
-      return;
+    try {
+      // Excel (.xlsx) or CSV: turn the rows back into the same tab-separated text as a paste.
+      const rows = await rowsFromFile(file);
+      setImportText(rows.map((r) => r.join('\t')).join('\n'));
+    } catch (e) {
+      notify(errorMessage(e, 'تعذّرت قراءة الملف. احفظه بصيغة ‎.xlsx‎ أو CSV وجرّب مرة ثانية.'));
     }
-    setImportText(await file.text());
   };
 
   return (
@@ -929,7 +932,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
             />
             <label className="block border-2 border-dashed border-slate-300 rounded-xl p-3 text-center bg-slate-50 cursor-pointer text-xs text-slate-600">
               <input type="file" accept=".csv,.txt,.xlsx,.xls" className="hidden" onChange={(e) => handleImportFile(e.target.files?.[0])} />
-              أو اضغط لاختيار ملف CSV
+              أو اضغط لاختيار ملف Excel أو CSV
             </label>
             {importRows.length > 0 && (
               <p className="text-xs text-emerald-700 font-bold">جاهز لاستيراد {importRows.length} طالباً</p>
