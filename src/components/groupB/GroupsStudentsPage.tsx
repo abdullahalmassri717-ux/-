@@ -37,6 +37,15 @@ function parseStudentRows(text: string, groupId: string): StudentInput[] {
     .map((cells) => ({ name: cells[0], parentPhone: cells[1] ?? '', studentPhone: cells[2] ?? '', groupId }));
 }
 
+/** Compares names the way people type them: spaces, hamza forms, taa marbuta and alef maqsura don't matter. */
+const nameKey = (name: string) =>
+  name
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي');
+
 export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   onNavigate,
   onSelectStudent,
@@ -59,14 +68,19 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   const [newParentPhone, setNewParentPhone] = useState('');
   const [newStudentPhone, setNewStudentPhone] = useState('');
   const [newParentApproval, setNewParentApproval] = useState(false);
+  // «طالب موجود»: put a student who is already saved (e.g. in another subject's group) in this group too.
+  const [addMode, setAddMode] = useState<'new' | 'existing'>('new');
+  const [existingQuery, setExistingQuery] = useState('');
+  const [copyFromGroupId, setCopyFromGroupId] = useState('');
   // Import form
   const [importGroupId, setImportGroupId] = useState('');
   const [importText, setImportText] = useState('');
+  const [linkExisting, setLinkExisting] = useState(true);
 
   // Edit / disable / delete a student
   const [editing, setEditing] = useState<StudentRow | null>(null);
   const [editName, setEditName] = useState('');
-  const [editGroupId, setEditGroupId] = useState('');
+  const [editGroupIds, setEditGroupIds] = useState<string[]>([]);
   const [editParentPhone, setEditParentPhone] = useState('');
   const [editStudentPhone, setEditStudentPhone] = useState('');
   const [editApproval, setEditApproval] = useState(false);
@@ -95,20 +109,53 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   const currentGroupObj = groups.find(g => g.id === selectedGroup);
 
   const filteredStudents = students.filter((st) => {
-    const matchesGroup = selectedGroup === 'all' || st.groupId === selectedGroup;
+    const matchesGroup = selectedGroup === 'all' || st.groupIds.includes(selectedGroup);
     const matchesSearch = st.name.includes(searchQuery) || st.studentCode.includes(searchQuery) || st.parentPhone.includes(searchQuery);
     return matchesGroup && matchesSearch;
   });
 
   const defaultGroupId = currentGroupObj?.id ?? groups[0]?.id ?? '';
 
+  const groupName = (id: string) => groups.find((g) => g.id === id)?.name.split('(')[0].trim() ?? '';
+  const groupsLabel = (st: StudentRow) => st.groupIds.map(groupName).filter(Boolean).join('، ') || st.group.split('(')[0];
+
   const openAddStudent = () => {
     setNewStudentGroupId(defaultGroupId);
+    setAddMode('new');
+    setExistingQuery('');
+    setCopyFromGroupId('');
     setShowAddModal(true);
+  };
+
+  // Students already saved but not yet in the chosen group.
+  const existingMatches = useMemo(() => {
+    const q = nameKey(existingQuery);
+    return students
+      .filter((st) => !st.groupIds.includes(newStudentGroupId))
+      .filter((st) => !q || nameKey(st.name).includes(q) || st.studentCode.includes(q))
+      .slice(0, 8);
+  }, [students, existingQuery, newStudentGroupId]);
+  const copySource = students.filter((st) => copyFromGroupId && st.groupIds.includes(copyFromGroupId) && !st.groupIds.includes(newStudentGroupId));
+
+  const addExisting = async (ids: string[], message: string) => {
+    if (!newStudentGroupId) return notify('اختر المجموعة أولاً');
+    if (!ids.length) return notify('لا يوجد طلاب جدد لإضافتهم لهذه المجموعة');
+    setSaving(true);
+    try {
+      await store.addStudentsToGroup(newStudentGroupId, ids);
+      notify(message, 'success');
+      studentsQ.reload();
+      groupsQ.reload();
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
   };
   const openImport = () => {
     setImportGroupId(defaultGroupId);
     setImportText('');
+    setLinkExisting(true);
     setShowExcelModal(true);
   };
 
@@ -178,7 +225,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   const openEdit = (st: StudentRow) => {
     setEditing(st);
     setEditName(st.name);
-    setEditGroupId(st.groupId);
+    setEditGroupIds(st.groupIds);
     setEditParentPhone(st.parentPhone);
     setEditStudentPhone(st.studentPhone ?? '');
     setEditApproval(st.parentApproval);
@@ -203,8 +250,10 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
         parentPhone: editParentPhone,
         studentPhone: editStudentPhone,
         parentApproval: editApproval,
-        ...(editGroupId !== editing.groupId ? { groupId: editGroupId } : {}),
       });
+      const sameGroups =
+        editGroupIds.length === editing.groupIds.length && editGroupIds.every((g) => editing.groupIds.includes(g));
+      if (!sameGroups) await store.setStudentGroups(editing.id, editGroupIds);
       notify('تم حفظ بيانات الطالب', 'success');
       setEditing(null);
       reloadAll();
@@ -247,6 +296,17 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   };
 
   const importRows = parseStudentRows(importText, importGroupId);
+  // Names that match a saved student: link them to that same student (same code, billed once).
+  const studentsByName = useMemo(() => {
+    const m = new Map<string, StudentRow[]>();
+    for (const st of students) m.set(nameKey(st.name), [...(m.get(nameKey(st.name)) ?? []), st]);
+    return m;
+  }, [students]);
+  const importMatched = importRows
+    .map((r) => studentsByName.get(nameKey(r.name)))
+    .filter((list): list is StudentRow[] => !!list && list.length === 1)
+    .map((list) => list[0]);
+  const matchedKeys = new Set(importMatched.map((st) => nameKey(st.name)));
   const handleImport = async () => {
     if (!importGroupId) {
       notify('اختر المجموعة أولاً');
@@ -258,8 +318,15 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
     }
     setSaving(true);
     try {
-      const n = await store.createStudents(importRows);
-      notify(`تم استيراد ${n} طالباً بنجاح`);
+      const linked = linkExisting ? importMatched.map((st) => st.id) : [];
+      const fresh = linkExisting ? importRows.filter((r) => !matchedKeys.has(nameKey(r.name))) : importRows;
+      const n = fresh.length ? await store.createStudents(fresh) : 0;
+      if (linked.length) await store.addStudentsToGroup(importGroupId, linked);
+      notify(
+        linked.length
+          ? `تمت إضافة ${n} طالباً جديداً، وربط ${linked.length} طالباً موجوداً مسبقاً بنفس رموزهم`
+          : `تم استيراد ${n} طالباً بنجاح`,
+      );
       setShowExcelModal(false);
       studentsQ.reload();
       groupsQ.reload();
@@ -430,7 +497,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                     </span>
                   </div>
                 </td>
-                <td className="p-3.5 text-slate-600">{st.group.split('(')[0]}</td>
+                <td className="p-3.5 text-slate-600">{groupsLabel(st)}</td>
                 <td className="p-3.5">
                   <div className="flex items-center gap-1.5 font-mono text-slate-700 tabular-nums">
                     <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
@@ -516,7 +583,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <div>
                 <h3 className="font-bold text-slate-900 text-sm">{st.name}</h3>
-                <span className="text-[10px] text-slate-400 font-mono">رمز: {st.studentCode} · {st.group.split('(')[0]}</span>
+                <span className="text-[10px] text-slate-400 font-mono">رمز: {st.studentCode} · {groupsLabel(st)}</span>
               </div>
               <div className="text-left">
                 <span className={`font-black text-base tabular-nums ${
@@ -634,11 +701,24 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                 <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg" />
               </div>
               <div>
-                <label className="block text-slate-700 font-bold mb-1">المجموعة</label>
-                <select value={editGroupId} onChange={(e) => setEditGroupId(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg">
-                  {!editing.groupId && <option value="">بدون مجموعة</option>}
-                  {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
+                <label className="block text-slate-700 font-bold mb-1">المجموعات (المواد) التي يدرس فيها</label>
+                <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                  {groups.map((g) => {
+                    const on = editGroupIds.includes(g.id);
+                    return (
+                      <label key={g.id} className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => setEditGroupIds((prev) => (on ? prev.filter((x) => x !== g.id) : [...prev, g.id]))}
+                        />
+                        <span className="font-bold">{g.name}</span>
+                        {g.subjectName && <span className="text-slate-500">· {g.subjectName}</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">نفس الطالب ونفس رمزه في كل مجموعاته، ويُحسب في الاشتراك مرة واحدة.</p>
               </div>
               <div>
                 <label className="block text-slate-700 font-bold mb-1">رقم واتساب ولي الأمر</label>
@@ -698,7 +778,85 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 text-right space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="font-bold text-base text-[#1E3A5F]">إضافة طالب جديد للمجموعة</h3>
+            <h3 className="font-bold text-base text-[#1E3A5F]">إضافة طالب للمجموعة</h3>
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs">
+              <button
+                onClick={() => setAddMode('new')}
+                className={`flex-1 py-1.5 rounded-lg font-bold cursor-pointer ${addMode === 'new' ? 'bg-white text-[#1E3A5F] shadow-2xs' : 'text-slate-600'}`}
+              >
+                طالب جديد
+              </button>
+              <button
+                onClick={() => setAddMode('existing')}
+                className={`flex-1 py-1.5 rounded-lg font-bold cursor-pointer ${addMode === 'existing' ? 'bg-white text-[#1E3A5F] shadow-2xs' : 'text-slate-600'}`}
+              >
+                طالب موجود مسبقاً
+              </button>
+            </div>
+            {addMode === 'existing' ? (
+              <div className="space-y-3 text-xs">
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  للطالب المسجّل في مادة أخرى: يبقى نفس الطالب بنفس رمزه، ويُحسب في الاشتراك مرة واحدة.
+                </p>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">أضفه إلى المجموعة</label>
+                  <select value={newStudentGroupId} onChange={(e) => setNewStudentGroupId(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg">
+                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </select>
+                </div>
+                <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-3 space-y-2">
+                  <label className="block text-slate-700 font-bold">انسخ طلاب مجموعة أخرى (مثلاً نفس الشعبة في مادة ثانية)</label>
+                  <div className="flex items-center gap-2">
+                    <select value={copyFromGroupId} onChange={(e) => setCopyFromGroupId(e.target.value)} className="flex-1 min-w-0 p-2 border border-slate-300 rounded-lg bg-white">
+                      <option value="">اختر المجموعة</option>
+                      {groups.filter((g) => g.id !== newStudentGroupId).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    </select>
+                    <button
+                      disabled={saving || !copySource.length}
+                      onClick={() => addExisting(copySource.map((st) => st.id), `تمت إضافة ${copySource.length} طالباً بنفس رموزهم`)}
+                      className="shrink-0 bg-[#1E3A5F] text-white px-3 py-2 rounded-lg font-bold cursor-pointer disabled:opacity-50"
+                    >
+                      أضف ({copySource.length})
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">أو ابحث عن طالب واحد</label>
+                  <input
+                    type="text"
+                    value={existingQuery}
+                    onChange={(e) => setExistingQuery(e.target.value)}
+                    placeholder="اسم الطالب أو رمزه"
+                    className="w-full p-2 border border-slate-300 rounded-lg"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  {existingMatches.length === 0 ? (
+                    <p className="text-slate-500">لا يوجد طالب مطابق خارج هذه المجموعة.</p>
+                  ) : (
+                    existingMatches.map((st) => (
+                      <div key={st.id} className="flex items-center justify-between gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                        <div className="min-w-0">
+                          <span className="font-bold text-slate-900 block truncate">{st.name}</span>
+                          <span className="text-[10px] text-slate-500 font-mono">رمز: {st.studentCode}{st.groupIds.length ? ` · ${groupsLabel(st)}` : ''}</span>
+                        </div>
+                        <button
+                          disabled={saving}
+                          onClick={() => addExisting([st.id], `تمت إضافة ${st.name} للمجموعة`)}
+                          className="shrink-0 text-[#1E3A5F] bg-white border border-blue-200 px-2.5 py-1 rounded-lg font-bold cursor-pointer disabled:opacity-50"
+                        >
+                          إضافة
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <button onClick={() => setShowAddModal(false)} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg font-bold text-xs cursor-pointer">
+                  تم
+                </button>
+              </div>
+            ) : (
+            <>
             <div className="space-y-3 text-xs">
               <div>
                 <label className="block text-slate-700 font-bold mb-1">اسم الطالب</label>
@@ -739,6 +897,8 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                 إلغاء
               </button>
             </div>
+            </>
+            )}
           </div>
         </div>
       )}
@@ -773,6 +933,14 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
             </label>
             {importRows.length > 0 && (
               <p className="text-xs text-emerald-700 font-bold">جاهز لاستيراد {importRows.length} طالباً</p>
+            )}
+            {importMatched.length > 0 && (
+              <label className="flex items-start gap-2 text-xs text-slate-700 bg-blue-50/60 border border-blue-200 rounded-xl p-2.5 cursor-pointer">
+                <input type="checkbox" checked={linkExisting} onChange={(e) => setLinkExisting(e.target.checked)} className="mt-0.5" />
+                <span>
+                  {importMatched.length} من هذه الأسماء مسجّلون مسبقاً (في مادة أخرى). اربطهم بنفس الطالب ونفس رمزه بدل إنشاء طالب جديد، حتى يُحسبوا في الاشتراك مرة واحدة.
+                </span>
+              </label>
             )}
             <div className="flex items-center gap-2 pt-2">
               <button

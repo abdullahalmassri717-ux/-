@@ -18,6 +18,11 @@ export interface MoodleLink {
 export interface StudentRow extends Student {
   /** The student's current group (first active one); '' when not in a group. */
   groupId: string;
+  /**
+   * Every group the student is in now. In a school one student is in several
+   * groups (one per subject) and stays one student with one code and one bill.
+   */
+  groupIds: string[];
   /** The student's account on the school's Moodle, when the teacher linked it. */
   moodle?: MoodleLink | null;
 }
@@ -174,6 +179,10 @@ export interface DataStore extends BillingStore, SchoolStore, AiStore {
   createStudent(input: StudentInput): Promise<void>;
   createStudents(inputs: StudentInput[]): Promise<number>;
   updateStudent(id: string, input: Partial<StudentInput>): Promise<void>;
+  /** Puts existing students in a group too (they keep their other groups and code). Returns how many were added. */
+  addStudentsToGroup(groupId: string, studentIds: string[]): Promise<number>;
+  /** Sets exactly which groups the student is in (of the groups this user can see). */
+  setStudentGroups(studentId: string, groupIds: string[]): Promise<void>;
   /** «تعطيل»: the student stays saved but leaves lists, billing and the submission link. */
   archiveStudent(id: string): Promise<void>;
   /** Disabled students, so the teacher can turn them back on. */

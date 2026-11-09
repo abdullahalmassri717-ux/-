@@ -29,7 +29,7 @@ export const RemedialExercisesTool: React.FC<RemedialExercisesToolProps> = ({ on
     setGroupId(preset?.groupId || groups[0].id);
   }, [groups, groupId, studentsQ.data, studentId]);
   const group = groups.find((g) => g.id === groupId);
-  const students = (studentsQ.data ?? []).filter((s) => s.groupId === groupId);
+  const students = (studentsQ.data ?? []).filter((s) => s.groupIds.includes(groupId));
   useEffect(() => {
     if (studentsQ.data && groupId && !students.some((s) => s.id === studentId)) setStudentId(students[0]?.id ?? '');
   }, [students, studentId, studentsQ.data, groupId]);
