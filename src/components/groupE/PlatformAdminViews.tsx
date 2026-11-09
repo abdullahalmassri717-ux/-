@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ScreenId, SupportTicket } from '../../types';
-import { adminApi } from '../../data/admin';
+import { adminApi, type OrgGradingCost } from '../../data/admin';
 import { AdminOrgsTab } from './AdminOrgsTab';
 import { AdminFinanceTab } from './AdminFinanceTab';
 import { AdminPlansTab } from './AdminPlansTab';
 import { useAsync, Spinner, ErrorBox, Card, fmt, dateLabel, errText, KIND_LABEL, SUB_LABEL, ORG_STATUS } from './adminUi';
 import { supportApi } from '../../data/support';
-import { getPublicSetting, savePlatformSetting } from '../../lib/settings';
+import { getPublicSetting, savePlatformSetting, usePublicSetting } from '../../lib/settings';
 import { PLATFORM_CONFIG } from '../../mockData';
 import type { PaymentAccount } from '../../data/billing';
 import {
@@ -233,6 +233,76 @@ const QualityTab: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <OrgCostTable rows={d.byOrg} rate={d.usdToIls} days={days} />
+    </div>
+  );
+};
+
+/** Real AI cost per organization next to what it was invoiced, so the admin can see if a plan's price covers it. */
+const OrgCostTable: React.FC<{ rows: OrgGradingCost[]; rate: number; days: number }> = ({ rows, rate, days }) => {
+  const sym = usePublicSetting<{ symbol?: string }>('currency', { symbol: PLATFORM_CONFIG.currencySymbol }).symbol ?? '';
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-3 text-xs">
+      <div>
+        <h3 className="font-extrabold text-[#1E3A5F] text-sm">التكلفة الفعلية لكل جهة (آخر {days} يوماً)</h3>
+        <p className="text-slate-500 mt-1">
+          تكلفة الذكاء الاصطناعي محسوبة بسعر الدولار {fmt(rate, 2)} {sym} (تغيّره من «الإعدادات»). قارنها بما فوترته للجهة في نفس الفترة.
+        </p>
+      </div>
+      {!rows.length ? (
+        <p className="text-slate-500">لم تُصحَّح أوراق في هذه الفترة.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-right min-w-[640px]">
+            <thead className="bg-[#F7F8FA] text-slate-700 font-bold">
+              <tr>
+                <th className="p-2.5">الجهة</th>
+                <th className="p-2.5 text-center">أوراق / صفحات</th>
+                <th className="p-2.5 text-center">للنموذج الأقوى</th>
+                <th className="p-2.5 text-center">التكلفة</th>
+                <th className="p-2.5 text-center">لكل طالب نشط</th>
+                <th className="p-2.5 text-center">فوترنا لها</th>
+                <th className="p-2.5 text-center">نسبة التكلفة</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((r) => {
+                const cost = r.costUsd * rate;
+                const share = r.billed > 0 ? Math.round((cost / r.billed) * 100) : null;
+                return (
+                  <tr key={r.orgId}>
+                    <td className="p-2.5">
+                      <span className="font-bold text-slate-900">{r.name}</span>
+                      <span className="text-slate-500"> · {KIND_LABEL[r.kind as keyof typeof KIND_LABEL] ?? r.kind}</span>
+                    </td>
+                    <td className="p-2.5 text-center font-mono tabular-nums">
+                      {fmt(r.papers)} / {fmt(r.pages)}
+                    </td>
+                    <td className="p-2.5 text-center font-mono tabular-nums">{r.papers ? Math.round((r.escalated / r.papers) * 100) : 0}%</td>
+                    <td className="p-2.5 text-center font-mono tabular-nums font-bold">
+                      {fmt(cost, 2)} {sym}
+                    </td>
+                    <td className="p-2.5 text-center font-mono tabular-nums">
+                      {r.activeStudents ? `${fmt(cost / r.activeStudents, 2)} ${sym}` : '—'}
+                    </td>
+                    <td className="p-2.5 text-center font-mono tabular-nums">{r.billed ? `${fmt(r.billed)} ${sym}` : '—'}</td>
+                    <td className="p-2.5 text-center">
+                      {share === null ? (
+                        <span className="text-slate-400">—</span>
+                      ) : (
+                        <span className={`px-2 py-0.5 rounded-full font-bold ${share > 30 ? 'bg-red-100 text-red-800' : share > 15 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-50 text-emerald-800'}`}>
+                          {share}%
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };
@@ -361,6 +431,7 @@ const SettingsTab: React.FC = () => {
   const [support, setSupport] = useState('');
   const [trialDays, setTrialDays] = useState('14');
   const [currency, setCurrency] = useState({ code: PLATFORM_CONFIG.currencyCode, symbol: PLATFORM_CONFIG.currencySymbol, name: PLATFORM_CONFIG.currency });
+  const [usdRate, setUsdRate] = useState('3.7');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -369,7 +440,9 @@ const SettingsTab: React.FC = () => {
       getPublicSetting<{ whatsapp?: string }>('support'),
       getPublicSetting<{ days?: number }>('trial'),
       getPublicSetting<{ code: string; symbol: string; name: string }>('currency'),
-    ]).then(([a, s, t, c]) => {
+      getPublicSetting<{ usd_to_ils?: number }>('exchange'),
+    ]).then(([a, s, t, c, x]) => {
+      if (x?.usd_to_ils) setUsdRate(String(x.usd_to_ils));
       setAccounts(a?.accounts ?? []);
       setSupport(s?.whatsapp ?? '');
       if (t?.days) setTrialDays(String(t.days));
@@ -385,6 +458,7 @@ const SettingsTab: React.FC = () => {
       await savePlatformSetting('support', { whatsapp: support.replace(/[^\d+]/g, '') });
       await savePlatformSetting('trial', { days: Math.max(0, Number(trialDays) || 0) });
       await savePlatformSetting('currency', currency);
+      if (Number(usdRate) > 0) await savePlatformSetting('exchange', { usd_to_ils: Number(usdRate) }, false);
       notify('حُفظت الإعدادات.');
     } catch (e) {
       notify(errText(e, 'تعذّر حفظ الإعدادات.'));
@@ -438,6 +512,11 @@ const SettingsTab: React.FC = () => {
             <input value={currency.code} onChange={(e) => setCurrency({ ...currency, code: e.target.value.toUpperCase() })} dir="ltr" className="w-full p-2 border border-slate-300 rounded-lg font-mono" />
           </label>
         </div>
+        <label className="space-y-1">
+          <span className="font-bold">سعر الدولار بعملة المنصة</span>
+          <input type="number" min={0} step="0.01" value={usdRate} onChange={(e) => setUsdRate(e.target.value)} dir="ltr" className="w-full p-2 border border-slate-300 rounded-lg font-mono" />
+          <span className="block text-[11px] text-slate-500">تكلفة الذكاء الاصطناعي بالدولار. نستخدم هذا السعر لعرضها بعملتك في «جودة التصحيح».</span>
+        </label>
       </div>
 
       <button disabled={busy} onClick={save} className="bg-[#1E3A5F] text-white px-6 py-2.5 rounded-xl font-bold disabled:opacity-60">

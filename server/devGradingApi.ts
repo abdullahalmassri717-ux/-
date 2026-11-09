@@ -50,7 +50,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, env: Record<str
     const result = await gradePaper(new ClaudeGradingProvider(apiKey), gradingConfigFromEnv(env), input);
     console.log(
       `[grading] ${result.model} · ${result.totalScore}/${result.totalMaxScore} · $${result.totalCostUsd.toFixed(4)}` +
-        (result.attempts.length > 1 ? ' · escalated' : ''),
+        (result.escalatedQuestions.length ? ` · escalated q${result.escalatedQuestions.join(",")}` : ""),
     );
     send(res, 200, result);
   } catch (error) {

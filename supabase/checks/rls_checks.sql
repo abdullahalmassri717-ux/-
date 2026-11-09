@@ -146,6 +146,7 @@ rollback;
 begin;
 select tests.login('+970590000011');   -- أ. أحمد حلس
 set local role authenticated;
+select tests.throws('select public.admin_grading_cost_by_org(30)', 'المعلم: لا يرى تكلفة الجهات (للمدير فقط)');
 select tests.eq((select count(*) from public.groups), 2::bigint, 'أحمد حلس: يرى شعبتيه فقط');
 select tests.eq((select count(*) from public.students), 2::bigint, 'أحمد حلس: يرى طلاب شعبتيه فقط');
 select tests.eq((select count(*) from public.invoices), 0::bigint, 'أحمد حلس: لا يرى الفواتير');
@@ -168,6 +169,9 @@ rollback;
 
 -- ---------------------------------------------------------------- مدير المنصة
 begin;
+-- تشغيل تصحيح واحد مكتمل حتى تظهر الجهة في جدول التكلفة.
+insert into public.grading_runs (organization_id, submission_id, status, model, cost_usd, escalated)
+select organization_id, id, 'succeeded', 'claude-haiku-5-5', 0.01, true from public.submissions limit 1;
 select tests.login('+970590000099');
 set local role authenticated;
 select tests.eq(public.is_platform_admin(), true, 'المدير: is_platform_admin = true');
@@ -177,6 +181,8 @@ select tests.eq((select count(*) from public.students), 0::bigint, 'المدير
 select tests.eq((select count(*) from public.subjects where status = 'draft'), 1::bigint, 'المدير: يرى المواد المسودة');
 select tests.eq((select count(*) from public.admin_organizations()), 3::bigint, 'المدير: ملخص الجهات');
 select tests.eq((public.admin_grading_quality(30) ? 'runs'), true, 'المدير: ملخص جودة التصحيح');
+select tests.eq(jsonb_array_length(public.admin_grading_cost_by_org(30) -> 'orgs'), 1, 'المدير: تكلفة التصحيح لكل جهة');
+select tests.eq((public.admin_grading_cost_by_org(30) -> 'orgs' -> 0 ->> 'escalated')::int, 1, 'المدير: عدد الأوراق التي احتاجت النموذج الأقوى');
 select tests.eq(public.admin_issue_invoice(tests.org('individual_teacher')) is not null, true, 'المدير: أصدر فاتورة');
 select tests.eq((select count(*) from public.invoices), 4::bigint, 'المدير: الفاتورة الجديدة محفوظة');
 rollback;
