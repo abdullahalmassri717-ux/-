@@ -13,6 +13,7 @@ import type {
   AssessmentRow,
   DashboardSummary,
   DataStore,
+  MoodleIdKind,
   NewAssessmentInput,
   NewGroupInput,
   QuestionGradeRow,
@@ -187,10 +188,11 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
   type StudentDb = {
     id: string; full_name: string; student_code: string; parent_phone: string | null; student_phone: string | null;
     parent_whatsapp_consent: boolean; status: string;
+    moodle_identifier: string | null; moodle_identifier_kind: MoodleIdKind | null;
     group_students: { group_id: string; left_at: string | null; groups: { name: string; archived_at: string | null } | null }[];
   };
   const STUDENT_COLUMNS =
-    'id, full_name, student_code, parent_phone, student_phone, parent_whatsapp_consent, status, group_students(group_id, left_at, groups(name, archived_at))';
+    'id, full_name, student_code, parent_phone, student_phone, parent_whatsapp_consent, status, moodle_identifier, moodle_identifier_kind, group_students(group_id, left_at, groups(name, archived_at))';
 
   function toStudent(s: StudentDb, scores: Map<string, { pct: number; trend: 'up' | 'down' | 'steady' }>): StudentRow {
     const membership = (s.group_students ?? []).find((m) => !m.left_at && !one(m.groups)?.archived_at);
@@ -208,6 +210,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       totalScore: 100,
       trend: score?.trend ?? 'steady',
       parentApproval: s.parent_whatsapp_consent,
+      moodle: s.moodle_identifier && s.moodle_identifier_kind ? { kind: s.moodle_identifier_kind, value: s.moodle_identifier } : null,
       status: !score ? 'active' : pct >= 90 ? 'excellent' : pct < 60 ? 'at_risk' : 'active',
       weakLessons: [],
     };
@@ -567,6 +570,11 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       if (input.parentPhone !== undefined) patch.parent_phone = phoneOrNull(input.parentPhone);
       if (input.studentPhone !== undefined) patch.student_phone = phoneOrNull(input.studentPhone);
       if (input.parentApproval !== undefined) patch.parent_whatsapp_consent = input.parentApproval;
+      if (input.moodle !== undefined) {
+        const value = input.moodle?.value.trim() || null;
+        patch.moodle_identifier = value;
+        patch.moodle_identifier_kind = value ? input.moodle!.kind : null;
+      }
       if (Object.keys(patch).length) {
         const { error } = await db.from('students').update(patch).eq('id', id);
         if (error) fail(error, 'تعذّر حفظ بيانات الطالب.');
