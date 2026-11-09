@@ -76,6 +76,9 @@ function friendlyError(error: { message?: string; code?: string; status?: number
   if (error.status === 429 || code.includes('rate_limit') || message.includes('rate limit')) {
     return 'طلبت رموزاً كثيرة خلال وقت قصير. انتظر دقيقة ثم حاول مرة أخرى.';
   }
+  if (code === 'signup_disabled' || code === 'otp_disabled' || message.includes('signups not allowed') || message.includes('signup')) {
+    return 'هذا الرقم غير مسجّل، وتسجيل الأرقام الجديدة مقفل حالياً في إعدادات المنصة. تواصل مع الدعم الفني.';
+  }
   if (code === 'otp_expired' || message.includes('expired') || message.includes('invalid')) {
     return 'الرمز غير صحيح أو انتهت صلاحيته. اطلب رمزاً جديداً.';
   }
