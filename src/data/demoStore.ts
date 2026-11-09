@@ -242,12 +242,13 @@ export function createDemoStore(): DataStore {
         while (used.has(code));
         used.add(code);
         const group = s().groups.find((g) => g.id === i.groupId);
+        const groupIds = [...new Set([i.groupId, ...(i.extraGroupIds ?? [])])].filter(Boolean);
         s().students.push({
           id: newId('s'),
           name: i.name.trim(),
           group: group?.name ?? '',
           groupId: i.groupId,
-          groupIds: i.groupId ? [i.groupId] : [],
+          groupIds,
           parentPhone: i.parentPhone ?? '',
           studentPhone: i.studentPhone ?? '',
           studentCode: code,
@@ -258,7 +259,7 @@ export function createDemoStore(): DataStore {
           status: 'active',
           weakLessons: [],
         });
-        if (group) group.studentCount += 1;
+        for (const g of s().groups) if (groupIds.includes(g.id)) g.studentCount += 1;
       }
       return wait(inputs.length);
     },

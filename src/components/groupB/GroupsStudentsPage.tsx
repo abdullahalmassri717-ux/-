@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ScreenId } from '../../types';
-import { useData, useLoad, errorMessage } from '../../data/DataContext';
+import { useActiveOrg, useData, useLoad, errorMessage } from '../../data/DataContext';
 import type { StudentInput, StudentRow } from '../../data/types';
 import {
   Users,
@@ -45,6 +45,9 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   onSelectStudent,
 }) => {
   const store = useData();
+  const org = useActiveOrg();
+  // A school adds students by class first, then gives each teacher a class and subject.
+  const isSchool = org.type === 'school' || org.type === 'learning_center';
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -74,7 +77,8 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   // A file split by class: by default make one group per class and import everything at once.
   const [importManual, setImportManual] = useState(false);
   const [bulkCurriculumId, setBulkCurriculumId] = useState('');
-  const [bulkSubject, setBulkSubject] = useState('');
+  // null = the default pick (the subject most of the file's grades have).
+  const [bulkPicked, setBulkPicked] = useState<string[] | null>(null);
   const [importText, setImportText] = useState('');
   const [linkExisting, setLinkExisting] = useState(true);
 
@@ -159,6 +163,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
     setImportClass('');
     setImportedClasses([]);
     setImportManual(false);
+    setBulkPicked(null);
     setLinkExisting(true);
     setShowExcelModal(true);
   };
@@ -337,40 +342,56 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
     });
     return [...score].sort((a, b) => b[1] - a[1]).map(([name]) => name);
   }, [bulkCurriculum, importClasses]);
-  const subjectName = bulkSubjects.includes(bulkSubject) ? bulkSubject : bulkSubjects[0] ?? '';
+  const chosenSubjects = isSchool ? [] : (bulkPicked ?? bulkSubjects.slice(0, 1)).filter((n) => bulkSubjects.includes(n));
+  const toggleSubject = (n: string) =>
+    setBulkPicked(chosenSubjects.includes(n) ? chosenSubjects.filter((x) => x !== n) : [...chosenSubjects, n]);
+  // One group per class and subject: a school teaches many subjects to the same class.
   const bulkPlan = importClasses.map((c) => {
     const n = gradeNumber(c.label);
     const grade = n === null ? undefined : bulkCurriculum?.grades.find((g) => gradeNumber(g.name) === n);
-    const subject = grade?.subjects.find((s) => s.status === 'published' && s.name === subjectName);
-    const name = subjectName ? `${c.label} – ${subjectName}` : c.label;
-    return { ...c, name, grade, subject, existing: groups.find((g) => g.name === name) };
+    const targets = (chosenSubjects.length ? chosenSubjects : ['']).map((subjectName) => {
+      const name = subjectName ? `${c.label} – ${subjectName}` : c.label;
+      const subject = subjectName ? grade?.subjects.find((s) => s.status === 'published' && s.name === subjectName) : undefined;
+      return { name, subject, existing: groups.find((g) => g.name === name) };
+    });
+    return { ...c, grade, targets };
   });
+  const bulkGroupCount = bulkPlan.reduce((n, p) => n + p.targets.length, 0);
+  const bulkMissing = chosenSubjects.length ? bulkPlan.reduce((n, p) => n + p.targets.filter((t) => !t.subject).length, 0) : 0;
+  const bulkBlocked = !isSchool && bulkSubjects.length > 0 && !chosenSubjects.length;
   const handleBulkImport = async () => {
+    if (bulkBlocked) return notify('اختر مادة واحدة على الأقل');
     setSaving(true);
     let made = 0;
     let added = 0;
     let linkedCount = 0;
     try {
       for (const plan of bulkPlan) {
-        let groupId = plan.existing?.id;
-        if (!groupId) {
-          const g = await store.createGroup({ name: plan.name, gradeId: plan.grade?.id ?? null, subjectId: plan.subject?.id ?? null, schedule: '' });
-          groupId = g.id;
+        const groupIds: string[] = [];
+        for (const t of plan.targets) {
+          if (t.existing) {
+            groupIds.push(t.existing.id);
+            continue;
+          }
+          const g = await store.createGroup({ name: t.name, gradeId: plan.grade?.id ?? null, subjectId: t.subject?.id ?? null, schedule: '' });
+          groupIds.push(g.id);
           made++;
         }
+        const [first, ...rest] = groupIds;
         const rows = parsedImport.filter((r) => r.classLabel === plan.label);
         const linked: string[] = [];
         const fresh: StudentInput[] = [];
         for (const r of rows) {
           const same = studentsByName.get(nameKey(r.name));
           if (linkExisting && same?.length === 1) linked.push(same[0].id);
-          else fresh.push({ name: r.name, parentPhone: r.parentPhone, studentPhone: r.studentPhone, groupId });
+          // A new student goes into every subject group of their class at once, with one code.
+          else fresh.push({ name: r.name, parentPhone: r.parentPhone, studentPhone: r.studentPhone, groupId: first, extraGroupIds: rest });
         }
         if (fresh.length) added += await store.createStudents(fresh);
-        if (linked.length) linkedCount += await store.addStudentsToGroup(groupId, linked);
+        if (linked.length) for (const g of groupIds) linkedCount += await store.addStudentsToGroup(g, linked);
       }
       notify(
-        `تم! أنشأنا ${made} مجموعة وأضفنا ${added} طالباً` + (linkedCount ? `، وربطنا ${linkedCount} طالباً مسجّلاً مسبقاً` : ''),
+        `تم! أنشأنا ${made} مجموعة وأضفنا ${added} طالباً` + (linkedCount ? `، وربطنا طلاباً مسجّلين مسبقاً` : ''),
         'success',
       );
       setShowExcelModal(false);
@@ -1019,7 +1040,9 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                     ملفك مقسّم على {importClasses.length === 1 ? 'صف واحد' : `${importClasses.length} صفوف`} ({parsedImport.length} طالب).
                   </p>
                   <p className="text-emerald-900/80 leading-relaxed">
-                    بننشئ مجموعة لكل صف ونضيف طلابه فيها، بضغطة وحدة. المجموعة هي الصف مع المادة اللي بتدرّسها.
+                    {isSchool
+                      ? 'بننشئ صفاً لكل صف بالملف ونضيف طلابه فيه، بضغطة وحدة. بعدها من صفحة «المعلمون والصفوف» بتسند لكل معلم صفه ومادته.'
+                      : 'بننشئ مجموعة لكل صف ومادة ونضيف الطلاب فيها، بضغطة وحدة. الطالب بيضل بنفس الرمز بكل مواده، وبينحسب بالاشتراك مرة وحدة.'}
                   </p>
                 </div>
                 {curricula.length > 1 && (
@@ -1030,25 +1053,51 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                     </select>
                   </div>
                 )}
-                {bulkSubjects.length > 0 && (
+                {!isSchool && bulkSubjects.length > 0 && (
                   <div>
-                    <label className="block text-slate-700 font-bold mb-1">شو المادة اللي بتدرّسها لهالصفوف؟</label>
-                    <select value={subjectName} onChange={(e) => setBulkSubject(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg bg-white">
-                      {bulkSubjects.map((n) => <option key={n} value={n}>{n}</option>)}
-                    </select>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <label className="text-slate-700 font-bold">شو المواد اللي بتدرّسها لهالصفوف؟</label>
+                      <button
+                        type="button"
+                        onClick={() => setBulkPicked(chosenSubjects.length === bulkSubjects.length ? [] : bulkSubjects)}
+                        className="text-[11px] text-[#1E3A5F] underline cursor-pointer shrink-0"
+                      >
+                        {chosenSubjects.length === bulkSubjects.length ? 'إلغاء الكل' : 'كل المواد'}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mb-1.5">مدرّس مادة وحدة؟ اختارها بس. مدرسة؟ اختار كل المواد اللي بتدرّسوها.</p>
+                    <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto">
+                      {bulkSubjects.map((n) => {
+                        const on = chosenSubjects.includes(n);
+                        return (
+                          <button
+                            key={n}
+                            type="button"
+                            aria-pressed={on}
+                            onClick={() => toggleSubject(n)}
+                            className={`px-2.5 py-1.5 rounded-full border text-[11px] font-bold cursor-pointer ${on ? 'bg-[#1E3A5F] border-[#1E3A5F] text-white' : 'bg-white border-slate-300 text-slate-700'}`}
+                          >
+                            {on ? '✓ ' : ''}{n}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
                 <ul className="bg-slate-50 border border-slate-200 rounded-lg p-2 space-y-1 text-slate-700 max-h-40 overflow-y-auto">
                   {bulkPlan.map((p) => (
                     <li key={p.label} className="flex justify-between gap-2">
-                      <span className="truncate">{p.name}</span>
-                      <span className="text-slate-500 shrink-0">{p.count} طالب{p.existing ? ' · موجودة' : ''}</span>
+                      <span className="truncate">{p.label}</span>
+                      <span className="text-slate-500 shrink-0">{p.count} طالب</span>
                     </li>
                   ))}
                 </ul>
-                {subjectName && bulkPlan.some((p) => !p.subject) && (
+                {chosenSubjects.length > 1 && (
+                  <p className="text-[11px] text-slate-600">رح ننشئ {bulkGroupCount} مجموعة: كل صف × {chosenSubjects.length} مواد.</p>
+                )}
+                {bulkMissing > 0 && (
                   <p className="text-[11px] text-amber-800 leading-relaxed">
-                    بعض الصفوف ما لقينا لها مادة «{subjectName}» بالمنهاج، فبننشئ مجموعتها بدون ربط بالمادة.
+                    {bulkMissing} من المجموعات ما لقينا مادتها لهذا الصف بالمنهاج، فبننشئها بدون ربط بالمادة.
                   </p>
                 )}
                 {parsedImport.some((r) => studentsByName.get(nameKey(r.name))?.length === 1) && (
@@ -1059,7 +1108,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                 )}
                 <div className="flex items-center gap-2 pt-1">
                   <button
-                    disabled={saving}
+                    disabled={saving || bulkBlocked}
                     onClick={handleBulkImport}
                     className="flex-1 bg-emerald-700 text-white py-2.5 rounded-lg font-bold cursor-pointer disabled:opacity-60"
                   >
