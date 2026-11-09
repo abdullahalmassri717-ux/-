@@ -127,7 +127,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (currentRole === 'teacher') {
       return activeEntity ? activeEntity.name : 'قائمة المعلم';
     }
-    if (currentRole === 'school_principal') return 'إدارة المدرسة (مدرسة الأمل الخاصة)';
+    if (currentRole === 'school_principal' || currentRole === 'school_admin') {
+      return activeEntity?.name ? `إدارة: ${activeEntity.name}` : 'إدارة المدرسة';
+    }
     if (currentRole === 'platform_admin') return 'إدارة منصة دقة العامة';
     return '';
   };
