@@ -15,7 +15,7 @@ export const SCHOOL_PATHS = [
   '/school/quality', '/school/results', '/school/corrected-paper', '/school/group-answers',
   '/school/parent-reports', '/school/billing', '/school/support',
 ];
-export const ADMIN_PATHS = ['/admin', '/admin/billing', '/admin/quality', '/admin/curricula', '/admin/support', '/admin/landing'];
+export const ADMIN_PATHS = ['/admin', '/admin/billing', '/admin/quality', '/admin/curricula', '/admin/support', '/admin/landing', '/admin/team'];
 
 export type Area = 'visitor' | 'student' | 'teacher' | 'school' | 'admin';
 export function areaOf(pathname: string): Area {

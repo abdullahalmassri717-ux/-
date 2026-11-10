@@ -21,11 +21,27 @@ import {
   LayoutTemplate,
   Settings,
   Trash2,
+  UserCog,
 } from 'lucide-react';
 import { LandingPageCMS } from './LandingPageCMS';
+import { AdminStaffTab } from './AdminStaffTab';
 import { notify } from '../../lib/notify';
+import { useAdminAccess } from '../../lib/auth';
+import { AdminPermission, adminCan, roleLabel, permissionLabel } from '../../lib/adminAccess';
 
-type Tab = 'overview' | 'financials' | 'analytics' | 'plans' | 'clients' | 'support' | 'landing' | 'settings';
+type Tab = 'overview' | 'financials' | 'analytics' | 'plans' | 'clients' | 'support' | 'landing' | 'settings' | 'staff';
+
+// Which section each tab needs ('super' = only a super admin; none = everyone on the staff).
+const TAB_NEEDS: Partial<Record<Tab, AdminPermission | 'super'>> = {
+  financials: 'finance',
+  clients: 'orgs',
+  plans: 'plans',
+  analytics: 'quality',
+  support: 'support',
+  landing: 'landing',
+  settings: 'settings',
+  staff: 'super',
+};
 
 const api = adminApi();
 
@@ -35,8 +51,14 @@ export const PlatformAdminDashboard: React.FC<{
 }> = ({ onNavigate, initialTab = 'overview' }) => {
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   useEffect(() => setActiveTab(initialTab), [initialTab]);
+  const access = useAdminAccess();
+  const allowed = (t: Tab) => {
+    const need = TAB_NEEDS[t];
+    if (!need) return true;
+    return need === 'super' ? !!access?.isSuper : adminCan(access, need);
+  };
 
-  const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
+  const allTabs: { id: Tab; label: string; icon: React.ElementType }[] = [
     { id: 'overview', label: 'نظرة عامة', icon: ShieldCheck },
     { id: 'financials', label: 'المدفوعات والفواتير', icon: DollarSign },
     { id: 'clients', label: 'الجهات', icon: Building2 },
@@ -45,7 +67,10 @@ export const PlatformAdminDashboard: React.FC<{
     { id: 'support', label: 'الدعم الفني', icon: Headphones },
     { id: 'landing', label: 'الصفحة التعريفية', icon: LayoutTemplate },
     { id: 'settings', label: 'الإعدادات', icon: Settings },
+    { id: 'staff', label: 'طاقم الإدارة', icon: UserCog },
   ];
+  const tabs = allTabs.filter((t) => allowed(t.id));
+  const show = (t: Tab) => activeTab === t && allowed(t);
 
   return (
     <div className="space-y-6 text-right max-w-7xl mx-auto pb-16">
@@ -76,22 +101,65 @@ export const PlatformAdminDashboard: React.FC<{
         })}
       </div>
 
-      {activeTab === 'overview' && <OverviewTab go={setActiveTab} />}
-      {activeTab === 'financials' && <AdminFinanceTab />}
-      {activeTab === 'clients' && <AdminOrgsTab />}
-      {activeTab === 'plans' && <AdminPlansTab />}
-      {activeTab === 'analytics' && <QualityTab />}
-      {activeTab === 'support' && <SupportTab />}
-      {activeTab === 'landing' && <LandingPageCMS onNavigate={onNavigate} />}
-      {activeTab === 'settings' && <SettingsTab />}
+      {show('overview') &&
+        (adminCan(access, 'orgs') || adminCan(access, 'finance') ? (
+          <OverviewTab go={setActiveTab} showReceipts={adminCan(access, 'finance')} />
+        ) : (
+          <StaffWelcome />
+        ))}
+      {show('financials') && <AdminFinanceTab />}
+      {show('clients') && <AdminOrgsTab />}
+      {show('plans') && <AdminPlansTab />}
+      {show('analytics') && <QualityTab />}
+      {show('support') && <SupportTab />}
+      {show('landing') && <LandingPageCMS onNavigate={onNavigate} />}
+      {show('settings') && <SettingsTab />}
+      {show('staff') && <AdminStaffTab />}
+      {!allowed(activeTab) && <NoAdminAccess />}
     </div>
   );
 };
 
 // ---------------------------------------------------------------- Overview
-const OverviewTab: React.FC<{ go: (t: Tab) => void }> = ({ go }) => {
+/** Shown when someone opens a section their role doesn't include. */
+export const NoAdminAccess: React.FC = () => (
+  <div className="p-6 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 text-center space-y-1">
+    <strong className="block text-sm">هذا القسم ليس ضمن صلاحياتك</strong>
+    <span>اطلب من المدير العام للمنصة إضافته لك إن كنت تحتاجه.</span>
+  </div>
+);
+
+/** Wraps a whole admin page that needs one section (e.g. the curricula page). */
+export const AdminSectionGate: React.FC<{ need: AdminPermission; children: React.ReactNode }> = ({ need, children }) => {
+  const access = useAdminAccess();
+  return adminCan(access, need) ? <>{children}</> : <NoAdminAccess />;
+};
+
+// A staff member without the organizations or payments sections sees what they can open.
+const StaffWelcome: React.FC = () => {
+  const access = useAdminAccess();
+  if (!access) return null;
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-3 text-xs">
+      <h3 className="font-extrabold text-[#1E3A5F] text-sm">أهلاً بك في فريق إدارة المنصة</h3>
+      <p className="text-slate-600">
+        دورك: <strong>{roleLabel(access.role)}</strong>. الأقسام المتاحة لك:
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {access.permissions.map((p) => (
+          <span key={p} className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 font-bold">
+            {permissionLabel(p)}
+          </span>
+        ))}
+      </div>
+      <p className="text-slate-500">افتحها من القائمة الجانبية أو من الأزرار أعلاه.</p>
+    </div>
+  );
+};
+
+const OverviewTab: React.FC<{ go: (t: Tab) => void; showReceipts: boolean }> = ({ go, showReceipts }) => {
   const orgs = useAsync(() => api.listOrganizations());
-  const receipts = useAsync(() => api.listReceipts('pending'));
+  const receipts = useAsync(() => (showReceipts ? api.listReceipts('pending') : Promise.resolve([])), [showReceipts]);
   if (orgs.error) return <ErrorBox text={orgs.error} />;
   if (!orgs.data) return <Spinner />;
   const list = orgs.data;

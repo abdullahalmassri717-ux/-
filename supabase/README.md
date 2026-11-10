@@ -82,3 +82,9 @@ Supabase، ثم ملفات `migrations/` بالترتيب، ثم `seed.sql`، ث
 insert into public.platform_admins (user_id)
 select id from public.profiles where phone = '+970XXXXXXXXX';
 ```
+
+هذا يجعلك **مديراً عاماً** (`super_admin`). بعدها تضيف باقي طاقم الإدارة من داخل المنصة:
+لوحة الإدارة ← «طاقم إدارة المنصة» (`/admin/team`). لكل عضو دور وأقسام يفتحها
+(الجهات، المدفوعات، الباقات، جودة التصحيح، الدعم، المناهج، الصفحة التعريفية، الإعدادات).
+قاعدة البيانات نفسها تمنع العضو من أي قسم خارج صلاحياته (`private.admin_can`)، و
+`private.is_platform_admin()` صارت تعني «مدير عام» فقط.

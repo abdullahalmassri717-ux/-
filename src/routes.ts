@@ -54,6 +54,7 @@ export const SCREEN_PATHS: Record<ScreenId, string> = {
   E4: '/admin/curricula',
   E5: '/admin/support',
   E6: '/admin/landing',
+  E7: '/admin/team',
 };
 
 // A school or centre owner also opens a few shared screens (quality of grading,

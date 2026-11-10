@@ -158,6 +158,20 @@ test.describe('platform admin', () => {
     await expect(page.getByRole('button', { name: /تأكيد/ }).first()).toBeVisible();
     expect(errors).toEqual([]);
   });
+
+  test('adds a staff member with a role and chosen sections', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/admin/team');
+    await page.getByRole('button', { name: 'إضافة عضو' }).click();
+    await page.getByPlaceholder('0599123456').fill('0599777888');
+    await page.getByPlaceholder(/سامي أحمد/).fill('ليلى للدعم');
+    await page.getByRole('button', { name: /دعم فني/ }).click();
+    await page.getByRole('checkbox', { name: /المناهج والكتب/ }).check();
+    await page.getByRole('button', { name: 'إضافة العضو' }).click();
+    await expect(page.getByText('ليلى للدعم')).toBeVisible();
+    await expect(page.getByText('لم يدخل المنصة بعد')).toBeVisible();
+    expect(errors).toEqual([]);
+  });
 });
 
 test.describe('school owner', () => {

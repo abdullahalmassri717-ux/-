@@ -4,6 +4,7 @@ import { supabase, isSupabaseConfigured } from './supabase';
 import { toInternationalPhone } from './phone';
 import { Entity, EntityRole, EntityType } from '../types';
 import { PLATFORM_CONFIG } from '../mockData';
+import { AdminAccess, FULL_ACCESS, parseAdminAccess } from './adminAccess';
 
 // Real sign-in: WhatsApp number + one-time 6-digit code, through Supabase Auth.
 // When no Supabase project is configured the app stays in demo mode and this
@@ -14,6 +15,8 @@ export interface AccountProfile {
   fullName: string | null;
   phone: string | null;
   isPlatformAdmin: boolean;
+  /** The platform staff member's role and sections; null for everyone else. */
+  adminAccess: AdminAccess | null;
 }
 
 type AuthStatus = 'loading' | 'signed_out' | 'signed_in';
@@ -103,13 +106,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const userId = current.user.id;
     // A teacher who already had an account joins the schools that invited them.
     await supabase.rpc('accept_my_invitations').then(() => undefined, () => undefined);
-    // Platform admins are kept in their own table and checked by a server function,
-    // so nobody can make themselves admin by editing their own profile.
+    // Platform staff are kept in their own table and checked by a server function,
+    // so nobody can make themselves admin by editing their own profile. This call
+    // also turns a pending staff invitation for this number into a real membership.
+    const accessRes = await supabase.rpc('my_admin_access');
+    let adminAccess: AdminAccess | null = accessRes.error ? null : parseAdminAccess(accessRes.data);
+    if (accessRes.error) {
+      // Database not updated yet: the old check means full access.
+      const old = await supabase.rpc('is_platform_admin');
+      adminAccess = old.data === true ? FULL_ACCESS : null;
+    }
     const memberships = (cols: string) => supabase!.from('memberships').select(`role, organizations(${cols})`).eq('user_id', userId).eq('status', 'active');
-    const [profileRes, firstMemberships, adminRes] = await Promise.all([
+    const [profileRes, firstMemberships] = await Promise.all([
       supabase.from('profiles').select('id, full_name, phone').eq('id', userId).maybeSingle(),
       memberships('id, name, kind, region, status, status_note'),
-      supabase.rpc('is_platform_admin'),
     ]);
     // Until the database update with organization status is applied, read without it.
     const membershipsRes = firstMemberships.error ? await memberships('id, name, kind, region') : firstMemberships;
@@ -120,7 +130,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       id: userId,
       fullName,
       phone: p?.phone ?? current.user.phone ?? null,
-      isPlatformAdmin: adminRes.data === true,
+      isPlatformAdmin: !!adminAccess,
+      adminAccess,
     });
 
     type Row = { role: string; organizations: OrgRow | OrgRow[] | null };
@@ -248,4 +259,10 @@ export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>');
   return ctx;
+}
+
+/** What the platform admin area lets this person open (everything in demo mode). */
+export function useAdminAccess(): AdminAccess | null {
+  const auth = useAuth();
+  return auth.mode === 'demo' ? FULL_ACCESS : (auth.profile?.adminAccess ?? null);
 }
