@@ -33,6 +33,8 @@ export interface NewGroupInput {
   gradeId: string | null;
   subjectId: string | null;
   schedule?: string;
+  /** A «class – subject» group made from a class: new students of the class join it too. */
+  classGroupId?: string | null;
 }
 
 export interface StudentInput {

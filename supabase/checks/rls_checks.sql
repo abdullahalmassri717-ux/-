@@ -320,4 +320,47 @@ select tests.login('+970590000099');
 select tests.throws($$select public.pause_subscription(tests.org('school'), null, null)$$, 'إيقاف: الاشتراك السنوي لا يُوقف');
 rollback;
 
+-- ---------------------------------------------------------------- المدرسة: الصفوف أولاً ثم توزيع الأساتذة
+begin;
+select tests.login('+970590000002');
+set local role authenticated;
+insert into public.groups (id, organization_id, name, grade_id)
+  values ('aaaaaaaa-0000-4000-8000-000000000001', tests.org('school'), 'صف تجربة', '8b61e5b7-86be-4916-8396-cefb73b6e3e7');
+select tests.eq((select count(*) from public.group_teachers where group_id = 'aaaaaaaa-0000-4000-8000-000000000001'), 0::bigint,
+  'المدرسة: المدير لا يُسند تلقائياً أستاذاً للصف الذي ينشئه');
+insert into public.students (id, organization_id, full_name) values
+  ('aaaaaaaa-0000-4000-8000-0000000000a1', tests.org('school'), 'طالب أول'),
+  ('aaaaaaaa-0000-4000-8000-0000000000a2', tests.org('school'), 'طالب ثاني');
+insert into public.group_students (group_id, student_id, organization_id) values
+  ('aaaaaaaa-0000-4000-8000-000000000001', 'aaaaaaaa-0000-4000-8000-0000000000a1', tests.org('school'));
+insert into public.groups (id, organization_id, name, grade_id, subject_id, class_group_id)
+  values ('aaaaaaaa-0000-4000-8000-000000000002', tests.org('school'), 'صف تجربة – رياضيات', '8b61e5b7-86be-4916-8396-cefb73b6e3e7',
+          'e9a287a7-55c1-4934-8ac0-fa50df10c3bb', 'aaaaaaaa-0000-4000-8000-000000000001');
+insert into public.group_teachers (group_id, organization_id, user_id)
+  values ('aaaaaaaa-0000-4000-8000-000000000002', tests.org('school'), '0f00b8f6-b32c-4cc6-82d6-8f7fbc3d201d');
+-- طالب جديد ينضم للصف بعد الإسناد: يدخل مجموعة المادة تلقائياً
+insert into public.group_students (group_id, student_id, organization_id) values
+  ('aaaaaaaa-0000-4000-8000-000000000001', 'aaaaaaaa-0000-4000-8000-0000000000a2', tests.org('school'));
+select tests.eq((select count(*) from public.group_students where group_id = 'aaaaaaaa-0000-4000-8000-000000000002'
+  and student_id = 'aaaaaaaa-0000-4000-8000-0000000000a2' and left_at is null), 1::bigint,
+  'المدرسة: الطالب الجديد في الصف ينضم لمجموعة المادة تلقائياً');
+update public.group_students set left_at = now()
+  where group_id = 'aaaaaaaa-0000-4000-8000-000000000001' and student_id = 'aaaaaaaa-0000-4000-8000-0000000000a2';
+select tests.eq((select count(*) from public.group_students where group_id = 'aaaaaaaa-0000-4000-8000-000000000002'
+  and student_id = 'aaaaaaaa-0000-4000-8000-0000000000a2' and left_at is null), 0::bigint,
+  'المدرسة: من يخرج من الصف يخرج من مجموعة المادة');
+select tests.throws($$update public.groups set class_group_id = 'aaaaaaaa-0000-4000-8000-000000000002'
+  where id = 'aaaaaaaa-0000-4000-8000-000000000001'$$, 'المدرسة: الصف الأصلي لا يكون مجموعة مادة');
+-- المعلم المُسند يرى طلاب مادته
+select tests.login('+970590000011');
+select tests.eq((select count(*) from public.students where id = 'aaaaaaaa-0000-4000-8000-0000000000a1'), 1::bigint,
+  'المدرسة: الأستاذ المُسند يرى طالب مادته');
+-- المدرّس الفردي يبقى مُسنداً لمجموعته تلقائياً
+select tests.login('+970590000001');
+insert into public.groups (id, organization_id, name)
+  values ('aaaaaaaa-0000-4000-8000-000000000003', tests.org('individual_teacher'), 'مجموعة جديدة');
+select tests.eq((select count(*) from public.group_teachers where group_id = 'aaaaaaaa-0000-4000-8000-000000000003'), 1::bigint,
+  'المدرّس الفردي: يُسند لمجموعته تلقائياً كما كان');
+rollback;
+
 \echo 'كل الفحوص نجحت ✓'

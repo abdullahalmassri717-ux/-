@@ -507,6 +507,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
         grade_id: input.gradeId,
         subject_id: input.subjectId,
         schedule: input.schedule?.trim() || null,
+        ...(input.classGroupId ? { class_group_id: input.classGroupId } : {}),
       });
       if (error) fail(error, 'تعذّر إنشاء المجموعة.');
       const names = await curriculumNames(input.gradeId, input.subjectId);
@@ -535,6 +536,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       if (input.gradeId !== undefined) patch.grade_id = input.gradeId;
       if (input.subjectId !== undefined) patch.subject_id = input.subjectId;
       if (input.schedule !== undefined) patch.schedule = input.schedule.trim() || null;
+      if (input.classGroupId !== undefined) patch.class_group_id = input.classGroupId;
       const { error } = await db.from('groups').update(patch).eq('id', id);
       if (error) fail(error, 'تعذّر حفظ المجموعة.');
     },

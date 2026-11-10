@@ -210,6 +210,14 @@ export const TeachersClassesPage: React.FC<Nav> = ({ onNavigate }) => {
 
   if (loading || error || !data || !stats) return <Loading error={error} />;
   const teachers = stats.teachers;
+  // A class without a subject has no teacher of its own: its teachers are those of its
+  // «class – subject» groups.
+  const classTeachers = (c: (typeof stats.classes)[number]) => {
+    if (c.group.subjectName) return c.teacherNames.join('، ') || <span className="text-amber-700">غير مسند</span>;
+    const subs = stats.classes.filter((x) => x.group.subjectName && x.group.name.startsWith(`${c.group.name} – `));
+    const names = subs.flatMap((x) => x.teacherNames.map((n) => `${n} (${x.group.subjectName})`));
+    return names.join('، ') || <span className="text-amber-700">لم يُوزَّع على الأساتذة بعد</span>;
+  };
   const inviteText = (name: string) =>
     `مرحباً ${name || ''}، دعوتك للانضمام إلى «${org.name}» على منصة دقة لتصحيح الأوراق.\nادخل من الرابط برقم واتساب هذا: ${window.location.origin}/login`;
 
@@ -392,7 +400,7 @@ export const TeachersClassesPage: React.FC<Nav> = ({ onNavigate }) => {
                     <td className="p-3.5 font-bold text-slate-900">{c.group.name}</td>
                     <td className="p-3.5 text-slate-600">{c.group.subjectName || '—'}</td>
                     <td className="p-3.5 text-center font-mono tabular-nums">{c.group.studentCount}</td>
-                    <td className="p-3.5 text-slate-700">{c.teacherNames.join('، ') || <span className="text-amber-700">غير مسند</span>}</td>
+                    <td className="p-3.5 text-slate-700">{classTeachers(c)}</td>
                     <td className="p-3.5 text-center font-mono font-bold text-[#1E3A5F] tabular-nums">{pctLabel(c.avgPct)}</td>
                     <td className="p-3.5 text-center text-slate-600">{c.lastExamAt ? timeAgo(c.lastExamAt) : '—'}</td>
                   </tr>
@@ -457,7 +465,9 @@ export const TeachersClassesPage: React.FC<Nav> = ({ onNavigate }) => {
               // put the class's students in it, and give it to the teacher.
               const name = `${classGroup.name} – ${subject.name}`;
               const existing = data.groups.find((g) => g.name === name);
-              const id = existing?.id ?? (await store.createGroup({ name, gradeId: classGroup.gradeId || null, subjectId: subject.id, schedule: '' })).id;
+              const id = existing?.id ?? (await store.createGroup({ name, gradeId: classGroup.gradeId || null, subjectId: subject.id, schedule: '', classGroupId: classGroup.id })).id;
+              // Older groups made before the link existed: link them so new students follow.
+              if (existing) await store.updateGroup(id, { classGroupId: classGroup.id });
               const ids = (await store.listStudents()).filter((st) => st.groupIds.includes(classGroup.id)).map((st) => st.id);
               if (ids.length) await store.addStudentsToGroup(id, ids);
               await store.setGroupTeacher(id, assignFor.userId, true);
@@ -521,7 +531,7 @@ const AssignGroupsModal: React.FC<{
             <button onClick={assign} disabled={saving || !cls || !subject} className="w-full bg-[#1E3A5F] text-white py-2 rounded-lg font-bold disabled:opacity-50">
               {saving ? 'جاري الإسناد…' : 'أسند'}
             </button>
-            <p className="text-[11px] text-slate-500 leading-relaxed">بننشئ «الصف – المادة» ونضيف له طلاب الصف نفسهم وبنفس رموزهم.</p>
+            <p className="text-[11px] text-slate-500 leading-relaxed">بننشئ «الصف – المادة» ونضيف له طلاب الصف نفسهم وبنفس رموزهم، وأي طالب تضيفه للصف بعدين بينضاف له تلقائياً.</p>
           </div>
         )}
 
