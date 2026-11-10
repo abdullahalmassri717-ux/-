@@ -54,7 +54,7 @@ import { TeacherFilesSection } from './components/groupC/TeacherFilesSection';
 import { SchoolDashboard, TeachersClassesPage, SchoolReportPage, TeacherComparisonPage } from './components/groupD/SchoolViews';
 
 // Group E Components
-import { PlatformAdminDashboard, AdminBillingPage, GradingQualityPage } from './components/groupE/PlatformAdminViews';
+import { PlatformAdminDashboard, AdminBillingPage, GradingQualityPage, AdminSectionGate } from './components/groupE/PlatformAdminViews';
 import { CurriculumManagementPage } from './components/groupE/CurriculumManagementPage';
 
 // Floating AI trigger icon
@@ -360,11 +360,17 @@ export default function App() {
       case 'E3':
         return <GradingQualityPage onNavigate={handleNavigate} />;
       case 'E4':
-        return <CurriculumManagementPage onNavigate={handleNavigate} />;
+        return (
+          <AdminSectionGate need="curricula">
+            <CurriculumManagementPage onNavigate={handleNavigate} />
+          </AdminSectionGate>
+        );
       case 'E5':
         return <PlatformAdminDashboard onNavigate={handleNavigate} initialTab="support" />;
       case 'E6':
         return <PlatformAdminDashboard onNavigate={handleNavigate} initialTab="landing" />;
+      case 'E7':
+        return <PlatformAdminDashboard onNavigate={handleNavigate} initialTab="staff" />;
 
       // Common / Global
       case 'SUPPORT':

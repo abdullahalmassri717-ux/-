@@ -297,6 +297,78 @@ select public.admin_delete_org(tests.org('learning_center'), 'مركز معدّ�
 select tests.eq((select count(*) from public.organizations where name = 'مركز معدّل'), 0::bigint, 'الحذف: حُذفت الجهة');
 rollback;
 
+-- ---------------------------------------------------------------- طاقم إدارة المنصة (أدوار وصلاحيات)
+begin;
+select tests.login('+970590000099');
+set local role authenticated;
+select tests.eq((public.my_admin_access() ->> 'is_super')::boolean, true, 'الطاقم: المدير الحالي مدير عام');
+select tests.eq(public.admin_add_staff('+970590000011', 'أحمد', 'accountant', array['finance']), 'added', 'الطاقم: إضافة صاحب حساب فوراً');
+select tests.eq(public.admin_add_staff('+970590000012', null, 'content_editor', array['curricula','landing']), 'added', 'الطاقم: إضافة محرر محتوى');
+select tests.eq(public.admin_add_staff('+970590009999', 'موظف دعم', 'support_agent', array['support']), 'invited', 'الطاقم: رقم بلا حساب يصبح دعوة');
+select tests.throws($$select public.admin_add_staff('+970590000011', null, 'custom', array['orgs'])$$, 'الطاقم: لا يُضاف مرتين');
+select tests.throws($$select public.admin_add_staff('+970590000013', null, 'custom', array['everything'])$$, 'الطاقم: صلاحية غير معروفة');
+select tests.throws($$select public.admin_add_staff('+970590000013', null, 'custom', array[]::text[])$$, 'الطاقم: صلاحية واحدة على الأقل');
+select tests.throws($$select public.admin_add_staff('+970590000013', null, 'teacher_assistant', array['orgs'])$$, 'الطاقم: دور غير معروف');
+select tests.throws($$select public.admin_update_staff(auth.uid(), 'custom', array['orgs'], true)$$, 'الطاقم: لا يعدّل صلاحياته بنفسه');
+select tests.throws($$select public.admin_remove_staff(auth.uid())$$, 'الطاقم: لا يخرج نفسه');
+select tests.eq((select count(*) from public.admin_list_staff()), 4::bigint, 'الطاقم: القائمة فيها الأعضاء والدعوة');
+
+-- المحاسب: المالية فقط.
+select tests.login('+970590000011');
+select tests.eq(public.is_platform_admin(), true, 'المحاسب: يفتح لوحة الإدارة');
+select tests.eq(public.my_admin_access() ->> 'role', 'accountant', 'المحاسب: دوره صحيح');
+select tests.eq((select count(*) from public.invoices), 3::bigint, 'المحاسب: يرى كل الفواتير');
+select tests.eq((select count(*) from public.admin_organizations()), 3::bigint, 'المحاسب: يرى ملخص الجهات للفواتير');
+select tests.throws($$select public.admin_grading_quality(30)$$, 'المحاسب: لا يرى جودة التصحيح');
+select tests.throws($$select public.admin_set_org_status(tests.org('school'), 'disabled', null)$$, 'المحاسب: لا يوقف جهة');
+select tests.eq((select count(*) from public.subjects where status = 'draft'), 0::bigint, 'المحاسب: لا يرى المواد المسودة');
+select tests.eq((select count(*) from public.students where organization_id <> tests.org('school')), 0::bigint, 'المحاسب: لا يرى طلاب الجهات الأخرى');
+select tests.throws($$select public.admin_list_staff()$$, 'المحاسب: لا يرى قائمة الطاقم');
+select tests.throws($$select public.admin_add_staff('+970590000013', null, 'super_admin', null)$$, 'المحاسب: لا يضيف أعضاء');
+select tests.throws($$insert into public.platform_admins (user_id, role) values (auth.uid(), 'super_admin')$$, 'المحاسب: لا يرقّي نفسه');
+select tests.throws($$update public.platform_admins set role = 'super_admin' where user_id = auth.uid()$$, 'المحاسب: لا يعدّل دوره');
+select tests.throws($$insert into public.platform_settings (key, value) values ('currency', '{}')$$, 'المحاسب: لا يغيّر الإعدادات');
+
+-- محرر المحتوى: المناهج والصفحة التعريفية فقط.
+select tests.login('+970590000012');
+select tests.eq((select count(*) from public.subjects where status = 'draft'), 1::bigint, 'المحرر: يرى المواد المسودة');
+select tests.eq((select count(*) from public.invoices), 0::bigint, 'المحرر: لا يرى الفواتير');
+insert into public.platform_settings (key, value, is_public) values ('landing', '{"title":"تجربة"}', true)
+  on conflict (key) do update set value = excluded.value;
+select tests.eq((select value ->> 'title' from public.platform_settings where key = 'landing'), 'تجربة', 'المحرر: يعدّل الصفحة التعريفية');
+select tests.throws($$insert into public.platform_settings (key, value) values ('exchange', '{}')$$, 'المحرر: لا يغيّر إعدادات أخرى');
+select tests.throws($$select public.admin_organizations()$$, 'المحرر: لا يرى ملخص الجهات');
+
+-- المدير العام يوقف المحاسب ثم يحذف المحرر.
+select tests.login('+970590000099');
+select public.admin_update_staff(tests.uid('+970590000011'), 'accountant', array['finance'], false);
+select public.admin_remove_staff(tests.uid('+970590000012'));
+select tests.login('+970590000011');
+select tests.eq(public.my_admin_access() is null, true, 'الموقوف: لا صلاحيات');
+select tests.eq(public.is_platform_admin(), false, 'الموقوف: لا يفتح لوحة الإدارة');
+select tests.eq((select count(*) from public.invoices where organization_id <> tests.org('school')), 0::bigint, 'الموقوف: لا يرى الفواتير');
+select tests.login('+970590000012');
+select tests.eq(public.my_admin_access() is null, true, 'المحذوف: لا صلاحيات');
+
+-- مدير عام جديد يستطيع تنزيل القديم (والقديم لا يعدّل نفسه، فيبقى دائماً مدير عام واحد).
+select tests.login('+970590000099');
+select public.admin_update_staff(tests.uid('+970590000011'), 'super_admin', null, true);
+select tests.login('+970590000011');
+select public.admin_update_staff(tests.uid('+970590000099'), 'custom', array['orgs'], true);
+select tests.login('+970590000099');
+select tests.throws($$select public.admin_list_staff()$$, 'المنزَّل: لم يعد يدير الطاقم');
+
+-- الدعوة تتحول لعضوية عند أول دخول.
+reset role;
+insert into auth.users (id, instance_id, aud, role, phone)
+  values ('00000000-0000-4000-8000-000000009999', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', '970590009999');
+select tests.login('+970590009999');
+set local role authenticated;
+select tests.eq(public.my_admin_access() ->> 'role', 'support_agent', 'الدعوة: صارت عضوية عند الدخول');
+select tests.eq((select full_name from public.profiles where id = auth.uid()), 'موظف دعم', 'الدعوة: الاسم انتقل للملف الشخصي');
+select tests.throws($$select public.admin_organizations()$$, 'موظف الدعم: لا يرى ملخص الجهات');
+rollback;
+
 -- ---------------------------------------------------------------- إيقاف الاشتراك الشهري (أشهر الإجازة)
 begin;
 select tests.login('+970590000001');
