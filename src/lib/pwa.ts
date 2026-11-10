@@ -69,3 +69,12 @@ export function isIosSafari() {
   const otherBrowser = /CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
   return ios && !otherBrowser;
 }
+
+/** Any browser on iPhone/iPad (Safari or not). */
+export function isIos() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+export function isAndroid() {
+  return /Android/i.test(navigator.userAgent);
+}

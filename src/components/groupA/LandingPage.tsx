@@ -20,6 +20,7 @@ import {
   Play
 } from 'lucide-react';
 import { useLandingConfig } from '../../lib/landing';
+import { InstallAppSection, INSTALL_SECTION_ID } from '../common/InstallAppSection';
 
 interface LandingPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -71,6 +72,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
             >
               <span>{cfg.hero.secondaryCtaText}</span>
               <ChevronDown className="w-4 h-4 text-[#1E3A5F]" />
+            </button>
+            <button
+              onClick={() => document.getElementById(INSTALL_SECTION_ID)?.scrollIntoView({ behavior: 'smooth' })}
+              className="bg-white hover:bg-slate-50 text-[#1E3A5F] border border-slate-300 px-5 py-3.5 rounded-xl font-semibold text-sm transition-colors cursor-pointer flex items-center gap-2"
+            >
+              <Smartphone className="w-4 h-4" />
+              <span>نزّل التطبيق</span>
             </button>
           </div>
 
@@ -412,6 +420,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
         </div>
       </section>
       )}
+
+      {/* Install the app on the phone (PWA) */}
+      <InstallAppSection />
 
       {/* Before & After Interactive Paper Comparison */}
       <section className="max-w-5xl mx-auto px-4 sm:px-6">
