@@ -66,7 +66,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Clean nav links */}
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
+          <nav className="hidden md:flex items-center gap-2 lg:gap-6 text-xs lg:text-sm font-medium text-slate-600">
             <button 
               onClick={() => onNavigate('A1')}
               className={`hover:text-[#1E3A5F] transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
@@ -115,6 +115,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="hover:text-[#1E3A5F] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               المناهج المدعومة
+            </button>
+            <button 
+              onClick={() => {
+                onNavigate('A1');
+                setTimeout(() => {
+                  document.getElementById('install-app')?.scrollIntoView({ behavior: 'smooth' });
+                }, 100);
+              }}
+              className="hidden lg:inline-block hover:text-[#1E3A5F] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              حمّل التطبيق
             </button>
             <button 
               onClick={() => onNavigate('SUPPORT')}

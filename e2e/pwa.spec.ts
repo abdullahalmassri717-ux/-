@@ -21,3 +21,14 @@ test('pages open without internet after the first visit', async ({ page, context
   await expect(page.locator('body')).toContainText('تسليم');
   await context.setOffline(false);
 });
+
+test('landing page explains how to install the app', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'نزّل التطبيق' }).click();
+  const section = page.locator('#install-app');
+  await expect(section).toContainText('نزّل تطبيق دقة');
+  await section.getByRole('tab', { name: 'آيفون' }).click();
+  await expect(section).toContainText('إضافة إلى الشاشة الرئيسية');
+  await section.getByRole('tab', { name: 'أندرويد' }).click();
+  await expect(section).toContainText('Chrome');
+});
