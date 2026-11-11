@@ -22,3 +22,8 @@ import_map = "./functions/deno.json"
 
 [functions.send-reports]
 import_map = "./functions/deno.json"
+
+# يشغّلها جدول القاعدة الأسبوعي برمز داخلي، لا بتسجيل دخول.
+[functions.weekly-reports]
+verify_jwt = false
+import_map = "./functions/deno.json"
