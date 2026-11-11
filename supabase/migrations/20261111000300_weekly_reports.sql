@@ -312,6 +312,9 @@ begin
     execute 'create extension if not exists pg_cron';
     execute $cmd$select cron.schedule('daqa-weekly-reports', '0 16 * * 4', 'select private.run_weekly_reports()')$cmd$;
   end if;
+exception when others then
+  -- لا نُفشل النشر كله بسبب الجدولة؛ يمكن تفعيلها لاحقاً من لوحة Supabase (Cron).
+  raise warning 'weekly reports schedule not created: %', sqlerrm;
 end $$;
 
 -- تقرير المدرسة الأسبوعي يجمع كل المواد، فيراه مالك الجهة فقط؛ المعلم يرى معاينة
