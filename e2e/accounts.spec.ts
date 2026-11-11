@@ -44,3 +44,24 @@ test('a school teacher never sees the subscription and invoices', async ({ page,
   await goInside(page, '/app/billing');
   await expect(page).toHaveURL(/\/app$/);
 });
+
+test('a school owner switches to their own teacher page and back', async ({ page, isMobile }) => {
+  const errors = watchErrors(page);
+  await open(page, '/app');
+  await switchTo(page, /مركز الروّاد التعليمي/);
+  expect(pathname(page)).toBe('/school');
+  await page.getByTitle('التبديل بين الحسابات والجهات المسجلة').click();
+  await page.getByRole('button', { name: 'صفحتي كأستاذ' }).click();
+  await expect(page).toHaveURL(/\/app$/);
+  await expect(page.getByText('المدير · كأستاذ')).toBeVisible();
+  // As a teacher: no billing in the menu.
+  if (!isMobile) {
+    const menu = page.locator('aside');
+    await expect(menu.getByRole('button', { name: 'لوحة المتابعة الرئيسية' })).toBeVisible();
+    await expect(menu.getByRole('button', { name: /رسوم الطلاب والمالية/ })).toHaveCount(0);
+  }
+  await page.getByTitle('التبديل بين الحسابات والجهات المسجلة').click();
+  await page.getByRole('button', { name: 'العودة إلى لوحة الإدارة' }).click();
+  await expect(page).toHaveURL(/\/school$/);
+  expect(errors).toEqual([]);
+});

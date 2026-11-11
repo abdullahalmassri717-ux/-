@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { setTeacherViewHeader, supabase } from '../lib/supabase';
 import { createDemoStore } from './demoStore';
 import { createSupabaseStore } from './supabaseStore';
 import type { DataStore } from './types';
@@ -18,12 +18,21 @@ export function useActiveOrg(): Entity {
   return org;
 }
 
-export const DataProvider: React.FC<{ org: Entity; real: boolean; children: React.ReactNode }> = ({ org, real, children }) => {
+/**
+ * `teacherView`: a school owner opened «صفحتي كأستاذ», so the store only shows what
+ * is assigned to them (the database narrows it). Switching gives a fresh store.
+ */
+export const DataProvider: React.FC<{ org: Entity; real: boolean; teacherView?: boolean; children: React.ReactNode }> = ({
+  org,
+  real,
+  teacherView = false,
+  children,
+}) => {
   const orgId = org.id;
-  const store = useMemo(
-    () => (real && supabase ? createSupabaseStore(supabase, orgId) : createDemoStore()),
-    [real, orgId],
-  );
+  const store = useMemo(() => {
+    setTeacherViewHeader(teacherView);
+    return real && supabase ? createSupabaseStore(supabase, orgId) : createDemoStore();
+  }, [real, orgId, teacherView]);
   return (
     <OrgContext.Provider value={org}>
       <DataContext.Provider value={store}>{children}</DataContext.Provider>

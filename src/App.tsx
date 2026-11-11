@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { pathForScreen, roleForPath, screenForPath } from './routes';
+import { SCREEN_PATHS, pathForScreen, roleForPath, screenForPath } from './routes';
 import { UserRole, ScreenId, Entity } from './types';
 import { DataProvider } from './data/DataContext';
 import { Navbar } from './components/Navbar';
@@ -132,6 +132,13 @@ export default function App() {
       }
     );
   }, [isReal, demoEntity, auth.entities, auth.profile, activeEntityId]);
+  // «صفحتي كأستاذ»: the owner of a school or centre who opens the teacher area works
+  // there as a teacher: only the classes assigned to them, and no billing.
+  const isOwnerTeacherView = isOrgOwner(activeEntity) && roleForPath(location.pathname) === 'teacher';
+  const viewEntity: Entity = useMemo(
+    () => (isOwnerTeacherView ? { ...activeEntity, role: 'teacher' } : activeEntity),
+    [isOwnerTeacherView, activeEntity],
+  );
   const setActiveEntity = (entity: Entity) => {
     if (isReal) {
       setActiveEntityId(entity.id);
@@ -184,11 +191,11 @@ export default function App() {
 
   // Opening the billing address directly (bookmark, shared link) is blocked too.
   useEffect(() => {
-    if (currentScreen === 'B11' && isOrgTeacher(activeEntity) && roleForPath(location.pathname) === 'teacher') {
+    if (currentScreen === 'B11' && isOrgTeacher(viewEntity) && roleForPath(location.pathname) === 'teacher') {
       notify(BILLING_OWNER_ONLY, 'warning');
       navigate(pathForScreen('B1'), { replace: true });
     }
-  }, [currentScreen, activeEntity, location.pathname]);
+  }, [currentScreen, viewEntity, location.pathname]);
 
   // Keep the role in step with the area of the site the address points to
   // (e.g. opening a student link, or pressing the browser's back button).
@@ -212,7 +219,7 @@ export default function App() {
 
   const handleNavigate = (screen: ScreenId) => {
     // Teachers of a school or centre never see its subscription and invoices.
-    if (screen === 'B11' && isOrgTeacher(activeEntity)) {
+    if (screen === 'B11' && isOrgTeacher(viewEntity)) {
       notify(BILLING_OWNER_ONLY, 'warning');
       return;
     }
@@ -302,7 +309,7 @@ export default function App() {
       case 'B10':
         return <ParentReportPage onNavigate={handleNavigate} />;
       case 'B11':
-        return <SubscriptionPage onNavigate={handleNavigate} activeEntity={activeEntity} />;
+        return <SubscriptionPage onNavigate={handleNavigate} activeEntity={viewEntity} />;
       case 'B12':
         return <CorrectedPaperViewPage onNavigate={handleNavigate} />;
       case 'B14':
@@ -374,7 +381,7 @@ export default function App() {
 
       // Common / Global
       case 'SUPPORT':
-        return <TechnicalSupportPage onNavigate={handleNavigate} activeEntity={activeEntity} />;
+        return <TechnicalSupportPage onNavigate={handleNavigate} activeEntity={viewEntity} />;
 
       default:
         return <LandingPage onNavigate={handleNavigate} onOpenAI={() => setIsAIOpen(true)} />;
@@ -391,6 +398,8 @@ export default function App() {
         currentRole={currentRole}
         currentScreen={currentScreen}
         activeEntity={activeEntity}
+        isTeacherView={isOwnerTeacherView}
+        onSwitchView={(asTeacher) => navigate(asTeacher ? SCREEN_PATHS.B1 : SCREEN_PATHS.D1)}
         availableEntities={entities}
         onSwitchEntity={(entityId: string) => {
           const ent = entities.find(e => e.id === entityId);
@@ -425,7 +434,7 @@ export default function App() {
             (roleForPath(location.pathname) === 'teacher' || roleForPath(location.pathname) === 'school_principal') ? (
             <OrgStatusGate entity={activeEntity} onRefresh={auth.refresh} />
           ) : (
-            <DataProvider org={activeEntity} real={isReal}>
+            <DataProvider org={viewEntity} real={isReal} teacherView={isReal && isOwnerTeacherView}>
               {renderScreen()}
             </DataProvider>
           )}
@@ -435,7 +444,7 @@ export default function App() {
         <Sidebar
           currentRole={currentRole}
           currentScreen={currentScreen}
-          activeEntity={activeEntity}
+          activeEntity={viewEntity}
           onNavigate={handleNavigate}
           isMobileOpen={isMobileDrawerOpen}
           onMobileClose={() => setIsMobileDrawerOpen(false)}
@@ -472,7 +481,7 @@ export default function App() {
 
       {/* 5. Contextual AI Drawer */}
       {currentRole !== 'visitor' && currentRole !== 'student' && (
-      <DataProvider org={activeEntity} real={isReal}>
+      <DataProvider org={viewEntity} real={isReal} teacherView={isReal && isOwnerTeacherView}>
       <AIAssistantDrawer
         isOpen={isAIOpen || currentScreen === 'C4'}
         onClose={() => {

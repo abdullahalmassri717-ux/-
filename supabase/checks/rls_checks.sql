@@ -433,6 +433,26 @@ insert into public.groups (id, organization_id, name)
   values ('aaaaaaaa-0000-4000-8000-000000000003', tests.org('individual_teacher'), 'مجموعة جديدة');
 select tests.eq((select count(*) from public.group_teachers where group_id = 'aaaaaaaa-0000-4000-8000-000000000003'), 1::bigint,
   'المدرّس الفردي: يُسند لمجموعته تلقائياً كما كان');
+-- المدير يدرّس أيضاً: «صفحتي كأستاذ» تُظهر له المسند إليه فقط
+select tests.login('+970590000002');
+select set_config('request.headers', '{"x-daqa-view":"teacher"}', true);
+select tests.eq((select count(*) from public.groups where organization_id = tests.org('school')), 0::bigint,
+  'المدير كأستاذ: لا يرى صفوفاً غير مسندة إليه');
+select tests.eq((select count(*) from public.students where organization_id = tests.org('school')), 0::bigint,
+  'المدير كأستاذ: لا يرى طلاباً من صفوف غيره');
+insert into public.groups (id, organization_id, name)
+  values ('aaaaaaaa-0000-4000-8000-000000000004', tests.org('school'), 'مجموعة المدير');
+select tests.eq((select count(*) from public.groups where organization_id = tests.org('school')), 1::bigint,
+  'المدير كأستاذ: المجموعة التي ينشئها تُسند إليه ويراها');
+select set_config('request.headers', '', true);
+insert into public.group_teachers (group_id, organization_id, user_id)
+  values ('aaaaaaaa-0000-4000-8000-000000000001', tests.org('school'), tests.uid('+970590000002'));
+select set_config('request.headers', '{"x-daqa-view":"teacher"}', true);
+select tests.eq((select count(*) from public.students where id = 'aaaaaaaa-0000-4000-8000-0000000000a1'), 1::bigint,
+  'المدير كأستاذ: يرى طلاب الصف المسند إليه');
+select set_config('request.headers', '', true);
+select tests.eq((select count(*) from public.groups where organization_id = tests.org('school')) > 1, true,
+  'المدير في لوحة الإدارة: يرى كل الصفوف');
 rollback;
 
 \echo 'كل الفحوص نجحت ✓'
