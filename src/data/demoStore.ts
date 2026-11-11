@@ -436,6 +436,7 @@ export function createDemoStore(): DataStore {
             title: a.title,
             subject: a.subject,
             feedbackLanguage: 'ar',
+            classRoster: s().students.filter((x) => x.groupId === a.groupId).map((x) => x.name),
             questions: a.questions.map((q) => ({
               questionNumber: q.questionNumber, text: q.text, type: q.type, maxScore: q.maxScore,
               modelAnswer: q.modelAnswer, criteria: q.criteria, lesson: q.lesson,
@@ -446,6 +447,10 @@ export function createDemoStore(): DataStore {
         if (!sub.studentId && result.studentCodeOnPaper) {
           const st = s().students.find((x) => x.studentCode === result.studentCodeOnPaper);
           if (st) Object.assign(sub, { studentId: st.id, studentName: st.name, studentCode: st.studentCode });
+        }
+        if (!sub.studentId && result.studentNameOnPaper) {
+          const hits = s().students.filter((x) => x.groupId === a.groupId && x.name === result.studentNameOnPaper);
+          if (hits.length === 1) Object.assign(sub, { studentId: hits[0].id, studentName: hits[0].name, studentCode: hits[0].studentCode });
         }
         s().grades = s().grades.filter((g) => g.submissionId !== id);
         for (const r of result.questions) {

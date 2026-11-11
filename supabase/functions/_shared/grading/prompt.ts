@@ -23,6 +23,7 @@ For each question in the exam:
 8. If the answer area is blank, give 0, say so, and use high confidence. If it is unreadable, set unreadable to true and confidence to low.
 
 Also report the student code written on the paper (usually 4 digits near the top), or null if there is none.
+If a class list is given, also read the student's name written on the paper (it may be handwritten by a young child, often near the top) and report the one name from the class list that it matches, copied exactly as it appears in the list. Report null if no name is written, or if you are not sure which single student it is (for example, two students in the list share the written first name).
 
 Follow the teacher's rubric exactly. Never invent criteria. Never award more than the rubric allows.`;
 
@@ -41,6 +42,11 @@ export function renderExam(exam: ExamToGrade): string {
     q.criteria.forEach((c, i) => lines.push(`  ${i + 1}. (${c.points} points) ${c.description}`));
     lines.push('</question>');
     lines.push('');
+  }
+  if (exam.classRoster?.length) {
+    lines.push('<class_list>');
+    for (const name of exam.classRoster) lines.push(name);
+    lines.push('</class_list>');
   }
   return lines.join('\n');
 }
