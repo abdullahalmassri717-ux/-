@@ -12,7 +12,8 @@ import {
   Briefcase,
   Layers,
   Check,
-  Headphones
+  Headphones,
+  Repeat
 } from 'lucide-react';
 import { PLATFORM_CONFIG, MOCK_ENTITIES } from '../mockData';
 import { useAuth } from '../lib/auth';
@@ -22,6 +23,10 @@ interface NavbarProps {
   currentScreen: ScreenId;
   activeEntity?: Entity;
   availableEntities?: Entity[];
+  /** A school owner who opened «صفحتي كأستاذ». */
+  isTeacherView?: boolean;
+  /** Switch a school owner between the school dashboard and their teacher page. */
+  onSwitchView?: (asTeacher: boolean) => void;
   onSwitchEntity?: (entityId: string) => void;
   onRoleChange?: (role: UserRole) => void;
   onNavigate: (screen: ScreenId) => void;
@@ -35,6 +40,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentScreen,
   activeEntity = MOCK_ENTITIES[0],
   availableEntities = MOCK_ENTITIES,
+  isTeacherView = false,
+  onSwitchView,
   onSwitchEntity,
   onRoleChange,
   onNavigate,
@@ -47,6 +54,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   // A platform admin who also teaches reaches both areas from the header.
   const canOpenAdmin = auth.mode === 'real' && auth.status === 'signed_in' && !!auth.profile?.isPlatformAdmin;
   const hasOwnAccount = auth.mode === 'real' && auth.entities.length > 0;
+  // The owner of a school or centre may also teach there.
+  const isSchoolOwner = activeEntity.role === 'owner' && activeEntity.type !== 'individual_teacher';
 
   // If visitor: show clean landing nav links
   if (currentRole === 'visitor') {
@@ -234,7 +243,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span className={`px-1 rounded font-semibold ${
                       activeEntity.role === 'owner' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'
                     }`}>
-                      {activeEntity.role === 'owner' ? 'مالك / مدير' : 'معلم معتمد'}
+                      {isTeacherView ? 'المدير · كأستاذ' : activeEntity.role === 'owner' ? 'مالك / مدير' : 'معلم معتمد'}
                     </span>
                     <span>·</span>
                     <span>{activeEntity.activeStudentsCount} طالباً</span>
@@ -244,7 +253,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
               {/* Entity Dropdown Menu */}
               {showEntityDropdown && (
-                <div className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-1.5rem))] bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 text-right text-xs space-y-1">
+                <div className="fixed top-16 left-3 right-3 sm:absolute sm:top-auto sm:left-auto sm:right-0 sm:mt-2 sm:w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 text-right text-xs space-y-1">
                   <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between">
                     <span className="font-bold text-slate-700 text-xs">حساباتك وجهاتك التعليمية</span>
                     <span className="text-[10px] text-slate-400">بيانات منفصلة بالكامل</span>
@@ -289,6 +298,25 @@ export const Navbar: React.FC<NavbarProps> = ({
                     })}
                   </div>
 
+                  {isSchoolOwner && onSwitchView && (
+                    <div className="pt-2 border-t border-slate-100">
+                      <button
+                        onClick={() => {
+                          setShowEntityDropdown(false);
+                          onSwitchView(!isTeacherView);
+                        }}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 text-emerald-800 hover:bg-emerald-50 rounded-xl font-bold transition-colors cursor-pointer text-xs"
+                      >
+                        <Repeat className="w-3.5 h-3.5" />
+                        {isTeacherView ? 'العودة إلى لوحة الإدارة' : 'صفحتي كأستاذ'}
+                      </button>
+                      {!isTeacherView && (
+                        <p className="text-[10px] text-slate-500 text-center px-2">
+                          تظهر فيها الصفوف والمواد المسندة إليك فقط
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {canOpenAdmin && (
                     <div className="pt-2 border-t border-slate-100">
                       <button
@@ -328,7 +356,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {currentRole === 'platform_admin' && hasOwnAccount && (
             <button
-              onClick={() => onNavigate('B1')}
+              onClick={() => onNavigate(isSchoolOwner ? 'D1' : 'B1')}
               className="text-xs font-bold text-[#1E3A5F] border border-slate-200 hover:bg-slate-100 rounded-xl px-2.5 py-1.5 cursor-pointer whitespace-nowrap"
               title="العودة إلى حسابك كمدرّس أو جهة"
             >
