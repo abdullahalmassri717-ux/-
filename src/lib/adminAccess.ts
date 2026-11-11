@@ -1,5 +1,5 @@
 // Platform staff roles and permissions. The database enforces them
-// (private.admin_can in supabase/migrations/20261110000100_platform_staff_roles.sql);
+// (private.admin_can in supabase/migrations/20261110000200_platform_staff_roles.sql);
 // the app only uses them to hide sections a staff member can't open.
 
 export type AdminPermission = 'orgs' | 'finance' | 'plans' | 'quality' | 'support' | 'curricula' | 'landing' | 'settings';
