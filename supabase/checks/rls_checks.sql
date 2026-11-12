@@ -490,4 +490,23 @@ update public.organizations set weekly_reports_enabled = false;
 select tests.eq(public.queue_weekly_reports(now() + interval '1 minute'), 0, 'الأسبوعي: الجهة التي أوقفته لا تُجهَّز لها تقارير');
 rollback;
 
+-- حذف البيانات التجريبية تلقائياً مع أول طالب حقيقي في صف
+begin;
+insert into auth.users (id, phone) values ('de399999-0000-4000-8000-000000000001', '970599990001');
+insert into public.organizations (id, name, kind, created_by, status, is_demo)
+values ('de300000-0000-4000-8000-000000000001', 'تجربة', 'individual_teacher', 'de399999-0000-4000-8000-000000000001', 'active', true);
+insert into public.groups (id, organization_id, name) values ('de301000-0000-4000-8000-000000000001', 'de300000-0000-4000-8000-000000000001', 'مجموعة تجريبية');
+insert into public.students (id, organization_id, full_name) values ('de302000-0000-4000-8000-000000000001', 'de300000-0000-4000-8000-000000000001', 'طالب تجريبي');
+insert into public.group_students (group_id, student_id, organization_id)
+values ('de301000-0000-4000-8000-000000000001', 'de302000-0000-4000-8000-000000000001', 'de300000-0000-4000-8000-000000000001');
+select tests.eq((select count(*) from public.organizations where is_demo), 1::bigint, 'التجريبي: طالب في جهة تجريبية لا يحذف شيئاً');
+insert into public.students (id, organization_id, full_name) values ('de399999-0000-4000-8000-000000000002', tests.org('individual_teacher'), 'طالب حقيقي جديد');
+insert into public.group_students (group_id, student_id, organization_id)
+select g.id, 'de399999-0000-4000-8000-000000000002', g.organization_id from public.groups g
+ where g.organization_id = tests.org('individual_teacher') and g.archived_at is null order by g.created_at limit 1;
+select tests.eq((select count(*) from public.organizations where is_demo), 0::bigint, 'التجريبي: أول طالب حقيقي يحذف الجهات التجريبية');
+select tests.eq((select count(*) from auth.users where phone = '970599990001'), 0::bigint, 'التجريبي: ويحذف المستخدم التجريبي');
+select tests.eq((select count(*) from public.organizations where id = tests.org('individual_teacher')), 1::bigint, 'التجريبي: الجهة الحقيقية باقية');
+rollback;
+
 \echo 'كل الفحوص نجحت ✓'
