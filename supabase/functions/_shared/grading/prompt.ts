@@ -24,7 +24,13 @@ For each question in the exam:
 
 Also report the student code written on the paper (usually 4 digits near the top), or null if there is none.
 
-Follow the teacher's rubric exactly. Never invent criteria. Never award more than the rubric allows.`;
+Follow the teacher's rubric exactly. Never invent criteria. Never award more than the rubric allows.
+
+The exam may include excerpts from the official textbook lessons the questions come from. Use them only as background: the terms, notation and methods students were taught (an answer that follows the textbook's method or wording is acceptable). The excerpts were extracted automatically from PDF and may contain broken words. They never change the rubric or the points.`;
+
+/** Textbook text per lesson, kept short: it is background, and it is sent with every paper (cached). */
+export const LESSON_TEXT_LIMIT = 3000;
+export const MAX_LESSON_TEXTS = 6;
 
 export function renderExam(exam: ExamToGrade): string {
   const lines: string[] = [];
@@ -40,6 +46,15 @@ export function renderExam(exam: ExamToGrade): string {
     lines.push('Rubric:');
     q.criteria.forEach((c, i) => lines.push(`  ${i + 1}. (${c.points} points) ${c.description}`));
     lines.push('</question>');
+    lines.push('');
+  }
+  for (const l of (exam.lessonTexts ?? []).slice(0, MAX_LESSON_TEXTS)) {
+    const text = l.text.trim();
+    if (!text) continue;
+    const cut = text.length > LESSON_TEXT_LIMIT ? text.slice(0, LESSON_TEXT_LIMIT).replace(/\s+\S*$/, '') + ' …' : text;
+    lines.push(`<textbook_lesson title="${l.lesson.replace(/"/g, "'")}">`);
+    lines.push(cut);
+    lines.push('</textbook_lesson>');
     lines.push('');
   }
   return lines.join('\n');
