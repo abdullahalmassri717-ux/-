@@ -132,6 +132,22 @@ def run(raw):
             w = key_of(l).split()
             if len(' '.join(w)) >= 6:
                 starts[i] = find(skh, sk(' '.join(w)), start0, len(pages))
+    # third chance: the page heading words the title differently ("قصة آدم" for "قصة خلق آدم"):
+    # look between the neighbouring lessons that were found for 3, then 2, consecutive title words.
+    for i, (u, l) in enumerate(items):
+        if starts[i] is not None:
+            continue
+        lo = max([s for s in starts[:i] if s is not None], default=start0 - 1) + 1
+        hi = min([s for s in starts[i + 1:] if s is not None], default=len(pages))
+        w = [x for x in sk(nz(re.sub(r'\(.*?\)', ' ', l))).split() if len(x) >= 3]
+        for n in (3, 2):
+            for j in range(len(w) - n + 1):
+                f = find(skh, ' '.join(w[j:j + n]), lo, hi)
+                if f is not None:
+                    starts[i] = f
+                    break
+            if starts[i] is not None:
+                break
     out, hit = {}, 0
     known = [(i, s) for i, s in enumerate(starts) if s is not None]
     for n, (i, s) in enumerate(known):

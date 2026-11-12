@@ -15,3 +15,5 @@ grading-test/
 # Playwright end-to-end check results
 test-results/
 playwright-report/
+curricula/txt/
+__pycache__/
