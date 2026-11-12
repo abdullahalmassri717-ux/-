@@ -46,7 +46,8 @@ def page_text(p):
         out.append(l)
     return '\n'.join(out)
 
-def run(raw):
+def run(raw, bad=frozenset()):
+    """bad: pages to skip (found to be a contents list: several lessons landed on them)."""
     lines = Path(raw).read_text(encoding='utf-8').splitlines()
     book = next(l.split('|', 1)[1] for l in lines if l.startswith('#book|'))
     pages = json.loads((S / 'txt' / f'{book}.json').read_text(encoding='utf-8'))
@@ -72,7 +73,8 @@ def run(raw):
     skh = [x[:450] for x in skn]
     tocish = [bool(re.search(r'المحتويات|الموضوع الصفحه|الفرع الموضوع|المحتوي الصفحه', n)
                    or len(re.findall(r'(^| )الدرس ', n)) >= 3
-                   or re.search(r'يتوقع من (الطلبه|الطالب|المتعلم)[^.]{0,80}(هذه الوحده|الوحده)', n[:300])) for n in norm]
+                   or re.search(r'يتوقع من (الطلبه|الطالب|المتعلم)[^.]{0,80}(هذه الوحده|الوحده)', n[:300])
+                   or i in bad) for i, n in enumerate(norm)]
     def find(arr, k, lo, hi):
         if len(k) < 2: return None
         pat = re.compile(r'(^| )' + re.escape(k) + r'( |$)')
@@ -132,6 +134,26 @@ def run(raw):
             w = key_of(l).split()
             if len(' '.join(w)) >= 6:
                 starts[i] = find(skh, sk(' '.join(w)), start0, len(pages))
+    # third chance: the page heading words the title differently ("قصة آدم" for "قصة خلق آدم"):
+    # look between the neighbouring lessons that were found for 3, then 2, consecutive title words.
+    for i, (u, l) in enumerate(items):
+        if starts[i] is not None:
+            continue
+        lo = max([s for s in starts[:i] if s is not None], default=start0 - 1) + 1
+        hi = min([s for s in starts[i + 1:] if s is not None], default=len(pages))
+        w = [x for x in sk(nz(re.sub(r'\(.*?\)', ' ', l))).split() if len(x) >= 3]
+        for n in (3, 2):
+            for j in range(len(w) - n + 1):
+                f = find(skh, ' '.join(w[j:j + n]), lo, hi)
+                if f is not None:
+                    starts[i] = f
+                    break
+            if starts[i] is not None:
+                break
+    # a page that three or more lessons start on is a contents list the checks above missed (OCR text)
+    crowded = {p for p in starts if p is not None and starts.count(p) >= 3} - bad
+    if crowded:
+        return run(raw, bad | crowded)
     out, hit = {}, 0
     known = [(i, s) for i, s in enumerate(starts) if s is not None]
     for n, (i, s) in enumerate(known):

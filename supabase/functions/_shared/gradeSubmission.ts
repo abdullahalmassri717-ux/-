@@ -96,7 +96,7 @@ export async function gradeSubmission(
     const [{ data: questions, error: qError }, { data: pages, error: pError }] = await Promise.all([
       admin
         .from('questions')
-        .select('id, number, text, type, max_score, model_answer, lessons(title), rubric_criteria(description, points, sort_order)')
+        .select('id, number, text, type, max_score, model_answer, lessons(title, content), rubric_criteria(description, points, sort_order)')
         .eq('assessment_id', sub.assessment_id)
         .order('number'),
       admin.from('submission_pages').select('page_number, storage_path').eq('submission_id', submissionId).order('page_number'),
@@ -121,10 +121,18 @@ export async function gradeSubmission(
 
     type Q = {
       id: string; number: number; text: string; type: ExamToGrade['questions'][number]['type']; max_score: number;
-      model_answer: string | null; lessons: { title: string } | { title: string }[] | null;
+      model_answer: string | null;
+      lessons: { title: string; content: string | null } | { title: string; content: string | null }[] | null;
       rubric_criteria: { description: string; points: number; sort_order: number }[];
     };
     const qs = (questions ?? []) as unknown as Q[];
+    const lessonOf = (q: Q) => (Array.isArray(q.lessons) ? q.lessons[0] : q.lessons) ?? null;
+    // Textbook text of each lesson the exam covers (once per lesson), so the grader knows what was taught.
+    const lessonTexts = new Map<string, string>();
+    for (const q of qs) {
+      const l = lessonOf(q);
+      if (l?.title && l.content && !lessonTexts.has(l.title)) lessonTexts.set(l.title, l.content);
+    }
     const exam: ExamToGrade = {
       title: assessment?.title ?? '',
       subject: subjectName ?? '',
@@ -139,8 +147,9 @@ export async function gradeSubmission(
         criteria: [...(q.rubric_criteria ?? [])]
           .sort((a, b) => a.sort_order - b.sort_order)
           .map((c) => ({ description: c.description, points: Number(c.points) })),
-        lesson: (Array.isArray(q.lessons) ? q.lessons[0]?.title : q.lessons?.title) ?? undefined,
+        lesson: lessonOf(q)?.title ?? undefined,
       })),
+      lessonTexts: [...lessonTexts].map(([lesson, text]) => ({ lesson, text })),
     };
 
     const images: PaperImage[] = [];

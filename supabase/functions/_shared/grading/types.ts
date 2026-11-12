@@ -28,6 +28,8 @@ export interface ExamToGrade {
   /** Language the student-facing feedback should be written in, e.g. "ar" or "en". */
   feedbackLanguage?: string;
   questions: QuestionToGrade[];
+  /** Text of the curriculum lessons the questions come from (from the textbook), for background. */
+  lessonTexts?: { lesson: string; text: string }[];
   /** Names of the students in the exam's class, so the AI can tell whose paper it is from a handwritten name. */
   classRoster?: string[];
 }
