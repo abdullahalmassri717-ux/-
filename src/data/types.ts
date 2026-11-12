@@ -3,7 +3,7 @@ import type { AiStore } from './ai';
 import type { SchoolStore } from './school';
 // Shapes the screens work with. Both the demo store (mock data) and the real
 // Supabase store return these, so a screen does not care which one is active.
-import type { Curriculum, Exam, Group, QuestionRubric, Student } from '../types';
+import type { Curriculum, EntityType, Exam, Group, QuestionRubric, Student } from '../types';
 
 export type { Curriculum, Group };
 
@@ -93,6 +93,21 @@ export interface PaperPage {
 }
 
 export type ReportStatus = 'draft' | 'queued' | 'sent' | 'failed';
+
+/** One weekly parent message (a private teacher gets one per subject; a school one per student). */
+export interface WeeklyReportRow {
+  studentId: string;
+  studentName: string;
+  parentPhone: string;
+  consent: boolean;
+  /** Set for a private teacher's per-subject report; empty for a school's combined report. */
+  subjectName: string;
+  papers: number;
+  body: string;
+  /** Status of the last weekly report already prepared for this student. */
+  lastStatus: ReportStatus | null;
+  lastPeriodEnd: string | null;
+}
 
 export interface SubmissionRow {
   id: string;
@@ -234,4 +249,9 @@ export interface DataStore extends BillingStore, SchoolStore, AiStore {
   listReportStatuses(submissionIds: string[]): Promise<Record<string, ReportStatus>>;
   /** Puts approved results in the WhatsApp queue and asks the server to send them. */
   queueReports(items: { studentId: string; submissionId: string; phone: string; body: string }[]): Promise<{ queued: number; sent: number; error?: string }>;
+  /** This week's parent reports so far (the last 7 days of approved papers). */
+  weeklyReportPreview(orgKind: EntityType): Promise<WeeklyReportRow[]>;
+  /** Whether the organization sends the weekly report automatically. */
+  getWeeklyReportsEnabled(): Promise<boolean>;
+  setWeeklyReportsEnabled(on: boolean): Promise<void>;
 }

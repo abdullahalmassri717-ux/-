@@ -455,4 +455,26 @@ select tests.eq((select count(*) from public.groups where organization_id = test
   'المدير في لوحة الإدارة: يرى كل الصفوف');
 rollback;
 
+-- ---------------------------------------------------------------- التقرير الأسبوعي
+begin;
+select tests.login('+970590000001');   -- أ. محمد المصري (مدرّس خصوصي)
+set local role authenticated;
+select tests.eq((select count(*) from public.weekly_report_preview(tests.org('individual_teacher'))) > 0, true,
+  'الأسبوعي: المدرّس يرى معاينة تقرير طلابه');
+select tests.eq((select bool_and(body like '📘 التقرير الأسبوعي لمادة %') from public.weekly_report_preview(tests.org('individual_teacher'))), true,
+  'الأسبوعي: تقرير المدرّس الخصوصي عنوانه اسم المادة');
+select tests.throws('select public.queue_weekly_reports()', 'الأسبوعي: المتصفح لا يجهّز تقارير كل الجهات');
+select tests.throws('select public.check_weekly_reports_token(''x'')', 'الأسبوعي: المتصفح لا يفحص الرمز الداخلي');
+select tests.throws('select * from private.app_secrets', 'الأسبوعي: المتصفح لا يقرأ الرمز الداخلي');
+reset role;
+select tests.eq(public.queue_weekly_reports(now() + interval '1 minute') > 0, true, 'الأسبوعي: الخادم يجهّز التقارير');
+select tests.eq(public.queue_weekly_reports(now() + interval '1 minute'), 0, 'الأسبوعي: لا يتكرر تقرير نفس الأسبوع');
+select tests.eq((select count(*) from public.reports where kind = 'progress' and status = 'queued'
+                 and submission_id is null and period_end is not null) > 0, true, 'الأسبوعي: التقارير في قائمة الانتظار');
+select set_config('request.jwt.claims', '', true);
+delete from public.reports where kind = 'progress';
+update public.organizations set weekly_reports_enabled = false;
+select tests.eq(public.queue_weekly_reports(now() + interval '1 minute'), 0, 'الأسبوعي: الجهة التي أوقفته لا تُجهَّز لها تقارير');
+rollback;
+
 \echo 'كل الفحوص نجحت ✓'

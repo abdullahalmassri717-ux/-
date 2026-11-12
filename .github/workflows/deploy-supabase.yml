@@ -92,4 +92,5 @@ jobs:
           supabase functions deploy grade-submission --project-ref "$SUPABASE_PROJECT_REF" $yes_flag
           supabase functions deploy ai-tools --project-ref "$SUPABASE_PROJECT_REF" $yes_flag
           supabase functions deploy send-reports --project-ref "$SUPABASE_PROJECT_REF" $yes_flag
+          supabase functions deploy weekly-reports --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt $yes_flag
           supabase functions deploy student-submit --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt $yes_flag
