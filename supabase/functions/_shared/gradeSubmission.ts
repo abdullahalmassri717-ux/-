@@ -18,6 +18,18 @@ import {
 
 const CONFIDENCE_VALUE = { high: 0.95, medium: 0.75, low: 0.4 } as const;
 
+/** Compares Arabic names loosely: no diacritics, one form of alef/ya/ta marbuta, single spaces. */
+export function normalizeName(name: string): string {
+  return name
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 export function toBase64(bytes: Uint8Array): string {
   let binary = '';
   const chunk = 0x8000;
@@ -56,14 +68,14 @@ export async function gradeSubmission(
 
   const { data: sub, error: subError } = await admin
     .from('submissions')
-    .select('id, organization_id, assessment_id, student_id, status, assessments(title, auto_send_reports, status, subjects(name))')
+    .select('id, organization_id, assessment_id, student_id, status, assessments(title, group_id, auto_send_reports, status, subjects(name))')
     .eq('id', submissionId)
     .maybeSingle();
   if (subError || !sub) return { ok: false, status: 'failed', error: 'لم نجد هذه الورقة.' };
   if (sub.status === 'approved') return { ok: false, status: 'approved', error: 'هذه الورقة معتمدة من قبل.' };
 
   const orgId = sub.organization_id as string;
-  type A = { title: string; auto_send_reports: boolean; status: string; subjects: { name: string } | { name: string }[] | null };
+  type A = { title: string; group_id: string; auto_send_reports: boolean; status: string; subjects: { name: string } | { name: string }[] | null };
   const assessment = (Array.isArray(sub.assessments) ? sub.assessments[0] : sub.assessments) as A | null;
   const subjectName = Array.isArray(assessment?.subjects) ? assessment?.subjects[0]?.name : assessment?.subjects?.name;
 
@@ -91,6 +103,22 @@ export async function gradeSubmission(
     ]);
     if (qError || pError) throw new GradingError('load failed', 'تعذّر تحميل الامتحان أو صور الورقة.', true);
 
+    // The class list lets the AI tell whose paper it is from a handwritten name,
+    // so young pupils don't need a printed sheet with a code.
+    let roster: { id: string; name: string }[] = [];
+    if (!sub.student_id && assessment?.group_id) {
+      const { data: members } = await admin
+        .from('group_students')
+        .select('students(id, full_name, status)')
+        .eq('group_id', assessment.group_id)
+        .is('left_at', null);
+      type M = { students: { id: string; full_name: string; status: string } | { id: string; full_name: string; status: string }[] | null };
+      roster = ((members ?? []) as unknown as M[])
+        .map((m) => (Array.isArray(m.students) ? m.students[0] : m.students))
+        .filter((st): st is { id: string; full_name: string; status: string } => !!st && st.status === 'active')
+        .map((st) => ({ id: st.id, name: st.full_name }));
+    }
+
     type Q = {
       id: string; number: number; text: string; type: ExamToGrade['questions'][number]['type']; max_score: number;
       model_answer: string | null; lessons: { title: string } | { title: string }[] | null;
@@ -101,6 +129,7 @@ export async function gradeSubmission(
       title: assessment?.title ?? '',
       subject: subjectName ?? '',
       feedbackLanguage: 'ar',
+      classRoster: roster.length ? roster.map((r) => r.name) : undefined,
       questions: qs.map((q) => ({
         questionNumber: q.number,
         text: q.text,
@@ -129,8 +158,10 @@ export async function gradeSubmission(
       ? demoGrade(exam, submissionId)
       : await gradePaper(new ClaudeGradingProvider(apiKey!), gradingConfigFromEnv(env), { exam, pages: images });
 
-    // Match the student from the code written on the paper, if not known yet.
+    // Match the student from the code written on the paper, or else from the
+    // name written on it (only inside this exam's class), if not known yet.
     let studentId = sub.student_id as string | null;
+    let candidate: string | null = null;
     if (!studentId && result.studentCodeOnPaper) {
       const { data: st } = await admin
         .from('students')
@@ -139,15 +170,21 @@ export async function gradeSubmission(
         .eq('student_code', result.studentCodeOnPaper)
         .eq('status', 'active')
         .maybeSingle();
-      if (st?.id) {
-        const { data: clash } = await admin
-          .from('submissions')
-          .select('id')
-          .eq('assessment_id', sub.assessment_id)
-          .eq('student_id', st.id)
-          .maybeSingle();
-        if (!clash) studentId = st.id as string;
-      }
+      candidate = (st?.id as string | undefined) ?? null;
+    }
+    if (!studentId && !candidate && result.studentNameOnPaper && roster.length) {
+      const wanted = normalizeName(result.studentNameOnPaper);
+      const hits = roster.filter((r) => normalizeName(r.name) === wanted);
+      if (hits.length === 1) candidate = hits[0].id;
+    }
+    if (!studentId && candidate) {
+      const { data: clash } = await admin
+        .from('submissions')
+        .select('id')
+        .eq('assessment_id', sub.assessment_id)
+        .eq('student_id', candidate)
+        .maybeSingle();
+      if (!clash) studentId = candidate;
     }
 
     // Keep what the teacher already reviewed; replace the rest with the new AI answer.

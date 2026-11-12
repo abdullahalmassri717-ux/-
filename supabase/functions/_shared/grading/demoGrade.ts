@@ -47,6 +47,7 @@ export function demoGrade(exam: ExamToGrade, seed: string): GradePaperResult {
   });
   return {
     studentCodeOnPaper: null,
+    studentNameOnPaper: null,
     questions,
     totalScore: questions.reduce((s, q) => s + q.score, 0),
     totalMaxScore: questions.reduce((s, q) => s + q.maxScore, 0),
