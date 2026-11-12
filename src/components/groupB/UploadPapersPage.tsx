@@ -16,11 +16,15 @@ import {
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
 import { prepareImageForGrading } from '../../lib/imageResize';
+import { filesToPageImages, pdfErrorText, PAGE_FILE_ACCEPT } from '../../lib/pdfPages';
 import { useData, useLoad, errorMessage } from '../../data/DataContext';
 import { useSelected } from '../../data/selection';
 import type { PaperPage, SubmissionRow } from '../../data/types';
 import { isOfflineError, listQueued, queuePaper, removeQueued, type QueuedPaper } from '../../lib/offlineQueue';
 import { toInternationalPhone } from '../../lib/phone';
+
+/** One upload can hold a whole class scanned into one PDF, one page per student. */
+const MAX_PAPERS_PER_UPLOAD = 60;
 
 interface UploadPapersPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -56,7 +60,7 @@ export const UploadPapersPage: React.FC<UploadPapersPageProps> = ({ onNavigate }
   const studentsQ = useLoad((st) => st.listStudents());
   const submissions = subsQ.data ?? [];
   const groupStudents = useMemo(
-    () => (studentsQ.data ?? []).filter((s) => s.groupId === selectedExam?.groupId),
+    () => (studentsQ.data ?? []).filter((s) => !!selectedExam && s.groupIds.includes(selectedExam.groupId)),
     [studentsQ.data, selectedExam?.groupId],
   );
 
@@ -118,9 +122,17 @@ export const UploadPapersPage: React.FC<UploadPapersPageProps> = ({ onNavigate }
   const handleFiles = async (fileList: FileList | null) => {
     const files = Array.from(fileList ?? []);
     if (!files.length || !selectedExamId) return;
-    const images = files.filter((f) => f.type.startsWith('image/'));
-    if (images.length < files.length) {
-      notify('ملفات PDF غير مدعومة بعد. صوّر الورقة أو ارفعها كصورة.', 'warning');
+    // A PDF counts as its pages, one image per page, like a stack of photos.
+    const limit = multiPage ? 6 : MAX_PAPERS_PER_UPLOAD;
+    let images: File[];
+    try {
+      const r = await filesToPageImages(files, limit);
+      images = r.images;
+      if (r.truncated) notify(multiPage ? 'ورقة الطالب الواحد 6 صفحات كحد أقصى.' : `يمكن رفع ${limit} صفحة كحد أقصى في المرة الواحدة.`, 'warning');
+      if (r.skipped) notify('اختر صوراً أو ملفات PDF فقط.', 'warning');
+    } catch (e) {
+      notify(pdfErrorText(e, 'تعذّرت قراءة الملف.'), 'warning');
+      return;
     }
     const prepared: PaperPage[] = [];
     for (const file of images) {
@@ -132,7 +144,7 @@ export const UploadPapersPage: React.FC<UploadPapersPageProps> = ({ onNavigate }
     }
     if (!prepared.length) return;
     // Either all photos are pages of one student's paper, or each photo is one paper.
-    const papers = multiPage ? [prepared.slice(0, 6)] : prepared.map((p) => [p]);
+    const papers = multiPage ? [prepared] : prepared.map((p) => [p]);
     const studentId = studentForNext || null;
     setStudentForNext('');
     setBusy((n) => n + papers.length);
@@ -267,7 +279,7 @@ export const UploadPapersPage: React.FC<UploadPapersPageProps> = ({ onNavigate }
           </div>
           <label className="flex items-center gap-2 cursor-pointer text-slate-700">
             <input type="checkbox" checked={multiPage} onChange={(e) => setMultiPage(e.target.checked)} />
-            <span>كل الصور صفحات لورقة طالب واحد</span>
+            <span>كل الصور (أو صفحات الـ PDF) لورقة طالب واحد</span>
           </label>
         </div>
       </div>
@@ -295,7 +307,7 @@ export const UploadPapersPage: React.FC<UploadPapersPageProps> = ({ onNavigate }
         <input
           ref={filesInputRef}
           type="file"
-          accept="image/*"
+          accept={PAGE_FILE_ACCEPT}
           multiple
           className="hidden"
           onChange={(e) => {
@@ -319,8 +331,8 @@ export const UploadPapersPage: React.FC<UploadPapersPageProps> = ({ onNavigate }
           className="bg-white hover:bg-slate-50 disabled:opacity-50 border-2 border-dashed border-slate-300 text-slate-800 p-6 rounded-2xl flex flex-col items-center justify-center gap-2.5 shadow-2xs transition-all active:scale-98 cursor-pointer"
         >
           <Upload className="w-8 h-8 text-blue-600" />
-          <span className="text-base font-extrabold">ارفع صوراً من الجهاز</span>
-          <span className="text-[11px] text-slate-500">يمكنك اختيار عدة صور مرة واحدة</span>
+          <span className="text-base font-extrabold">ارفع صوراً أو ملف PDF</span>
+          <span className="text-[11px] text-slate-500">يمكنك اختيار عدة ملفات مرة واحدة، وكل صفحة من PDF تُعامل كصورة</span>
         </button>
       </div>
 

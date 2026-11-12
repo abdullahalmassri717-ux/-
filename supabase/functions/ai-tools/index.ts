@@ -36,6 +36,9 @@ async function loadLessons(db: SupabaseClient, lessonIds: string[], subjectId: s
     lesson_terms: { kind: string; text: string; sort_order: number }[];
   };
   const order = new Map(lessonIds.map((id, i) => [id, i]));
+  // A midterm or final can cover many lessons. Keep the whole prompt about the
+  // same size (and cost) by giving each lesson a share of a fixed budget.
+  const perLesson = Math.max(1500, Math.min(12000, Math.floor(60000 / Math.max(1, (data ?? []).length))));
   return ((data ?? []) as Row[])
     .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
     .map((l) => {
@@ -45,7 +48,7 @@ async function loadLessons(db: SupabaseClient, lessonIds: string[], subjectId: s
         id: l.id,
         title: l.title,
         unit: unit?.title ?? '',
-        content: (l.content ?? '').slice(0, 12000),
+        content: (l.content ?? '').slice(0, perLesson),
         outcomes: [...l.learning_outcomes].sort((a, b) => a.sort_order - b.sort_order).map((o) => o.text),
         terms: terms.filter((t) => t.kind === 'term').map((t) => t.text),
         symbols: terms.filter((t) => t.kind === 'symbol').map((t) => t.text),

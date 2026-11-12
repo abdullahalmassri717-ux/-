@@ -7,6 +7,7 @@ import type { QuestionGradeRow, SubmissionRow } from '../../data/types';
 import { setExamDraft } from '../../data/examDraft';
 import { getSelected, setSelected } from '../../data/selection';
 import { prepareImageForGrading, type PreparedImage } from '../../lib/imageResize';
+import { filesToPageImages, pdfErrorText, PAGE_FILE_ACCEPT } from '../../lib/pdfPages';
 import { notify } from '../../lib/notify';
 
 interface ConvertOldExamToolProps {
@@ -51,12 +52,14 @@ export const ConvertOldExamTool: React.FC<ConvertOldExamToolProps> = ({ onNaviga
 
   const addPages = async (files: FileList | null) => {
     if (!files?.length) return;
-    const picked = [...files].slice(0, Math.max(6 - pages.length, 0));
     try {
-      const prepared = await Promise.all(picked.map((f) => prepareImageForGrading(f)));
+      const r = await filesToPageImages([...files], Math.max(6 - pages.length, 0));
+      if (r.truncated) notify('يمكن رفع 6 صفحات كحد أقصى', 'warning');
+      if (r.skipped) notify('اختر صوراً (JPG أو PNG) أو ملف PDF فقط.', 'warning');
+      const prepared = await Promise.all(r.images.map((f) => prepareImageForGrading(f)));
       setPages((prev) => [...prev, ...prepared]);
-    } catch {
-      notify('اختر صوراً فقط (JPG أو PNG).', 'warning');
+    } catch (e) {
+      notify(pdfErrorText(e, 'اختر صوراً (JPG أو PNG) أو ملف PDF.'), 'warning');
     }
   };
 
@@ -138,11 +141,10 @@ export const ConvertOldExamTool: React.FC<ConvertOldExamToolProps> = ({ onNaviga
           {pages.length < 6 && (
             <label className="aspect-[3/4] rounded-lg border-2 border-dashed border-[#1E3A5F]/30 bg-blue-50 flex flex-col items-center justify-center gap-1 text-[#1E3A5F] text-[11px] font-bold cursor-pointer text-center p-1">
               <Camera className="w-6 h-6" />
-              <span>صوّر أو اختر صفحة</span>
+              <span>صوّر أو اختر صفحة أو PDF</span>
               <input
                 type="file"
-                accept="image/*"
-                capture="environment"
+                accept={PAGE_FILE_ACCEPT}
                 multiple
                 className="sr-only"
                 onChange={(e) => {

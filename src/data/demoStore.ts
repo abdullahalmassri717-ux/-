@@ -24,7 +24,9 @@ import type {
   StudentRow,
   SubmissionRow,
   TaughtLessons,
+  WeeklyReportRow,
 } from './types';
+import { buildWeeklyText } from '../lib/weeklyReportText';
 
 const wait = <T,>(value: T): Promise<T> => new Promise((r) => setTimeout(() => r(value), 120));
 let seq = 0;
@@ -55,6 +57,7 @@ function demoLessonId(title: string): string | null {
 interface DemoState {
   groups: Group[];
   students: StudentRow[];
+  archivedStudents: StudentRow[];
   progress: Record<string, TaughtLessons>;
   assessments: AssessmentDetail[];
   submissions: SubmissionRow[];
@@ -65,10 +68,10 @@ interface DemoState {
 
 function initialState(): DemoState {
   const groups = MOCK_GROUPS.map((g) => ({ ...g }));
-  const students: StudentRow[] = MOCK_STUDENTS.map((s) => ({
-    ...s,
-    groupId: groups.find((g) => g.name === s.group)?.id ?? '',
-  }));
+  const students: StudentRow[] = MOCK_STUDENTS.map((s) => {
+    const groupId = groups.find((g) => g.name === s.group)?.id ?? '';
+    return { ...s, groupId, groupIds: groupId ? [groupId] : [] };
+  });
   const taughtG1: TaughtLessons = {};
   Object.entries(MOCK_GROUP_PROGRESS_G1).forEach(([lessonId, p]) => {
     if (p.status !== 'not_taught') taughtG1[lessonId] = new Date().toISOString();
@@ -123,11 +126,13 @@ function initialState(): DemoState {
       pageCount: 1,
     };
   });
-  return { groups, students, progress: { g1: taughtG1 }, assessments, submissions, grades, pages: {}, reports: {} };
+  return { groups, students, archivedStudents: [], progress: { g1: taughtG1 }, assessments, submissions, grades, pages: {}, reports: {} };
 }
 
 let state: DemoState | null = null;
 const s = () => (state ??= initialState());
+let archivedGroups: Group[] = [];
+let weeklyEnabled = true;
 
 function summary(a: AssessmentDetail): AssessmentRow {
   const { questions, ...row } = a;
@@ -149,7 +154,7 @@ export function createDemoStore(): DataStore {
       const lessons = ['قواعد الاشتقاق الأساسية', 'الاشتقاق الضمني', 'قاعدة السلسلة', 'المعدلات المرتبطة بالزمن'];
       const misses = ['توحيد المقامات في المشتقة الثانية', 'نسيان ضرب مشتقة الداخل', 'العلاقة الهندسية المساعدة', 'إشارة السالب عند اشتقاق جتا'];
       const rows = s().students
-        .filter((st) => !groupId || st.groupId === groupId)
+        .filter((st) => !groupId || st.groupIds.includes(groupId))
         .flatMap((st) =>
           lessons.map((lesson, i) => {
             const level = Math.max(0.2, Math.min(1, (st.latestScore + (i === 0 ? 15 : i === 1 ? -25 : i === 2 ? -10 : -15)) / 100));
@@ -224,7 +229,16 @@ export function createDemoStore(): DataStore {
       return wait(undefined);
     },
     async archiveGroup(id) {
+      const g = s().groups.find((x) => x.id === id);
+      if (g) archivedGroups.push(g);
       s().groups = s().groups.filter((g) => g.id !== id);
+      return wait(undefined);
+    },
+    listArchivedGroups: () => wait(archivedGroups.map((g) => ({ id: g.id, name: g.name }))),
+    async restoreGroup(id) {
+      const g = archivedGroups.find((x) => x.id === id);
+      if (g) s().groups.push(g);
+      archivedGroups = archivedGroups.filter((x) => x.id !== id);
       return wait(undefined);
     },
 
@@ -241,11 +255,13 @@ export function createDemoStore(): DataStore {
         while (used.has(code));
         used.add(code);
         const group = s().groups.find((g) => g.id === i.groupId);
+        const groupIds = [...new Set([i.groupId, ...(i.extraGroupIds ?? [])])].filter(Boolean);
         s().students.push({
           id: newId('s'),
           name: i.name.trim(),
           group: group?.name ?? '',
           groupId: i.groupId,
+          groupIds,
           parentPhone: i.parentPhone ?? '',
           studentPhone: i.studentPhone ?? '',
           studentCode: code,
@@ -256,7 +272,7 @@ export function createDemoStore(): DataStore {
           status: 'active',
           weakLessons: [],
         });
-        if (group) group.studentCount += 1;
+        for (const g of s().groups) if (groupIds.includes(g.id)) g.studentCount += 1;
       }
       return wait(inputs.length);
     },
@@ -267,15 +283,55 @@ export function createDemoStore(): DataStore {
         if (input.parentPhone !== undefined) st.parentPhone = input.parentPhone;
         if (input.studentPhone !== undefined) st.studentPhone = input.studentPhone;
         if (input.parentApproval !== undefined) st.parentApproval = input.parentApproval;
-        if (input.groupId !== undefined) {
-          st.groupId = input.groupId;
-          st.group = s().groups.find((g) => g.id === input.groupId)?.name ?? '';
-        }
+        if (input.moodle !== undefined) st.moodle = input.moodle?.value.trim() ? { ...input.moodle, value: input.moodle.value.trim() } : null;
+        if (input.groupId !== undefined) await this.setStudentGroups(id, input.groupId ? [input.groupId] : []);
       }
       return wait(undefined);
     },
+    async addStudentsToGroup(groupId, studentIds) {
+      let n = 0;
+      for (const id of new Set(studentIds)) {
+        const st = s().students.find((x) => x.id === id);
+        if (!st || st.groupIds.includes(groupId)) continue;
+        await this.setStudentGroups(id, [...st.groupIds, groupId]);
+        n += 1;
+      }
+      return wait(n);
+    },
+    async setStudentGroups(studentId, groupIds) {
+      const st = s().students.find((x) => x.id === studentId);
+      if (!st) return wait(undefined);
+      for (const g of s().groups) {
+        const was = st.groupIds.includes(g.id);
+        const now = groupIds.includes(g.id);
+        if (was && !now) g.studentCount = Math.max(0, g.studentCount - 1);
+        if (!was && now) g.studentCount += 1;
+      }
+      st.groupIds = [...new Set(groupIds)];
+      st.groupId = st.groupIds[0] ?? '';
+      st.group = s().groups.find((g) => g.id === st.groupId)?.name ?? '';
+      return wait(undefined);
+    },
     async archiveStudent(id) {
+      const st = s().students.find((x) => x.id === id);
+      if (st) s().archivedStudents.push(st);
+      for (const g of s().groups) if (st?.groupIds.includes(g.id)) g.studentCount = Math.max(0, g.studentCount - 1);
       s().students = s().students.filter((x) => x.id !== id);
+      return wait(undefined);
+    },
+    listArchivedStudents: () => wait(s().archivedStudents.map((x) => ({ ...x }))),
+    async restoreStudent(id) {
+      const st = s().archivedStudents.find((x) => x.id === id);
+      if (st) s().students.push(st);
+      for (const g of s().groups) if (st?.groupIds.includes(g.id)) g.studentCount += 1;
+      s().archivedStudents = s().archivedStudents.filter((x) => x.id !== id);
+      return wait(undefined);
+    },
+    async deleteStudent(id) {
+      const gone = s().students.find((st) => st.id === id);
+      for (const g of s().groups) if (gone?.groupIds.includes(g.id)) g.studentCount = Math.max(0, g.studentCount - 1);
+      s().students = s().students.filter((x) => x.id !== id);
+      s().archivedStudents = s().archivedStudents.filter((x) => x.id !== id);
       return wait(undefined);
     },
 
@@ -305,6 +361,14 @@ export function createDemoStore(): DataStore {
       const p = (s().progress[groupId] ??= {});
       if (taught) p[lessonId] = new Date().toISOString();
       else delete p[lessonId];
+      return wait(undefined);
+    },
+    async setLessonsTaught(groupId, lessonIds, taught) {
+      const p = (s().progress[groupId] ??= {});
+      for (const id of lessonIds) {
+        if (taught) p[id] ??= new Date().toISOString();
+        else delete p[id];
+      }
       return wait(undefined);
     },
 
@@ -491,6 +555,41 @@ export function createDemoStore(): DataStore {
     async queueReports(items) {
       for (const i of items) s().reports[i.submissionId] = 'queued';
       return wait({ queued: items.length, sent: 0, error: 'وضع التجربة: الإرسال الآلي يعمل بعد ربط واتساب. استخدم زر «أرسل يدوياً» الآن.' });
+    },
+    weeklyReportPreview(orgKind) {
+      // Demo: every graded paper counts as "this week" so the screen has something to show.
+      const pct = (sc: number, t: number) => (t ? Math.round((sc / t) * 100) : 0);
+      const perStudent = new Map<string, { name: string; phone: string; consent: boolean; subjects: Map<string, string[]> }>();
+      for (const sub of s().submissions) {
+        const st = s().students.find((x) => x.id === sub.studentId);
+        const ex = s().assessments.find((a) => a.id === sub.assessmentId);
+        if (!st || !ex) continue;
+        const total = summary(ex).totalScore;
+        const entry = perStudent.get(st.id) ?? { name: st.name, phone: st.parentPhone, consent: st.parentApproval, subjects: new Map() };
+        const lines = entry.subjects.get(ex.subject) ?? [];
+        lines.push(`• ${ex.title}: ${sub.totalScore} من ${total} (${pct(sub.totalScore, total)}%)`);
+        entry.subjects.set(ex.subject, lines);
+        perStudent.set(st.id, entry);
+      }
+      const rows: WeeklyReportRow[] = [];
+      for (const [studentId, e] of perStudent) {
+        const sections = [...e.subjects].map(([subject, lines]) => ({ subject, text: lines.join('\n') }));
+        const base = { studentId, studentName: e.name, parentPhone: e.phone, consent: e.consent, lastStatus: null, lastPeriodEnd: null };
+        if (orgKind === 'individual_teacher') {
+          for (const sec of sections)
+            rows.push({ ...base, subjectName: sec.subject, papers: sec.text.split('\n').length,
+              body: buildWeeklyText({ kind: orgKind, studentName: e.name, orgName: 'وضع التجربة', sections: [sec] }) });
+        } else {
+          rows.push({ ...base, subjectName: '', papers: sections.reduce((n, x) => n + x.text.split('\n').length, 0),
+            body: buildWeeklyText({ kind: orgKind, studentName: e.name, orgName: 'وضع التجربة', sections }) });
+        }
+      }
+      return wait(rows);
+    },
+    getWeeklyReportsEnabled: () => wait(weeklyEnabled),
+    async setWeeklyReportsEnabled(on) {
+      weeklyEnabled = on;
+      return wait(undefined);
     },
     async approveSubmission(id) {
       const sub = s().submissions.find((x) => x.id === id);

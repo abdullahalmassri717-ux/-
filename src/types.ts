@@ -21,6 +21,9 @@ export interface Entity {
   activeStudentsCount: number;
   region: string;
   principalOrOwnerName: string;
+  /** Real mode: new sign-ups wait for platform-admin approval; an admin can disable an organization. */
+  status?: 'pending' | 'active' | 'disabled';
+  statusNote?: string;
 }
 
 export type ScreenId = 
@@ -69,7 +72,8 @@ export type ScreenId =
   | 'E3' // جودة التصحيح والتكلفة
   | 'E4' // إدارة المناهج والكتب
   | 'E5' // إدارة تذاكر الدعم الفني ومساندة المعلمين
-  | 'E6'; // إدارة وإعدادات الصفحة التعريفية (Landing Page CMS)
+  | 'E6' // إدارة وإعدادات الصفحة التعريفية (Landing Page CMS)
+  | 'E7'; // طاقم إدارة المنصة: الأعضاء وأدوارهم وصلاحياتهم
 
 // --- Curriculum Structure: منهج ← صف ← مادة ← وحدة ← درس ← نواتج تعلّم ---
 export type LessonProgressStatus = 'not_taught' | 'taught' | 'taught_and_examined' | 'examined';

@@ -8,6 +8,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   ClaudeGradingProvider,
   GradingError,
+  demoGrade,
   gradePaper,
   gradingConfigFromEnv,
   type ExamToGrade,
@@ -58,7 +59,12 @@ export async function gradeSubmission(
   env: Record<string, string | undefined>,
 ): Promise<GradeSubmissionResult> {
   const apiKey = env.ANTHROPIC_API_KEY;
-  if (!apiKey) return { ok: false, status: 'uploaded', error: 'لم يُضبط مفتاح الذكاء الاصطناعي على الخادم بعد.' };
+  // No AI key yet: grade with made-up practice scores so the flow can be tried
+  // (see grading/demoGrade.ts). Set AI_DEMO_GRADING=off to refuse instead.
+  const demo = !apiKey;
+  if (demo && env.AI_DEMO_GRADING === 'off') {
+    return { ok: false, status: 'uploaded', error: 'لم يُضبط مفتاح الذكاء الاصطناعي على الخادم بعد.' };
+  }
 
   const { data: sub, error: subError } = await admin
     .from('submissions')
@@ -138,7 +144,7 @@ export async function gradeSubmission(
     };
 
     const images: PaperImage[] = [];
-    for (const page of pages ?? []) {
+    for (const page of demo ? [] : pages ?? []) {
       const mediaType = mediaTypeFor(page.storage_path as string);
       if (!mediaType) throw new GradingError('unsupported page', 'صيغة إحدى الصفحات غير مدعومة. ارفع الصور بصيغة JPG أو PNG.');
       const { data: blob, error } = await admin.storage.from('submission-pages').download(page.storage_path as string);
@@ -146,7 +152,11 @@ export async function gradeSubmission(
       images.push({ data: toBase64(new Uint8Array(await blob.arrayBuffer())), mediaType });
     }
 
-    const result = await gradePaper(new ClaudeGradingProvider(apiKey), gradingConfigFromEnv(env), { exam, pages: images });
+    if (demo && !exam.questions.length) throw new GradingError('no questions', 'لا توجد أسئلة في هذا الامتحان.');
+    if (demo && !(pages ?? []).length) throw new GradingError('no pages', 'لم تُرفع أي صورة.');
+    const result = demo
+      ? demoGrade(exam, submissionId)
+      : await gradePaper(new ClaudeGradingProvider(apiKey!), gradingConfigFromEnv(env), { exam, pages: images });
 
     // Match the student from the code written on the paper, or else from the
     // name written on it (only inside this exam's class), if not known yet.
@@ -200,7 +210,7 @@ export async function gradeSubmission(
         ai_confidence: r.unreadable ? 0.2 : CONFIDENCE_VALUE[r.confidence],
         ai_criteria: r.criteria.map((c) => ({ criterion: c.criterion, met: c.met, points: c.pointsAwarded })),
         ai_feedback: { forStudent: r.feedbackForStudent, unreadable: r.unreadable },
-        ai_model: result.model,
+        ai_model: r.model ?? result.model,
         graded_at: now,
       };
       const reviewedId = reviewed.get(q.id);
@@ -216,7 +226,8 @@ export async function gradeSubmission(
     }
 
     const unsure = result.questions.some((q) => q.unreadable || q.confidence === 'low');
-    const status = assessment?.auto_send_reports && !unsure && studentId ? 'approved' : 'needs_review';
+    // Practice grades are never sent on their own: the teacher always reviews them.
+    const status = assessment?.auto_send_reports && !unsure && studentId && !demo ? 'approved' : 'needs_review';
     await admin
       .from('submissions')
       .update({ status, student_id: studentId, graded_at: now })
@@ -228,7 +239,7 @@ export async function gradeSubmission(
       model: result.model,
       attempts: result.attempts,
       cost_usd: result.totalCostUsd,
-      escalated: result.attempts.length > 1,
+      escalated: result.escalatedQuestions.length > 0,
     });
     return { ok: true, status };
   } catch (error) {

@@ -1,5 +1,7 @@
 import React from 'react';
 import { usePublicSetting } from '../lib/settings';
+import { useAdminAccess } from '../lib/auth';
+import { AdminAccess, AdminPermission, adminCan } from '../lib/adminAccess';
 import { UserRole, ScreenId } from '../types';
 import {
   LayoutDashboard,
@@ -33,7 +35,7 @@ export interface NavItem {
 }
 
 import { Entity } from '../types';
-import { BookOpen, Target, Headphones } from 'lucide-react';
+import { BookOpen, Target, Headphones, UserCog } from 'lucide-react';
 
 interface SidebarProps {
   currentRole: UserRole;
@@ -44,9 +46,10 @@ interface SidebarProps {
   onMobileClose?: () => void;
 }
 
-export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity): NavItem[] => {
+export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity, adminAccess?: AdminAccess | null): NavItem[] => {
   if (currentRole === 'teacher') {
-    const isSchoolTeacher = activeEntity?.type === 'school' && activeEntity.role === 'teacher';
+    // A teacher who is a member (not the owner) of a school or centre.
+    const isOrgTeacher = activeEntity?.role === 'teacher';
 
     const items: NavItem[] = [
       { id: 'B1' as ScreenId, label: 'لوحة المتابعة الرئيسية', icon: LayoutDashboard },
@@ -62,8 +65,8 @@ export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity): N
       { id: 'C_HUB' as ScreenId, label: 'أدوات الذكاء الاصطناعي', icon: Sparkles },
     ];
 
-    // معلمو المدرسة لا يرون إطلاقاً الاشتراك والفواتير (لا في القائمة ولا في أي مكان)
-    if (!isSchoolTeacher) {
+    // معلمو المدرسة أو المركز لا يرون إطلاقاً الاشتراك والفواتير (لا في القائمة ولا في أي مكان)
+    if (!isOrgTeacher) {
       items.push({
         id: 'B11' as ScreenId,
         label: 'رسوم الطلاب والمالية',
@@ -94,14 +97,19 @@ export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity): N
   }
 
   if (currentRole === 'platform_admin') {
-    return [
+    // Each staff member only sees the sections their role allows (the database checks again).
+    const items: (NavItem & { need?: AdminPermission | 'super' })[] = [
       { id: 'E1' as ScreenId, label: 'لوحة الإشراف العام', icon: ShieldCheck },
-      { id: 'E6' as ScreenId, label: 'إعدادات الصفحة التعريفية (CMS)', icon: LayoutTemplate, badge: 'تحكم' },
-      { id: 'E2' as ScreenId, label: 'العملاء والفواتير والتحويلات', icon: CreditCard },
-      { id: 'E3' as ScreenId, label: 'جودة التصحيح وتكلفة AI', icon: BrainCircuit },
-      { id: 'E4' as ScreenId, label: 'إدارة المناهج والكتب', icon: BookOpen, badge: 'جديد' },
-      { id: 'E5' as ScreenId, label: 'إدارة الدعم الفني والتذاكر', icon: Headphones },
+      { id: 'E6' as ScreenId, label: 'إعدادات الصفحة التعريفية (CMS)', icon: LayoutTemplate, badge: 'تحكم', need: 'landing' },
+      { id: 'E2' as ScreenId, label: 'العملاء والفواتير والتحويلات', icon: CreditCard, need: 'finance' },
+      { id: 'E3' as ScreenId, label: 'جودة التصحيح وتكلفة AI', icon: BrainCircuit, need: 'quality' },
+      { id: 'E4' as ScreenId, label: 'إدارة المناهج والكتب', icon: BookOpen, badge: 'جديد', need: 'curricula' },
+      { id: 'E5' as ScreenId, label: 'إدارة الدعم الفني والتذاكر', icon: Headphones, need: 'support' },
+      { id: 'E7' as ScreenId, label: 'طاقم إدارة المنصة', icon: UserCog, need: 'super' },
     ];
+    return items
+      .filter((i) => !i.need || (i.need === 'super' ? !!adminAccess?.isSuper : adminCan(adminAccess, i.need)))
+      .map(({ need: _need, ...i }) => i);
   }
 
   return [];
@@ -115,19 +123,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen = false,
   onMobileClose,
 }) => {
+  const adminAccess = useAdminAccess();
   const supportPhone = usePublicSetting<{ whatsapp?: string }>('support', { whatsapp: '+970599123456' }).whatsapp;
   // If visitor or student, no persistent sidebar needed
   if (currentRole === 'visitor' || currentRole === 'student') {
     return null;
   }
 
-  const navItems = getRoleNavItems(currentRole, activeEntity);
+  const navItems = getRoleNavItems(currentRole, activeEntity, adminAccess);
 
   const getRoleTitle = () => {
     if (currentRole === 'teacher') {
       return activeEntity ? activeEntity.name : 'قائمة المعلم';
     }
-    if (currentRole === 'school_principal') return 'إدارة المدرسة (مدرسة الأمل الخاصة)';
+    if (currentRole === 'school_principal' || currentRole === 'school_admin') {
+      return activeEntity?.name ? `إدارة: ${activeEntity.name}` : 'إدارة المدرسة';
+    }
     if (currentRole === 'platform_admin') return 'إدارة منصة دقة العامة';
     return '';
   };

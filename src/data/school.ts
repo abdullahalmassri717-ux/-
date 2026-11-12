@@ -26,6 +26,7 @@ export interface SchoolInvitation {
 export interface SchoolGroup {
   id: string;
   name: string;
+  gradeId: string;
   gradeName: string;
   subjectName: string;
   studentCount: number;
@@ -113,6 +114,7 @@ export function createSupabaseSchool(db: SupabaseClient, orgId: string, base: Ba
         groups: groups.map((g) => ({
           id: g.id,
           name: g.name,
+          gradeId: g.gradeId,
           gradeName: g.gradeName,
           subjectName: g.subjectName,
           studentCount: g.studentCount,
@@ -180,7 +182,7 @@ export function createDemoSchool(base: Base): SchoolStore {
       return wait({
         members: members.map((m) => ({ ...m })),
         invitations: [...invitations],
-        groups: groups.map((g) => ({ id: g.id, name: g.name, gradeName: g.gradeName, subjectName: g.subjectName, studentCount: g.studentCount, teacherIds: assign?.[g.id] ?? [] })),
+        groups: groups.map((g) => ({ id: g.id, name: g.name, gradeId: g.gradeId, gradeName: g.gradeName, subjectName: g.subjectName, studentCount: g.studentCount, teacherIds: assign?.[g.id] ?? [] })),
         assessments: assessments.map((a) => ({ id: a.id, groupId: a.groupId, createdAt: a.createdAt })),
         submissions,
         rows,

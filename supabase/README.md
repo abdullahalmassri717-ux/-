@@ -20,7 +20,8 @@
 | `migrations/…1100_invitations_accept.sql` | قبول دعوات المعلمين عند الدخول |
 | `migrations/…1200_admin_support.sql` | الاشتراك التجريبي التلقائي، دوال مدير المنصة، تذاكر الدعم |
 | `migrations/…1300_question_bank_ai_tools.sql` | بنك أسئلة الجهة، وسجل تكلفة أدوات الذكاء الاصطناعي |
-| `functions/` | `grade-submission` (التصحيح)، `ai-tools` (أدوات المدرّس)، `send-reports` (واتساب)، `student-submit` (رفع الطالب) |
+| `migrations/…20261111000300_weekly_reports.sql` | التقرير الأسبوعي لولي الأمر (رسالة لكل مادة للمدرّس الخصوصي، ورسالة واحدة بكل المواد للمدرسة) وجدولته كل خميس |
+| `functions/` | `grade-submission` (التصحيح)، `ai-tools` (أدوات المدرّس)، `send-reports` (واتساب)، `weekly-reports` (الإرسال الأسبوعي)، `student-submit` (رفع الطالب) |
 | `seed.sql` | بيانات تجريبية مأخوذة من `mockData.ts` (للتطوير فقط، أرقام هواتف وهمية) |
 | `checks/rls_checks.sql` | نحو 80 فحصاً يتأكد أن كل شخص يرى ما يحق له فقط |
 
@@ -82,3 +83,9 @@ Supabase، ثم ملفات `migrations/` بالترتيب، ثم `seed.sql`، ث
 insert into public.platform_admins (user_id)
 select id from public.profiles where phone = '+970XXXXXXXXX';
 ```
+
+هذا يجعلك **مديراً عاماً** (`super_admin`). بعدها تضيف باقي طاقم الإدارة من داخل المنصة:
+لوحة الإدارة ← «طاقم إدارة المنصة» (`/admin/team`). لكل عضو دور وأقسام يفتحها
+(الجهات، المدفوعات، الباقات، جودة التصحيح، الدعم، المناهج، الصفحة التعريفية، الإعدادات).
+قاعدة البيانات نفسها تمنع العضو من أي قسم خارج صلاحياته (`private.admin_can`)، و
+`private.is_platform_admin()` صارت تعني «مدير عام» فقط.

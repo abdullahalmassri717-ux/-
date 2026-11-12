@@ -4,12 +4,17 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { MOCK_STUDENTS, PLATFORM_CONFIG } from '../mockData';
 import { toInternationalPhone } from '../lib/phone';
+import { toTiers, unitPriceFor, type PriceTier, type PricingModel } from './admin';
 
 export interface PlanInfo {
   name: string;
   target: 'teachers' | 'schools' | 'enterprise';
   cycle: 'monthly' | 'yearly';
+  /** Pay per registered student, or per graded paper. */
+  pricingModel: PricingModel;
+  /** Price per unit (student or paper) when no tier applies. */
   pricePerStudent: number;
+  tiers: PriceTier[];
   minimumCharge: number;
   installments: number;
 }
@@ -28,6 +33,11 @@ export interface InvoiceRow {
   status: InvoiceStatus;
   dueOn: string | null;
   paidAt: string | null;
+  pricingModel: PricingModel | null;
+  units: number;
+  /** Sum of confirmed payments. */
+  paidAmount: number;
+  notes: string;
   /** Latest receipt the owner uploaded for this invoice. */
   receipt: { status: 'pending' | 'confirmed' | 'rejected'; note: string | null } | null;
 }
@@ -46,10 +56,21 @@ export interface BillingSummary {
   subscriptionStatus: 'trial' | 'active' | 'past_due' | 'canceled' | null;
   trialEndsOn: string | null;
   activeStudents: number;
-  /** What the current period would cost with today's active students. */
+  /** What the next invoice would be with today's usage. */
   estimatedDue: number;
+  /** Students (or papers since the last invoice) counted for that estimate. */
+  estimatedUnits: number;
   invoices: InvoiceRow[];
   paymentAccounts: PaymentAccount[];
+  /** A monthly subscription the owner paused (now or from a later day). */
+  pause: SubscriptionPause | null;
+}
+
+/** Paused days are not billed and no new papers are accepted. endsOn null = until resumed. */
+export interface SubscriptionPause {
+  startsOn: string;
+  endsOn: string | null;
+  active: boolean;
 }
 
 export interface ReceiptUpload {
@@ -88,6 +109,10 @@ export interface TuitionPayment {
 export interface BillingStore {
   getBilling(): Promise<BillingSummary>;
   uploadPaymentReceipt(invoiceId: string, input: ReceiptUpload): Promise<void>;
+  /** Pause a monthly subscription (e.g. vacation months). from null = today, until null = until resumed. */
+  pauseSubscription(from: string | null, until: string | null): Promise<void>;
+  /** Ends the pause today (or cancels one that has not started). */
+  resumeSubscription(): Promise<void>;
   /** Every active student with this month's charge (month = 'YYYY-MM-01'). */
   listTuition(month: string): Promise<TuitionRow[]>;
   /** Adds this month's charge for students who have none: last month's amount, else the default. */
@@ -102,11 +127,11 @@ export const monthStart = (d = new Date()) => `${d.getFullYear()}-${String(d.get
 const newReceiptNumber = (month: string) =>
   `R${month.slice(2, 4)}${month.slice(5, 7)}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-/** Platform fee for a period: per-student price, at least the minimum, split into installments. */
-export function periodDue(plan: PlanInfo | null, students: number): number {
+/** Platform fee for a period from actual usage (no minimum), split into installments for yearly plans. */
+export function periodDue(plan: PlanInfo | null, units: number): number {
   if (!plan) return 0;
-  const total = Math.max(plan.minimumCharge, students * plan.pricePerStudent);
-  return Math.round((total / Math.max(1, plan.installments)) * 100) / 100;
+  const total = units * unitPriceFor(plan.tiers, plan.pricePerStudent, units);
+  return Math.round((total / (plan.cycle === 'yearly' ? Math.max(1, plan.installments) : 1)) * 100) / 100;
 }
 
 function tuitionStatus(due: number, paid: number, hasCharge: boolean): TuitionStatus {
@@ -123,6 +148,11 @@ function fail(error: { message?: string; code?: string } | null, fallback: strin
   if (error?.code === '42501') throw new BillingError('ليس لديك صلاحية لهذا الإجراء.');
   if (/[؀-ۿ]/.test(msg)) throw new BillingError(msg);
   throw new BillingError(fallback);
+}
+
+function toPause(d: unknown): SubscriptionPause | null {
+  const p = d as { starts_on?: string; ends_on?: string | null; active?: boolean } | null;
+  return p?.starts_on ? { startsOn: p.starts_on, endsOn: p.ends_on ?? null, active: !!p.active } : null;
 }
 
 function localPhone(p: string | null): string {
@@ -160,20 +190,22 @@ export function createSupabaseBilling(db: SupabaseClient, orgId: string): Billin
 
   return {
     async getBilling() {
-      const [settings, sub, invoices, students] = await Promise.all([
+      const [settings, sub, invoices, students, quote, pauseRes] = await Promise.all([
         db.from('platform_settings').select('key, value').in('key', ['currency', 'payment_accounts']),
         db
           .from('subscriptions')
-          .select('status, trial_ends_on, price_per_student, subscription_plans(name, target, billing_cycle, price_per_student, minimum_charge, installments)')
+          .select('status, trial_ends_on, price_per_student, subscription_plans(*)')
           .eq('organization_id', orgId)
           .in('status', ['trial', 'active', 'past_due'])
           .maybeSingle(),
         db
           .from('invoices')
-          .select('id, number, period_start, period_end, installment_no, active_students, price_per_student, amount, status, due_on, paid_at, payment_receipts(status, review_note, created_at)')
+          .select('*, payment_receipts(status, review_note, created_at, amount)')
           .eq('organization_id', orgId)
           .order('period_start', { ascending: false }),
         db.from('students').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).eq('status', 'active'),
+        db.rpc('my_usage_quote', { p_org: orgId }),
+        db.rpc('my_subscription_pause', { p_org: orgId }),
       ]);
       if (invoices.error) fail(invoices.error, 'تعذّر تحميل الفواتير.');
       if (sub.error) fail(sub.error, 'تعذّر تحميل الاشتراك.');
@@ -181,7 +213,10 @@ export function createSupabaseBilling(db: SupabaseClient, orgId: string): Billin
       const cur = setting('currency') as { code?: string; symbol?: string } | undefined;
       const accounts = setting('payment_accounts') as { accounts?: PaymentAccount[] } | undefined;
 
-      type PlanDb = { name: string; target: PlanInfo['target']; billing_cycle: PlanInfo['cycle']; price_per_student: number; minimum_charge: number; installments: number };
+      type PlanDb = {
+        name: string; target: PlanInfo['target']; billing_cycle: PlanInfo['cycle']; price_per_student: number; minimum_charge: number; installments: number;
+        pricing_model?: PricingModel; tiers?: unknown;
+      };
       const s = sub.data as { status: BillingSummary['subscriptionStatus']; trial_ends_on: string | null; price_per_student: number; subscription_plans: PlanDb | PlanDb[] | null } | null;
       const p = s ? (Array.isArray(s.subscription_plans) ? s.subscription_plans[0] : s.subscription_plans) : null;
       const plan: PlanInfo | null = p
@@ -189,6 +224,8 @@ export function createSupabaseBilling(db: SupabaseClient, orgId: string): Billin
             name: p.name,
             target: p.target,
             cycle: p.billing_cycle,
+            pricingModel: p.pricing_model ?? 'per_student',
+            tiers: toTiers(p.tiers),
             // The price agreed when subscribing wins over today's list price.
             pricePerStudent: Number(s?.price_per_student ?? p.price_per_student),
             minimumCharge: Number(p.minimum_charge),
@@ -196,11 +233,13 @@ export function createSupabaseBilling(db: SupabaseClient, orgId: string): Billin
           }
         : null;
       const activeStudents = students.count ?? 0;
+      const q = (quote.error ? null : quote.data) as { units?: number; amount?: number } | null;
 
       type InvDb = {
         id: string; number: string; period_start: string; period_end: string; installment_no: number; active_students: number;
         price_per_student: number; amount: number; status: InvoiceStatus; due_on: string | null; paid_at: string | null;
-        payment_receipts: { status: 'pending' | 'confirmed' | 'rejected'; review_note: string | null; created_at: string }[];
+        pricing_model?: PricingModel | null; units?: number | null; notes?: string | null;
+        payment_receipts: { status: 'pending' | 'confirmed' | 'rejected'; review_note: string | null; created_at: string; amount: number }[];
       };
       return {
         currency: { code: cur?.code ?? PLATFORM_CONFIG.currencyCode, symbol: cur?.symbol ?? PLATFORM_CONFIG.currencySymbol },
@@ -208,8 +247,10 @@ export function createSupabaseBilling(db: SupabaseClient, orgId: string): Billin
         subscriptionStatus: s?.status ?? null,
         trialEndsOn: s?.trial_ends_on ?? null,
         activeStudents,
-        estimatedDue: periodDue(plan, activeStudents),
+        estimatedDue: q?.amount !== undefined ? Number(q.amount) : periodDue(plan, activeStudents),
+        estimatedUnits: q?.units !== undefined ? Number(q.units) : activeStudents,
         paymentAccounts: accounts?.accounts ?? [],
+        pause: toPause(pauseRes.error ? null : pauseRes.data),
         invoices: ((invoices.data ?? []) as InvDb[]).map((i) => {
           const latest = [...(i.payment_receipts ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
           return {
@@ -224,10 +265,24 @@ export function createSupabaseBilling(db: SupabaseClient, orgId: string): Billin
             status: i.status,
             dueOn: i.due_on,
             paidAt: i.paid_at,
+            pricingModel: i.pricing_model ?? (i.active_students ? 'per_student' : null),
+            units: i.units ?? i.active_students,
+            paidAmount: (i.payment_receipts ?? []).filter((r) => r.status === 'confirmed').reduce((n, r) => n + Number(r.amount ?? 0), 0),
+            notes: i.notes ?? '',
             receipt: latest ? { status: latest.status, note: latest.review_note } : null,
           };
         }),
       };
+    },
+
+    async pauseSubscription(from, until) {
+      const { error } = await db.rpc('pause_subscription', { p_org: orgId, p_from: from, p_until: until });
+      if (error) fail(error, 'تعذّر إيقاف الاشتراك.');
+    },
+
+    async resumeSubscription() {
+      const { error } = await db.rpc('resume_subscription', { p_org: orgId });
+      if (error) fail(error, 'تعذّر إرجاع الاشتراك.');
     },
 
     async uploadPaymentReceipt(invoiceId, input) {
@@ -376,8 +431,10 @@ export function createDemoBilling(): BillingStore {
     name: 'باقة المدرّس',
     target: 'teachers',
     cycle: 'monthly',
+    pricingModel: 'per_student',
     pricePerStudent: PLATFORM_CONFIG.pricing.tutorMonthlyPerStudent,
-    minimumCharge: 250,
+    tiers: [],
+    minimumCharge: 0,
     installments: 1,
   };
   const charges = new Map<string, number>(); // `${studentId}|${month}` -> amount
@@ -406,10 +463,16 @@ export function createDemoBilling(): BillingStore {
       status: back === 1 ? 'issued' : 'paid',
       dueOn: start,
       paidAt: back === 1 ? null : start,
+      pricingModel: 'per_student',
+      units: n,
+      paidAmount: back === 1 ? 0 : periodDue(plan, n),
+      notes: '',
       receipt: back === 1 ? null : { status: 'confirmed', note: null },
     };
   });
   const wait = <T,>(v: T) => new Promise<T>((r) => setTimeout(() => r(v), 120));
+  let pause: SubscriptionPause | null = null;
+  const today = () => new Date().toISOString().slice(0, 10);
 
   return {
     async getBilling() {
@@ -419,13 +482,26 @@ export function createDemoBilling(): BillingStore {
         subscriptionStatus: 'active',
         trialEndsOn: null,
         activeStudents: MOCK_STUDENTS.length,
-        estimatedDue: periodDue(plan, MOCK_STUDENTS.length),
+        estimatedDue: pause?.active ? 0 : periodDue(plan, MOCK_STUDENTS.length),
+        estimatedUnits: MOCK_STUDENTS.length,
         invoices: invoices.map((i) => ({ ...i })),
         paymentAccounts: [
           { title: 'حساب بنكي (تجريبي)', holder: 'يُضاف من إعدادات المنصة', number: '—' },
           { title: 'محفظة إلكترونية (تجريبي)', number: '—', note: 'اكتب اسمك في ملاحظة التحويل.' },
         ],
+        pause: pause ? { ...pause } : null,
       });
+    },
+    async pauseSubscription(from, until) {
+      const start = from || today();
+      if (start < today()) throw new Error('تاريخ بداية الإيقاف لا يمكن أن يكون في الماضي');
+      if (until && until < start) throw new Error('تاريخ الرجوع يجب أن يكون بعد تاريخ الإيقاف');
+      pause = { startsOn: start, endsOn: until, active: start <= today() };
+      await wait(null);
+    },
+    async resumeSubscription() {
+      pause = null;
+      await wait(null);
     },
     async uploadPaymentReceipt(invoiceId) {
       const inv = invoices.find((i) => i.id === invoiceId);

@@ -64,6 +64,8 @@ export interface QuestionResult {
   confidence: Confidence;
   /** True when the answer area could not be read clearly. */
   unreadable: boolean;
+  /** Model that produced this answer (set by gradePaper; differs per question after escalation). */
+  model?: string;
 }
 
 export interface ModelAttempt {
@@ -85,8 +87,10 @@ export interface GradePaperResult {
   questions: QuestionResult[];
   totalScore: number;
   totalMaxScore: number;
-  /** The model whose answer is used. */
+  /** The model whose answers are used for most questions (the primary one unless it failed). */
   model: string;
+  /** Question numbers that were re-graded by the stronger model. */
+  escalatedQuestions: number[];
   /** Every model call made for this paper (more than one when escalated). */
   attempts: ModelAttempt[];
   totalCostUsd: number;

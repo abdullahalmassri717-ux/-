@@ -7,7 +7,9 @@ import {
   Sparkles,
   ArrowRight,
   ShieldAlert,
+  Upload,
 } from 'lucide-react';
+import { MoodleExportDialog } from './MoodleExportDialog';
 import { useLoad } from '../../data/DataContext';
 import { useSelected } from '../../data/selection';
 import type { QuestionGradeRow, SubmissionRow } from '../../data/types';
@@ -47,6 +49,7 @@ export const ExamAnalyticsPage: React.FC<ExamAnalyticsPageProps> = ({ onNavigate
   const [savedExamId, setSavedExamId] = useSelected('exam');
   const [, setSelectedSubmission] = useSelected('submission');
   const [comparePair, setComparePair] = useState<{ a: string; b: string; q: number } | null>(null);
+  const [showMoodle, setShowMoodle] = useState(false);
   const examsQ = useLoad((st) => st.listAssessments());
   const exams = examsQ.data ?? [];
   const examId = exams.some((e) => e.id === savedExamId) ? savedExamId! : exams[0]?.id ?? '';
@@ -139,6 +142,7 @@ export const ExamAnalyticsPage: React.FC<ExamAnalyticsPageProps> = ({ onNavigate
 
   return (
     <div className="space-y-6 text-right max-w-6xl mx-auto pb-12">
+      {showMoodle && exam && <MoodleExportDialog exam={exam} submissions={subsQ.data ?? []} onClose={() => setShowMoodle(false)} />}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div className="min-w-0">
           <button
@@ -169,6 +173,14 @@ export const ExamAnalyticsPage: React.FC<ExamAnalyticsPageProps> = ({ onNavigate
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
             <span>تصدير Excel</span>
+          </button>
+          <button
+            onClick={() => setShowMoodle(true)}
+            disabled={!exam}
+            className="bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            <Upload className="w-4 h-4 text-orange-500" />
+            <span>تصدير لـ Moodle</span>
           </button>
           <button
             onClick={() => onNavigate('C2')}

@@ -247,7 +247,7 @@ export function createDemoAi(): AiStore {
     async aiGenerateQuestions(input) {
       const chosen = lessons.filter((l) => input.lessonIds.includes(l.id));
       const list = chosen.length ? chosen : lessons.slice(0, 1);
-      const questions = Array.from({ length: Math.min(Math.max(input.count, 1), 15) }, (_, i) =>
+      const questions = Array.from({ length: Math.min(Math.max(input.count, 1), 25) }, (_, i) =>
         sampleQuestion(list[i % list.length], Math.floor(i / list.length), input.purpose === 'remedial'),
       );
       return wait({ questions, rejected: [] }, 1400);

@@ -133,7 +133,7 @@ export async function generateQuestions(
   config: ToolModelConfig,
   o: GenerateOptions,
 ): Promise<ToolResult<{ questions: DraftQuestion[]; rejected: { text: string; reason: string }[] }>> {
-  const count = Math.min(Math.max(Math.round(o.count), 1), 15);
+  const count = Math.min(Math.max(Math.round(o.count), 1), 25);
   const lessonIds = new Set(o.lessons.map((l) => l.id));
   const level = { easy: 'سهلة', medium: 'متوسطة', hard: 'صعبة (تحتاج تفكيراً أعلى)' }[o.difficulty];
   const purpose =
@@ -144,6 +144,7 @@ export async function generateQuestions(
     `المادة: ${o.subjectName} — الصف: ${o.gradeName}`,
     `الدروس المسموح بها:\n${renderLessons(o.lessons)}`,
     `المطلوب: ${count} أسئلة ${level}. ${purpose}`,
+    o.lessons.length > 3 ? 'وزّع الأسئلة على كل الدروس والوحدات المذكورة بشكل متوازن، ولا تركّز على درس واحد.' : '',
     o.note?.trim() ? `ملاحظات المدرّس: ${o.note.trim()}` : '',
     o.avoid?.length ? `لا تكرر هذه الأسئلة:\n${o.avoid.slice(0, 30).map((t) => `- ${t}`).join('\n')}` : '',
   ]

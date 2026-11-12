@@ -38,9 +38,12 @@ Deno.serve(async (req) => {
     if (!/^[a-z0-9]{6,20}$/i.test(code)) return null;
     const { data } = await admin
       .from('assessments')
-      .select('id, organization_id, group_id, title, kind, submission_open, submission_mode, organizations(name)')
+      .select('id, organization_id, group_id, title, kind, submission_open, submission_mode, organizations(name, status)')
       .eq('submission_code', code.toLowerCase())
       .maybeSingle();
+    // A disabled (or not yet approved) organization's links stop working.
+    const org = data && (Array.isArray(data.organizations) ? data.organizations[0] : data.organizations);
+    if (data && org?.status && org.status !== 'active') return null;
     return data;
   };
 
@@ -64,6 +67,16 @@ Deno.serve(async (req) => {
   const a = await findAssessment(String(body.code ?? ''));
   if (!a) return json({ error: 'الرابط غير صحيح أو انتهت صلاحيته.' }, 404);
   if (!a.submission_open) return json({ error: 'أغلق المدرّس التسليم لهذا الامتحان.' }, 403);
+
+  // The teacher paused the subscription (e.g. a vacation month): no new papers.
+  const today = new Date().toISOString().slice(0, 10);
+  const { count: paused } = await admin
+    .from('subscription_pauses')
+    .select('id', { count: 'exact', head: true })
+    .eq('organization_id', a.organization_id)
+    .lte('starts_on', today)
+    .or(`ends_on.is.null,ends_on.gte.${today}`);
+  if ((paused ?? 0) > 0) return json({ error: 'التسليم متوقف مؤقتاً عند المدرّس. تواصل معه.' }, 403);
 
   const hash = await clientHash(req, a.id);
   const since = new Date(Date.now() - WINDOW_MINUTES * 60_000).toISOString();

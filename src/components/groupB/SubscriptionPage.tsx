@@ -24,8 +24,11 @@ import {
   CalendarPlus,
   Loader2,
   XCircle,
+  PauseCircle,
+  PlayCircle,
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
+import { InvoiceSheet } from '../common/InvoiceSheet';
 
 interface SubscriptionPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -85,6 +88,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
   const [remindOpen, setRemindOpen] = useState(false);
   const [editFee, setEditFee] = useState<{ studentId: string; value: string } | null>(null);
   const [receiptFor, setReceiptFor] = useState<InvoiceRow | null>(null);
+  const [sheetFor, setSheetFor] = useState<InvoiceRow | null>(null);
   const [receiptForm, setReceiptForm] = useState<{ file: File | null; method: 'bank_transfer' | 'e_wallet'; amount: string; reference: string }>({
     file: null,
     method: 'bank_transfer',
@@ -92,6 +96,9 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
     reference: '',
   });
   const [busy, setBusy] = useState(false);
+  // Pause a monthly subscription (vacation months).
+  const [pauseForm, setPauseForm] = useState<{ from: string; until: string } | null>(null);
+  const [pauseBusy, setPauseBusy] = useState(false);
 
   const filtered = rows.filter((r) => {
     const st = r.status === 'none' ? 'unpaid' : r.status;
@@ -123,6 +130,34 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
 
   const voucherText = (v: { row: TuitionRow; payment: TuitionPayment }) =>
     `سند قبض رقم ${v.payment.receiptNumber}\nوصلنا من الطالب/ة ${v.row.studentName} مبلغ ${fmt(v.payment.amount)} ${sym}\nعن رسوم شهر ${monthLabel(month)}\nبتاريخ ${dateLabel(v.payment.paidOn)}\n— ${activeEntity?.name ?? ''}`;
+
+  const handlePause = async () => {
+    if (!pauseForm) return;
+    setPauseBusy(true);
+    try {
+      await store.pauseSubscription(pauseForm.from || null, pauseForm.until || null);
+      notify('تم إيقاف الاشتراك. أيام الإيقاف لا تُحسب في الفاتورة.', 'success');
+      setPauseForm(null);
+      billingQ.reload();
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setPauseBusy(false);
+    }
+  };
+
+  const handleResume = async () => {
+    setPauseBusy(true);
+    try {
+      await store.resumeSubscription();
+      notify('رجع الاشتراك يعمل من اليوم.', 'success');
+      billingQ.reload();
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setPauseBusy(false);
+    }
+  };
 
   const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -604,9 +639,11 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
                     <h3 className="text-lg font-black text-[#1E3A5F]">{plan?.name ?? 'لا يوجد اشتراك مفعّل بعد'}</h3>
                     {plan ? (
                       <p className="text-[11px] text-slate-500">
-                        {fmt(plan.pricePerStudent)} {sym} لكل طالب {plan.cycle === 'monthly' ? 'شهرياً' : 'سنوياً'}
-                        {plan.minimumCharge ? ` · حد أدنى ${fmt(plan.minimumCharge)} ${sym}` : ''}
+                        {fmt(plan.pricePerStudent)} {sym} {plan.pricingModel === 'per_paper' ? 'لكل ورقة مصحّحة' : 'لكل طالب مسجّل'}{' '}
+                        {plan.cycle === 'monthly' ? 'شهرياً' : 'سنوياً'}
+                        {plan.tiers.length ? ' · سعر أقل للأعداد الكبيرة' : ''}
                         {plan.installments > 1 ? ` · على ${plan.installments} دفعات` : ''}
+                        <span className="block">تدفع حسب استخدامك الفعلي، بدون حد أدنى.</span>
                       </p>
                     ) : (
                       <p className="text-[11px] text-slate-500">تواصل مع الدعم الفني لتفعيل اشتراكك.</p>
@@ -618,19 +655,19 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
                   </div>
 
                   <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-1">
-                    <span className="text-xs text-slate-400">الطلاب النشطون الآن</span>
+                    <span className="text-xs text-slate-400">{plan?.pricingModel === 'per_paper' ? 'الأوراق منذ آخر فاتورة' : 'الطلاب المسجّلون الآن'}</span>
                     <div className="text-3xl font-black text-[#1E3A5F] font-mono tabular-nums">
-                      {billing.activeStudents} <span className="text-sm font-normal text-slate-500">طالب</span>
+                      {billing.estimatedUnits} <span className="text-sm font-normal text-slate-500">{plan?.pricingModel === 'per_paper' ? 'ورقة' : 'طالب'}</span>
                     </div>
                     <p className="text-[11px] text-slate-500">
-                      المتوقع للفترة الحالية: {fmt(billing.estimatedDue)} {sym}
+                      الفاتورة القادمة تقريباً: {fmt(billing.estimatedDue)} {sym}
                     </p>
                   </div>
 
                   <div className="bg-white border-2 border-blue-600 rounded-2xl p-5 shadow-2xs space-y-1 bg-blue-50/20">
                     <span className="text-xs text-blue-900 font-bold">المستحق الآن</span>
                     <div className="text-3xl font-black text-blue-900 font-mono tabular-nums">
-                      {fmt(openInvoice?.amount ?? 0)} <span className="text-sm font-bold">{sym}</span>
+                      {fmt(openInvoice ? Math.max(0, openInvoice.amount - openInvoice.paidAmount) : 0)} <span className="text-sm font-bold">{sym}</span>
                     </div>
                     <p className="text-[11px] text-blue-700 font-medium">
                       {openInvoice ? `فاتورة ${openInvoice.number} · الاستحقاق ${dateLabel(openInvoice.dueOn)}` : 'لا توجد فاتورة مستحقة.'}
@@ -638,7 +675,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
                     {openInvoice && (
                       <button
                         onClick={() => {
-                          setReceiptForm({ file: null, method: 'bank_transfer', amount: String(openInvoice.amount), reference: '' });
+                          setReceiptForm({ file: null, method: 'bank_transfer', amount: String(Math.max(0, openInvoice.amount - openInvoice.paidAmount)), reference: '' });
                           setReceiptFor(openInvoice);
                         }}
                         className="mt-2 bg-[#1E3A5F] hover:bg-[#152a45] text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5"
@@ -648,6 +685,46 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
                     )}
                   </div>
                 </div>
+
+                {plan?.cycle === 'monthly' && (
+                  <div className={`border rounded-2xl p-5 shadow-2xs space-y-3 ${billing.pause ? 'bg-amber-50 border-amber-300' : 'bg-white border-slate-200'}`}>
+                    <h3 className="font-extrabold text-[#1E3A5F] text-base flex items-center gap-2">
+                      <PauseCircle className="w-5 h-5 text-amber-600" />
+                      <span>إيقاف الاشتراك مؤقتاً</span>
+                    </h3>
+                    {billing.pause ? (
+                      <>
+                        <p className="text-xs text-amber-900 leading-relaxed font-bold">
+                          {billing.pause.active ? 'اشتراكك موقوف الآن' : `اشتراكك سيتوقف من ${dateLabel(billing.pause.startsOn)}`}
+                          {billing.pause.endsOn ? ` حتى ${dateLabel(billing.pause.endsOn)}` : ' حتى ترجعه بنفسك'}.
+                        </p>
+                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                          أيام الإيقاف لا تُحسب في الفاتورة. خلالها لا تستقبل أوراقاً جديدة، وكل طلابك ودرجاتك محفوظة.
+                        </p>
+                        <button
+                          disabled={pauseBusy}
+                          onClick={handleResume}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 disabled:opacity-60 cursor-pointer"
+                        >
+                          <PlayCircle className="w-4 h-4" /> {billing.pause.active ? 'أرجِع الاشتراك الآن' : 'ألغِ الإيقاف'}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          في أشهر الإجازة أو إذا توقفت عن التدريس، أوقف اشتراكك ولن تدفع عن أيام الإيقاف. طلابك ودرجاتك تبقى محفوظة، وترجع متى بدك.
+                          لإيقاف طالب أو مجموعة فقط، عطّلهم من شاشة «المجموعات والطلاب».
+                        </p>
+                        <button
+                          onClick={() => setPauseForm({ from: '', until: '' })}
+                          className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <PauseCircle className="w-4 h-4" /> إيقاف الاشتراك
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-2xs space-y-4">
                   <h3 className="font-extrabold text-[#1E3A5F] text-base flex items-center gap-2">
@@ -688,7 +765,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
                           <tr>
                             <th className="p-3">رقم الفاتورة</th>
                             <th className="p-3">الفترة</th>
-                            <th className="p-3 text-center">الطلاب</th>
+                            <th className="p-3 text-center">الاستخدام</th>
                             <th className="p-3 text-center">المبلغ</th>
                             <th className="p-3 text-center">الحالة</th>
                             <th className="p-3 text-center">إجراء</th>
@@ -706,9 +783,14 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
                                     ? `${dateLabel(inv.periodStart)} – ${dateLabel(inv.periodEnd)}`
                                     : monthLabel(inv.periodStart)}
                                 </td>
-                                <td className="p-3 text-center font-mono tabular-nums">{inv.activeStudents}</td>
+                                <td className="p-3 text-center font-mono tabular-nums">
+                                  {inv.pricingModel && inv.units ? `${inv.units} ${inv.pricingModel === 'per_paper' ? 'ورقة' : 'طالب'}` : '—'}
+                                </td>
                                 <td className="p-3 text-center font-mono font-bold text-[#1E3A5F] tabular-nums">
                                   {fmt(inv.amount)} {sym}
+                                  {inv.paidAmount > 0 && inv.paidAmount < inv.amount && (
+                                    <span className="block text-[10px] font-normal text-amber-700">مدفوع {fmt(inv.paidAmount)} · باقي {fmt(inv.amount - inv.paidAmount)}</span>
+                                  )}
                                 </td>
                                 <td className="p-3 text-center">
                                   <span className={`${st.cls} px-2.5 py-0.5 rounded-full font-bold text-[11px] inline-block`}>{st.label}</span>
@@ -719,21 +801,24 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
                                   )}
                                 </td>
                                 <td className="p-3 text-center">
-                                  {canPay ? (
-                                    <button
-                                      onClick={() => {
-                                        setReceiptForm({ file: null, method: 'bank_transfer', amount: String(inv.amount), reference: '' });
-                                        setReceiptFor(inv);
-                                      }}
-                                      className="text-blue-700 hover:underline font-bold cursor-pointer"
-                                    >
-                                      رفع إيصال
+                                  <div className="flex flex-col items-center gap-1">
+                                    {canPay ? (
+                                      <button
+                                        onClick={() => {
+                                          setReceiptForm({ file: null, method: 'bank_transfer', amount: String(Math.max(0, inv.amount - inv.paidAmount)), reference: '' });
+                                          setReceiptFor(inv);
+                                        }}
+                                        className="text-blue-700 hover:underline font-bold cursor-pointer"
+                                      >
+                                        رفع إيصال
+                                      </button>
+                                    ) : inv.paidAt ? (
+                                      <span className="text-slate-500">{dateLabel(inv.paidAt)}</span>
+                                    ) : null}
+                                    <button onClick={() => setSheetFor(inv)} className="text-slate-600 hover:underline font-bold cursor-pointer flex items-center gap-1">
+                                      <Printer className="w-3.5 h-3.5" /> عرض وطباعة
                                     </button>
-                                  ) : inv.paidAt ? (
-                                    <span className="text-slate-500">{dateLabel(inv.paidAt)}</span>
-                                  ) : (
-                                    '—'
-                                  )}
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -750,6 +835,14 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
       )}
 
       {/* ============================ MODALS ============================ */}
+      {sheetFor && billing && (
+        <InvoiceSheet
+          invoice={{ ...sheetFor, orgName: activeEntity?.name ?? '', unitPrice: sheetFor.pricePerStudent }}
+          sym={sym}
+          accounts={billing.paymentAccounts}
+          onClose={() => setSheetFor(null)}
+        />
+      )}
       {voucher && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
           <div className="print-area bg-white rounded-3xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-200 my-auto text-right">
@@ -981,6 +1074,48 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
             <button onClick={() => setRemindOpen(false)} className="w-full bg-slate-100 text-slate-700 py-2.5 rounded-xl text-xs font-bold">
               إغلاق
             </button>
+          </div>
+        </div>
+      )}
+
+      {pauseForm && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-right space-y-4 shadow-2xl">
+            <h3 className="font-bold text-base text-[#1E3A5F]">إيقاف الاشتراك مؤقتاً</h3>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">يبدأ الإيقاف من</label>
+                <input
+                  type="date"
+                  value={pauseForm.from}
+                  onChange={(e) => setPauseForm({ ...pauseForm, from: e.target.value })}
+                  className="w-full p-2 border border-slate-300 rounded-lg"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">اتركه فارغاً ليبدأ من اليوم.</p>
+              </div>
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">يرجع الاشتراك بعد</label>
+                <input
+                  type="date"
+                  value={pauseForm.until}
+                  onChange={(e) => setPauseForm({ ...pauseForm, until: e.target.value })}
+                  className="w-full p-2 border border-slate-300 rounded-lg"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">آخر يوم في الإيقاف. اتركه فارغاً إذا بدك توقف لحد ما ترجعه بنفسك (مثل الإلغاء، بس بياناتك بتضل محفوظة).</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                disabled={pauseBusy}
+                onClick={handlePause}
+                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-lg font-bold text-xs cursor-pointer disabled:opacity-60"
+              >
+                {pauseBusy ? 'لحظة...' : 'أوقف الاشتراك'}
+              </button>
+              <button onClick={() => setPauseForm(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-4 rounded-lg font-medium text-xs cursor-pointer">
+                إلغاء
+              </button>
+            </div>
           </div>
         </div>
       )}

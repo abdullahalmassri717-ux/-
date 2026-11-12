@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { pathForScreen, roleForPath, screenForPath } from './routes';
+import { SCREEN_PATHS, pathForScreen, roleForPath, screenForPath } from './routes';
 import { UserRole, ScreenId, Entity } from './types';
 import { DataProvider } from './data/DataContext';
 import { Navbar } from './components/Navbar';
@@ -31,12 +31,15 @@ import { ExamAnalyticsPage } from './components/groupB/ExamAnalyticsPage';
 import { ParentReportPage } from './components/groupB/ParentReportPage';
 import { SubscriptionPage } from './components/groupB/SubscriptionPage';
 import { CorrectedPaperViewPage } from './components/groupB/CorrectedPaperViewPage';
+import { getExamScope, setExamScope } from './data/examScope';
 import WhereWeReachedPage from './components/groupB/WhereWeReachedPage';
 import { TeacherDiagnosticAnalyticsPage } from './components/groupB/TeacherDiagnosticAnalyticsPage';
 
 // Common Components
 import { TechnicalSupportPage } from './components/common/TechnicalSupportPage';
 import { Toaster } from './components/common/Toaster';
+import { InstallAppBanner } from './components/common/InstallAppBanner';
+import { OrgStatusGate } from './components/common/OrgStatusGate';
 
 // Group C Components
 import { AIToolsHubPage } from './components/groupC/AIToolsHubPage';
@@ -51,7 +54,7 @@ import { TeacherFilesSection } from './components/groupC/TeacherFilesSection';
 import { SchoolDashboard, TeachersClassesPage, SchoolReportPage, TeacherComparisonPage } from './components/groupD/SchoolViews';
 
 // Group E Components
-import { PlatformAdminDashboard, AdminBillingPage, GradingQualityPage } from './components/groupE/PlatformAdminViews';
+import { PlatformAdminDashboard, AdminBillingPage, GradingQualityPage, AdminSectionGate } from './components/groupE/PlatformAdminViews';
 import { CurriculumManagementPage } from './components/groupE/CurriculumManagementPage';
 
 // Floating AI trigger icon
@@ -76,6 +79,10 @@ function saveEntityId(id: string) {
   }
 }
 
+// A teacher who is a member (not the owner) of a school or centre.
+const isOrgTeacher = (entity: Entity | undefined) => !!entity && entity.role === 'teacher';
+const BILLING_OWNER_ONLY = 'الاشتراك والفواتير خاصة بإدارة الجهة فقط، ولا تظهر لمعلميها.';
+
 // Org owners of a school or centre manage it from the school dashboard.
 const isOrgOwner = (entity: Entity | undefined) =>
   !!entity && entity.role === 'owner' && entity.type !== 'individual_teacher';
@@ -89,7 +96,8 @@ export default function App() {
   const isReal = auth.mode === 'real';
   const currentScreen: ScreenId = screenForPath(location.pathname);
   const [currentRole, setCurrentRole] = useState<UserRole>(() => roleForPath(location.pathname));
-  const setCurrentScreen = (screen: ScreenId) => navigate(pathForScreen(screen));
+  const setCurrentScreen = (screen: ScreenId) =>
+    navigate(pathForScreen(screen, roleForPath(location.pathname) === 'school_principal'));
   const [selectedStudentId, setSelectedStudentId] = useState<string>('s1');
   const [isEnglish, setIsEnglish] = useState<boolean>(false);
   const [isAIOpen, setIsAIOpen] = useState<boolean>(false);
@@ -98,7 +106,7 @@ export default function App() {
   // Active Entity state for multi-tenancy & account switcher (demo mode)
   const [demoEntity, setDemoEntity] = useState<Entity>(() =>
     roleForPath(location.pathname) === 'school_principal'
-      ? MOCK_ENTITIES.find((e) => e.type === 'school') || MOCK_ENTITIES[0]
+      ? MOCK_ENTITIES.find(isOrgOwner) || MOCK_ENTITIES[0]
       : MOCK_ENTITIES[0]
   );
   // Real mode: the organizations come from the account; we remember the chosen one.
@@ -124,6 +132,13 @@ export default function App() {
       }
     );
   }, [isReal, demoEntity, auth.entities, auth.profile, activeEntityId]);
+  // «صفحتي كأستاذ»: the owner of a school or centre who opens the teacher area works
+  // there as a teacher: only the classes assigned to them, and no billing.
+  const isOwnerTeacherView = isOrgOwner(activeEntity) && roleForPath(location.pathname) === 'teacher';
+  const viewEntity: Entity = useMemo(
+    () => (isOwnerTeacherView ? { ...activeEntity, role: 'teacher' } : activeEntity),
+    [isOwnerTeacherView, activeEntity],
+  );
   const setActiveEntity = (entity: Entity) => {
     if (isReal) {
       setActiveEntityId(entity.id);
@@ -174,6 +189,14 @@ export default function App() {
     }
   }, [isReal, auth.status, auth.entities, auth.profile, activeEntity, location.pathname, location.search]);
 
+  // Opening the billing address directly (bookmark, shared link) is blocked too.
+  useEffect(() => {
+    if (currentScreen === 'B11' && isOrgTeacher(viewEntity) && roleForPath(location.pathname) === 'teacher') {
+      notify(BILLING_OWNER_ONLY, 'warning');
+      navigate(pathForScreen('B1'), { replace: true });
+    }
+  }, [currentScreen, viewEntity, location.pathname]);
+
   // Keep the role in step with the area of the site the address points to
   // (e.g. opening a student link, or pressing the browser's back button).
   useEffect(() => {
@@ -195,11 +218,12 @@ export default function App() {
   }, [location.pathname]);
 
   const handleNavigate = (screen: ScreenId) => {
-    // School teachers cannot navigate to B11 (Subscriptions & Invoices)
-    if (screen === 'B11' && activeEntity.type === 'school' && activeEntity.role === 'teacher') {
-      notify('إدارة الاشتراكات والفواتير خاصة بإدارة المدرسة فقط وغير متاحة لمعلمي المدرسة.', 'warning');
+    // Teachers of a school or centre never see its subscription and invoices.
+    if (screen === 'B11' && isOrgTeacher(viewEntity)) {
+      notify(BILLING_OWNER_ONLY, 'warning');
       return;
     }
+    setExamScope(null);
     setCurrentScreen(screen);
   };
 
@@ -218,15 +242,15 @@ export default function App() {
     setActiveEntity(entity);
     if (entity.type !== 'individual_teacher') {
       if (entity.role === 'owner') {
-        setCurrentRole('school_admin');
-        setCurrentScreen('D1');
+        setCurrentRole('school_principal');
+        navigate(pathForScreen('D1'));
       } else {
         setCurrentRole('teacher');
-        setCurrentScreen('B1');
+        navigate(pathForScreen('B1'));
       }
     } else {
       setCurrentRole('teacher');
-      setCurrentScreen('B1');
+      navigate(pathForScreen('B1'));
     }
   };
 
@@ -285,14 +309,17 @@ export default function App() {
       case 'B10':
         return <ParentReportPage onNavigate={handleNavigate} />;
       case 'B11':
-        return <SubscriptionPage onNavigate={handleNavigate} activeEntity={activeEntity} />;
+        return <SubscriptionPage onNavigate={handleNavigate} activeEntity={viewEntity} />;
       case 'B12':
         return <CorrectedPaperViewPage onNavigate={handleNavigate} />;
       case 'B14':
         return (
           <WhereWeReachedPage 
             onNavigate={handleNavigate} 
-            onOpenExamGen={() => handleNavigate('C1')} 
+            onOpenExamGen={(scope) => {
+              setExamScope(scope);
+              setCurrentScreen('C1');
+            }}
           />
         );
       case 'B15':
@@ -302,7 +329,7 @@ export default function App() {
       case 'C_HUB':
         return <AIToolsHubPage onNavigate={handleNavigate} onOpenAI={() => setIsAIOpen(true)} />;
       case 'C1':
-        return <GenerateExamTool onNavigate={handleNavigate} />;
+        return <GenerateExamTool onNavigate={handleNavigate} scope={getExamScope()} />;
       case 'C2':
         return <RemedialExercisesTool onNavigate={handleNavigate} />;
       case 'C3':
@@ -340,15 +367,21 @@ export default function App() {
       case 'E3':
         return <GradingQualityPage onNavigate={handleNavigate} />;
       case 'E4':
-        return <CurriculumManagementPage onNavigate={handleNavigate} />;
+        return (
+          <AdminSectionGate need="curricula">
+            <CurriculumManagementPage onNavigate={handleNavigate} />
+          </AdminSectionGate>
+        );
       case 'E5':
         return <PlatformAdminDashboard onNavigate={handleNavigate} initialTab="support" />;
       case 'E6':
         return <PlatformAdminDashboard onNavigate={handleNavigate} initialTab="landing" />;
+      case 'E7':
+        return <PlatformAdminDashboard onNavigate={handleNavigate} initialTab="staff" />;
 
       // Common / Global
       case 'SUPPORT':
-        return <TechnicalSupportPage onNavigate={handleNavigate} activeEntity={activeEntity} />;
+        return <TechnicalSupportPage onNavigate={handleNavigate} activeEntity={viewEntity} />;
 
       default:
         return <LandingPage onNavigate={handleNavigate} onOpenAI={() => setIsAIOpen(true)} />;
@@ -365,6 +398,8 @@ export default function App() {
         currentRole={currentRole}
         currentScreen={currentScreen}
         activeEntity={activeEntity}
+        isTeacherView={isOwnerTeacherView}
+        onSwitchView={(asTeacher) => navigate(asTeacher ? SCREEN_PATHS.B1 : SCREEN_PATHS.D1)}
         availableEntities={entities}
         onSwitchEntity={(entityId: string) => {
           const ent = entities.find(e => e.id === entityId);
@@ -384,11 +419,22 @@ export default function App() {
       {/* 2. Main Workspace Layout with Right Sidebar for Desktop & Mobile Drawer */}
       <div className={`flex-1 flex w-full mx-auto ${currentScreen === 'A1' ? '' : 'max-w-7xl'}`}>
         {/* Main Content Viewport */}
-        <main className={currentScreen === 'A1' ? 'flex-1 min-w-0' : 'flex-1 p-3 sm:p-6 lg:p-8 min-w-0'}>
+        <main
+          className={`${currentScreen === 'A1' ? 'flex-1 min-w-0' : 'flex-1 p-3 sm:p-6 lg:p-8 min-w-0'} ${
+            // Room for the fixed bottom bar on phones, so the end of the page is not hidden behind it.
+            currentRole !== 'visitor' && currentRole !== 'student' ? 'pb-24 sm:pb-24 lg:pb-8' : ''
+          }`}
+        >
           {isReal && roleForPath(location.pathname) !== 'visitor' && roleForPath(location.pathname) !== 'student' && auth.status !== 'signed_in' ? (
             <div className="py-24 text-center text-sm text-slate-500">جاري التحميل...</div>
+          ) : isReal &&
+            activeEntity.id &&
+            activeEntity.status &&
+            activeEntity.status !== 'active' &&
+            (roleForPath(location.pathname) === 'teacher' || roleForPath(location.pathname) === 'school_principal') ? (
+            <OrgStatusGate entity={activeEntity} onRefresh={auth.refresh} />
           ) : (
-            <DataProvider org={activeEntity} real={isReal}>
+            <DataProvider org={viewEntity} real={isReal} teacherView={isReal && isOwnerTeacherView}>
               {renderScreen()}
             </DataProvider>
           )}
@@ -398,7 +444,7 @@ export default function App() {
         <Sidebar
           currentRole={currentRole}
           currentScreen={currentScreen}
-          activeEntity={activeEntity}
+          activeEntity={viewEntity}
           onNavigate={handleNavigate}
           isMobileOpen={isMobileDrawerOpen}
           onMobileClose={() => setIsMobileDrawerOpen(false)}
@@ -428,9 +474,14 @@ export default function App() {
 
       <Toaster />
 
+      {/* Install-as-app invitation (not on the student submission page) */}
+      {currentRole !== 'student' && (
+        <InstallAppBanner aboveBottomNav={currentRole !== 'visitor'} />
+      )}
+
       {/* 5. Contextual AI Drawer */}
       {currentRole !== 'visitor' && currentRole !== 'student' && (
-      <DataProvider org={activeEntity} real={isReal}>
+      <DataProvider org={viewEntity} real={isReal} teacherView={isReal && isOwnerTeacherView}>
       <AIAssistantDrawer
         isOpen={isAIOpen || currentScreen === 'C4'}
         onClose={() => {

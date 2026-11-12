@@ -5,6 +5,7 @@ import { setSelected } from '../../data/selection';
 import { takeExamDraft } from '../../data/examDraft';
 import type { DraftQuestion as AiDraft } from '../../data/ai';
 import { prepareImageForGrading, type PreparedImage } from '../../lib/imageResize';
+import { filesToPageImages, pdfErrorText, PAGE_FILE_ACCEPT } from '../../lib/pdfPages';
 
 type DraftQuestion = QuestionRubric & { lessonId: string | null };
 
@@ -68,6 +69,10 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
     if (!selectedGroup && groups.length) setSelectedGroup(groups[0].id);
   }, [groups, selectedGroup]);
   const group = groups.find((g) => g.id === selectedGroup);
+  // The same exam for other sections of the same subject (e.g. 7A, 7B, 7C).
+  const [alsoGroupIds, setAlsoGroupIds] = useState<string[]>([]);
+  const sameSubjectGroups = groups.filter((g) => g.id !== selectedGroup && !!g.subjectId && g.subjectId === group?.subjectId);
+  useEffect(() => setAlsoGroupIds([]), [selectedGroup]);
   // Lessons of the group's subject, for linking each question to a lesson.
   const subjectLessons = useMemo(() => {
     for (const c of curriculaQ.data ?? []) for (const gr of c.grades) for (const sb of gr.subjects)
@@ -103,14 +108,15 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
 
   const handleAddPhotos = async (files: FileList | null) => {
     if (!files?.length) return;
-    const room = 6 - capturedPhotos.length;
-    const picked = [...files].slice(0, Math.max(room, 0));
-    if (files.length > picked.length) notify('يمكن رفع 6 صفحات كحد أقصى', 'warning');
+    const room = Math.max(6 - capturedPhotos.length, 0);
     try {
-      const prepared = await Promise.all(picked.map((f) => prepareImageForGrading(f)));
+      const r = await filesToPageImages([...files], room);
+      if (r.truncated) notify('يمكن رفع 6 صفحات كحد أقصى', 'warning');
+      if (r.skipped) notify('اختر صوراً أو ملف PDF فقط.', 'warning');
+      const prepared = await Promise.all(r.images.map((f) => prepareImageForGrading(f)));
       setCapturedPhotos((prev) => [...prev, ...prepared]);
-    } catch {
-      notify('أحد الملفات ليس صورة. اختر صوراً فقط.', 'warning');
+    } catch (e) {
+      notify(pdfErrorText(e, 'تعذّرت قراءة أحد الملفات. اختر صوراً أو ملف PDF.'), 'warning');
     }
   };
 
@@ -152,10 +158,13 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
     if (mismatch !== -1) return notify(`مجموع نقاط معايير السؤال ${mismatch + 1} لا يساوي درجته`, 'warning');
     setSaving(true);
     try {
-      const id = await store.createAssessment({
+      const targets = [selectedGroup, ...alsoGroupIds.filter((g) => sameSubjectGroups.some((x) => x.id === g))];
+      // One exam per section: each has its own students, submission link and results.
+      const ids: string[] = [];
+      for (const groupId of targets) ids.push(await store.createAssessment({
         title,
         kind: examType,
-        groupId: selectedGroup,
+        groupId,
         subjectId: group?.subjectId || null,
         scheduledOn: examDate || null,
         submissionMode,
@@ -168,9 +177,14 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
           lessonId: q.lessonId,
           criteria: q.criteria.map((c) => ({ description: c.description, points: Number(c.points) || 0 })),
         })),
-      });
-      setSelected('exam', id);
-      notify(submissionMode === 'link' ? 'تم حفظ الامتحان. انسخ رابط التسليم من قائمة الامتحانات.' : 'تم حفظ الامتحان ومعايير تصحيحه. جهّز أوراق الإجابة للطباعة.');
+      }));
+      setSelected('exam', ids[0]);
+      const many = ids.length > 1 ? ` (لـ ${ids.length} شعب، لكل شعبة رابطها ونتائجها)` : '';
+      notify(
+        submissionMode === 'link'
+          ? `تم حفظ الامتحان${many}. انسخ رابط التسليم من قائمة الامتحانات.`
+          : `تم حفظ الامتحان ومعايير تصحيحه${many}. جهّز أوراق الإجابة للطباعة.`,
+      );
       onNavigate(submissionMode === 'link' ? 'B4' : 'B6');
     } catch (e) {
       notify(errorMessage(e));
@@ -322,6 +336,26 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
                 <option key={g.id} value={g.id}>{g.name}</option>
               ))}
             </select>
+            {sameSubjectGroups.length > 0 && (
+              <div className="mt-2 p-2.5 bg-blue-50/60 border border-blue-200 rounded-lg space-y-1.5">
+                <span className="block text-[11px] font-bold text-slate-700">نفس الامتحان لشعب أخرى في نفس المادة:</span>
+                <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                  {sameSubjectGroups.map((g) => {
+                    const on = alsoGroupIds.includes(g.id);
+                    return (
+                      <label key={g.id} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => setAlsoGroupIds((prev) => (on ? prev.filter((x) => x !== g.id) : [...prev, g.id]))}
+                        />
+                        <span className="font-bold">{g.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="sm:col-span-2">
@@ -648,11 +682,10 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
                 {capturedPhotos.length < 6 && (
                   <label className="aspect-[3/4] rounded-lg border-2 border-dashed border-emerald-300 bg-emerald-50 flex flex-col items-center justify-center gap-1 text-emerald-800 text-[11px] font-bold cursor-pointer">
                     <Camera className="w-6 h-6" />
-                    <span>{capturedPhotos.length ? 'صفحة أخرى' : 'صوّر أو اختر صورة'}</span>
+                    <span>{capturedPhotos.length ? 'صفحة أخرى' : 'صوّر أو اختر صورة أو PDF'}</span>
                     <input
                       type="file"
-                      accept="image/*"
-                      capture="environment"
+                      accept={PAGE_FILE_ACCEPT}
                       multiple
                       className="sr-only"
                       onChange={(e) => {

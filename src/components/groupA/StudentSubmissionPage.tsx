@@ -13,6 +13,7 @@ import {
   ArrowUp,
   ArrowDown
 } from 'lucide-react';
+import { filesToPageImages, pdfErrorText, PAGE_FILE_ACCEPT } from '../../lib/pdfPages';
 import { prepareImageForGrading } from '../../lib/imageResize';
 import { getLinkInfo, isTooDark, LinkError, submitPaper, type LinkInfo } from '../../lib/studentLink';
 import { listQueued, queuePaper, removeQueued } from '../../lib/offlineQueue';
@@ -88,12 +89,21 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = () =>
   }, [linkCode]);
 
   const handleAddFiles = async (list: FileList | null) => {
-    const files = Array.from(list ?? []).filter((f) => f.type.startsWith('image/'));
-    if (!files.length) return;
-    const room = maxPages - pages.length;
-    if (files.length > room) notify(`الحد الأقصى ${maxPages} صفحات.`, 'warning');
+    const picked = Array.from(list ?? []);
+    if (!picked.length) return;
+    const room = Math.max(0, maxPages - pages.length);
+    let files: File[];
+    try {
+      const r = await filesToPageImages(picked, room);
+      files = r.images;
+      if (r.truncated) notify(`الحد الأقصى ${maxPages} صفحات.`, 'warning');
+      if (r.skipped) notify('اختر صوراً أو ملف PDF فقط.', 'warning');
+    } catch (e) {
+      notify(pdfErrorText(e, 'تعذّرت قراءة الملف. جرّب صورة أو ملفاً آخر.'), 'warning');
+      return;
+    }
     const added: PageImage[] = [];
-    for (const file of files.slice(0, Math.max(0, room))) {
+    for (const file of files) {
       try {
         const p = await prepareImageForGrading(file);
         added.push({ id: `p${Date.now()}${added.length}`, name: `الصفحة ${pages.length + added.length + 1}`, dataUrl: p.dataUrl, base64: p.base64, isDark: await isTooDark(p.dataUrl) });
@@ -274,7 +284,7 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = () =>
           </div>
 
           <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { void handleAddFiles(e.target.files); e.target.value = ''; }} />
-          <input ref={filesRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { void handleAddFiles(e.target.files); e.target.value = ''; }} />
+          <input ref={filesRef} type="file" accept={PAGE_FILE_ACCEPT} multiple className="hidden" onChange={(e) => { void handleAddFiles(e.target.files); e.target.value = ''; }} />
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -292,7 +302,7 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = () =>
               className="bg-white border-2 border-dashed border-slate-300 disabled:opacity-50 text-slate-800 p-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer"
             >
               <Upload className="w-5 h-5 text-blue-600" />
-              <span>من المعرض</span>
+              <span>صور أو ملف PDF</span>
             </button>
           </div>
 

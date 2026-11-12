@@ -54,26 +54,58 @@ export const SCREEN_PATHS: Record<ScreenId, string> = {
   E4: '/admin/curricula',
   E5: '/admin/support',
   E6: '/admin/landing',
+  E7: '/admin/team',
 };
 
-const PATH_TO_SCREEN = new Map<string, ScreenId>(
-  Object.entries(SCREEN_PATHS).map(([screen, path]) => [path, screen as ScreenId])
-);
+// A school or centre owner also opens a few shared screens (quality of grading,
+// contract & billing, support, classes, student profiles, exam results, corrected
+// papers, question-by-question review, parent reports). Inside the school area
+// they get their own addresses, so the school sidebar and layout stay in place
+// instead of jumping to the teacher's area.
+export const SCHOOL_SCREEN_PATHS: Partial<Record<ScreenId, string>> = {
+  B2: '/school/classes',
+  B3: '/school/student',
+  B8: '/school/quality',
+  B9: '/school/results',
+  B10: '/school/parent-reports',
+  B11: '/school/billing',
+  B12: '/school/corrected-paper',
+  C6: '/school/group-answers',
+  SUPPORT: '/school/support',
+};
+
+const PATH_TO_SCREEN = new Map<string, ScreenId>([
+  ...Object.entries(SCREEN_PATHS).map(([screen, path]) => [path, screen as ScreenId] as const),
+  ...Object.entries(SCHOOL_SCREEN_PATHS).map(([screen, path]) => [path as string, screen as ScreenId] as const),
+]);
 
 const normalize = (pathname: string) => {
   const trimmed = pathname.replace(/\/+$/, '');
   return trimmed === '' ? '/' : trimmed;
 };
 
-export function pathForScreen(screen: ScreenId): string {
-  return SCREEN_PATHS[screen] ?? '/';
+// `inSchoolArea`: the person is currently in the school area, so every screen
+// opens inside it: at its own school address when there is one, otherwise at the
+// teacher address moved under /school (e.g. /school/ai-tools/remedial). That way
+// a button inside a school screen never drops the owner into the teacher layout.
+export function pathForScreen(screen: ScreenId, inSchoolArea = false): string {
+  const path = SCREEN_PATHS[screen] ?? '/';
+  if (!inSchoolArea) return path;
+  if (SCHOOL_SCREEN_PATHS[screen]) return SCHOOL_SCREEN_PATHS[screen]!;
+  if (path === '/app') return SCREEN_PATHS.D1;
+  if (path.startsWith('/app/')) return '/school' + path.slice('/app'.length);
+  return path;
 }
 
 export function screenForPath(pathname: string): ScreenId {
   const path = normalize(pathname);
   // Student submission links look like /s/<link-code>
   if (path.startsWith('/s/')) return 'A5';
-  return PATH_TO_SCREEN.get(path) ?? 'A1';
+  const direct = PATH_TO_SCREEN.get(path);
+  if (direct) return direct;
+  // A teacher screen opened from inside the school area (see pathForScreen).
+  if (path.startsWith('/school/')) return PATH_TO_SCREEN.get('/app' + path.slice('/school'.length)) ?? 'D1';
+  return 'A1';
 }
 
 // The area of the address decides which role's screens are shown. With real

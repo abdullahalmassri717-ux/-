@@ -70,7 +70,7 @@ export const PrintAnswerSheetsPage: React.FC<PrintAnswerSheetsPageProps> = ({ on
   const studentsQ = useLoad((st) => st.listStudents());
   const exam = examQ.data;
   const students = useMemo(
-    () => (studentsQ.data ?? []).filter((s) => s.groupId === exam?.groupId),
+    () => (studentsQ.data ?? []).filter((s) => !!exam && s.groupIds.includes(exam.groupId)),
     [studentsQ.data, exam?.groupId],
   );
   const [selectedId, setSelectedId] = useState('');

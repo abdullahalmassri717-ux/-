@@ -12,7 +12,8 @@ import {
   Briefcase,
   Layers,
   Check,
-  Headphones
+  Headphones,
+  Repeat
 } from 'lucide-react';
 import { PLATFORM_CONFIG, MOCK_ENTITIES } from '../mockData';
 import { useAuth } from '../lib/auth';
@@ -22,6 +23,10 @@ interface NavbarProps {
   currentScreen: ScreenId;
   activeEntity?: Entity;
   availableEntities?: Entity[];
+  /** A school owner who opened «صفحتي كأستاذ». */
+  isTeacherView?: boolean;
+  /** Switch a school owner between the school dashboard and their teacher page. */
+  onSwitchView?: (asTeacher: boolean) => void;
   onSwitchEntity?: (entityId: string) => void;
   onRoleChange?: (role: UserRole) => void;
   onNavigate: (screen: ScreenId) => void;
@@ -35,6 +40,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentScreen,
   activeEntity = MOCK_ENTITIES[0],
   availableEntities = MOCK_ENTITIES,
+  isTeacherView = false,
+  onSwitchView,
   onSwitchEntity,
   onRoleChange,
   onNavigate,
@@ -47,12 +54,14 @@ export const Navbar: React.FC<NavbarProps> = ({
   // A platform admin who also teaches reaches both areas from the header.
   const canOpenAdmin = auth.mode === 'real' && auth.status === 'signed_in' && !!auth.profile?.isPlatformAdmin;
   const hasOwnAccount = auth.mode === 'real' && auth.entities.length > 0;
+  // The owner of a school or centre may also teach there.
+  const isSchoolOwner = activeEntity.role === 'owner' && activeEntity.type !== 'individual_teacher';
 
   // If visitor: show clean landing nav links
   if (currentRole === 'visitor') {
     return (
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3 md:gap-6">
           {/* Brand Logo with the official logo */}
           <div 
             onClick={() => onNavigate('A1')}
@@ -61,12 +70,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             <img
               src="/dequa-logo.png"
               alt="منصة دقة - DEQUA"
-              className="h-10 sm:h-12 w-auto object-contain"
+              className="h-9 sm:h-12 w-auto object-contain"
             />
           </div>
 
           {/* Clean nav links */}
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
+          <nav className="hidden md:flex items-center gap-2 lg:gap-6 text-xs lg:text-sm font-medium text-slate-600">
             <button 
               onClick={() => onNavigate('A1')}
               className={`hover:text-[#1E3A5F] transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
@@ -117,6 +126,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               المناهج المدعومة
             </button>
             <button 
+              onClick={() => {
+                onNavigate('A1');
+                setTimeout(() => {
+                  document.getElementById('install-app')?.scrollIntoView({ behavior: 'smooth' });
+                }, 100);
+              }}
+              className="hidden lg:inline-block hover:text-[#1E3A5F] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              حمّل التطبيق
+            </button>
+            <button 
               onClick={() => onNavigate('SUPPORT')}
               className={`hover:text-[#1E3A5F] transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 currentScreen === 'SUPPORT' ? 'text-[#1E3A5F] font-bold' : ''
@@ -124,16 +144,20 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               الدعم الفني
             </button>
-            <button 
-              onClick={() => onNavigate('A4')}
-              className="hover:text-[#1E3A5F] transition-colors whitespace-nowrap shrink-0 cursor-pointer text-slate-800 font-bold"
-            >
-              تسجيل الدخول
-            </button>
           </nav>
 
           {/* Primary Action Button */}
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => onNavigate('A4')}
+              className={`border px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 active:scale-95 ${
+                currentScreen === 'A4'
+                  ? 'bg-[#E8F0F8] border-blue-300 text-[#1E3A5F]'
+                  : 'bg-white hover:bg-slate-50 border-slate-300 text-[#1E3A5F]'
+              }`}
+            >
+              تسجيل الدخول
+            </button>
             <button
               onClick={() => onNavigate('A3')}
               className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5 active:scale-95"
@@ -219,7 +243,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span className={`px-1 rounded font-semibold ${
                       activeEntity.role === 'owner' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'
                     }`}>
-                      {activeEntity.role === 'owner' ? 'مالك / مدير' : 'معلم معتمد'}
+                      {isTeacherView ? 'المدير · كأستاذ' : activeEntity.role === 'owner' ? 'مالك / مدير' : 'معلم معتمد'}
                     </span>
                     <span>·</span>
                     <span>{activeEntity.activeStudentsCount} طالباً</span>
@@ -229,7 +253,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
               {/* Entity Dropdown Menu */}
               {showEntityDropdown && (
-                <div className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-1.5rem))] bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 text-right text-xs space-y-1">
+                <div className="fixed top-16 left-3 right-3 sm:absolute sm:top-auto sm:left-auto sm:right-0 sm:mt-2 sm:w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 text-right text-xs space-y-1">
                   <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between">
                     <span className="font-bold text-slate-700 text-xs">حساباتك وجهاتك التعليمية</span>
                     <span className="text-[10px] text-slate-400">بيانات منفصلة بالكامل</span>
@@ -242,17 +266,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <div
                           key={ent.id}
                           onClick={() => {
+                            // The app opens the right area for this organization
+                            // (school dashboard for owners of a school or centre).
                             onSwitchEntity?.(ent.id);
-                            if (ent.type === 'school' && ent.role === 'teacher') {
-                              onRoleChange?.('teacher');
-                              onNavigate('B1');
-                            } else if (ent.type === 'school' && ent.role === 'owner') {
-                              onRoleChange?.('school_principal');
-                              onNavigate('D1');
-                            } else {
-                              onRoleChange?.('teacher');
-                              onNavigate('B1');
-                            }
                             setShowEntityDropdown(false);
                           }}
                           className={`p-2.5 rounded-xl flex items-center justify-between cursor-pointer transition-colors ${
@@ -282,6 +298,25 @@ export const Navbar: React.FC<NavbarProps> = ({
                     })}
                   </div>
 
+                  {isSchoolOwner && onSwitchView && (
+                    <div className="pt-2 border-t border-slate-100">
+                      <button
+                        onClick={() => {
+                          setShowEntityDropdown(false);
+                          onSwitchView(!isTeacherView);
+                        }}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 text-emerald-800 hover:bg-emerald-50 rounded-xl font-bold transition-colors cursor-pointer text-xs"
+                      >
+                        <Repeat className="w-3.5 h-3.5" />
+                        {isTeacherView ? 'العودة إلى لوحة الإدارة' : 'صفحتي كأستاذ'}
+                      </button>
+                      {!isTeacherView && (
+                        <p className="text-[10px] text-slate-500 text-center px-2">
+                          تظهر فيها الصفوف والمواد المسندة إليك فقط
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {canOpenAdmin && (
                     <div className="pt-2 border-t border-slate-100">
                       <button
@@ -321,7 +356,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {currentRole === 'platform_admin' && hasOwnAccount && (
             <button
-              onClick={() => onNavigate('B1')}
+              onClick={() => onNavigate(isSchoolOwner ? 'D1' : 'B1')}
               className="text-xs font-bold text-[#1E3A5F] border border-slate-200 hover:bg-slate-100 rounded-xl px-2.5 py-1.5 cursor-pointer whitespace-nowrap"
               title="العودة إلى حسابك كمدرّس أو جهة"
             >

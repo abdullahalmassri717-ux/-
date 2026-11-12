@@ -210,6 +210,14 @@ export const TeachersClassesPage: React.FC<Nav> = ({ onNavigate }) => {
 
   if (loading || error || !data || !stats) return <Loading error={error} />;
   const teachers = stats.teachers;
+  // A class without a subject has no teacher of its own: its teachers are those of its
+  // «class – subject» groups.
+  const classTeachers = (c: (typeof stats.classes)[number]) => {
+    if (c.group.subjectName) return c.teacherNames.join('، ') || <span className="text-amber-700">غير مسند</span>;
+    const subs = stats.classes.filter((x) => x.group.subjectName && x.group.name.startsWith(`${c.group.name} – `));
+    const names = subs.flatMap((x) => x.teacherNames.map((n) => `${n} (${x.group.subjectName})`));
+    return names.join('، ') || <span className="text-amber-700">لم يُوزَّع على الأساتذة بعد</span>;
+  };
   const inviteText = (name: string) =>
     `مرحباً ${name || ''}، دعوتك للانضمام إلى «${org.name}» على منصة دقة لتصحيح الأوراق.\nادخل من الرابط برقم واتساب هذا: ${window.location.origin}/login`;
 
@@ -392,7 +400,7 @@ export const TeachersClassesPage: React.FC<Nav> = ({ onNavigate }) => {
                     <td className="p-3.5 font-bold text-slate-900">{c.group.name}</td>
                     <td className="p-3.5 text-slate-600">{c.group.subjectName || '—'}</td>
                     <td className="p-3.5 text-center font-mono tabular-nums">{c.group.studentCount}</td>
-                    <td className="p-3.5 text-slate-700">{c.teacherNames.join('، ') || <span className="text-amber-700">غير مسند</span>}</td>
+                    <td className="p-3.5 text-slate-700">{classTeachers(c)}</td>
                     <td className="p-3.5 text-center font-mono font-bold text-[#1E3A5F] tabular-nums">{pctLabel(c.avgPct)}</td>
                     <td className="p-3.5 text-center text-slate-600">{c.lastExamAt ? timeAgo(c.lastExamAt) : '—'}</td>
                   </tr>
@@ -451,6 +459,20 @@ export const TeachersClassesPage: React.FC<Nav> = ({ onNavigate }) => {
           teacher={assignFor}
           onClose={() => setAssignFor(null)}
           onToggle={(groupId, on) => run(() => store.setGroupTeacher(groupId, assignFor.userId, on))}
+          onAssignSubject={(classGroup, subject) =>
+            run(async () => {
+              // A class imported without a subject: make (or reuse) the class + subject group,
+              // put the class's students in it, and give it to the teacher.
+              const name = `${classGroup.name} – ${subject.name}`;
+              const existing = data.groups.find((g) => g.name === name);
+              const id = existing?.id ?? (await store.createGroup({ name, gradeId: classGroup.gradeId || null, subjectId: subject.id, schedule: '', classGroupId: classGroup.id })).id;
+              // Older groups made before the link existed: link them so new students follow.
+              if (existing) await store.updateGroup(id, { classGroupId: classGroup.id });
+              const ids = (await store.listStudents()).filter((st) => st.groupIds.includes(classGroup.id)).map((st) => st.id);
+              if (ids.length) await store.addStudentsToGroup(id, ids);
+              await store.setGroupTeacher(id, assignFor.userId, true);
+            }, `أسندنا «${classGroup.name} – ${subject.name}» إلى ${assignFor.name}`)
+          }
         />
       )}
     </div>
@@ -462,38 +484,81 @@ const AssignGroupsModal: React.FC<{
   teacher: TeacherStat;
   onClose: () => void;
   onToggle: (groupId: string, on: boolean) => Promise<void>;
-}> = ({ raw, teacher, onClose, onToggle }) => (
-  <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-    <div className="bg-white rounded-2xl max-w-md w-full p-6 text-right space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
-      <div className="flex items-center justify-between">
-        <h3 className="font-bold text-base text-[#1E3A5F]">صفوف {teacher.name}</h3>
-        <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
-          <X className="w-5 h-5" />
+  onAssignSubject: (classGroup: SchoolRaw['groups'][number], subject: { id: string; name: string }) => Promise<void>;
+}> = ({ raw, teacher, onClose, onToggle, onAssignSubject }) => {
+  const curriculaQ = useLoad((st) => st.listCurricula());
+  // Classes imported without a subject (the school adds students first, then teachers).
+  const plainClasses = raw.groups.filter((g) => !g.subjectName);
+  const [classId, setClassId] = useState('');
+  const [subjectId, setSubjectId] = useState('');
+  const cls = plainClasses.find((g) => g.id === classId);
+  const subjects = useMemo(() => {
+    if (!cls) return [];
+    const grade = (curriculaQ.data ?? []).flatMap((c) => c.grades).find((g) => g.id === cls.gradeId);
+    return (grade?.subjects ?? []).filter((s) => s.status === 'published');
+  }, [cls, curriculaQ.data]);
+  const subject = subjects.find((s) => s.id === subjectId);
+  const [saving, setSaving] = useState(false);
+  const assign = async () => {
+    if (!cls || !subject) return notify('اختر الصف والمادة.');
+    setSaving(true);
+    await onAssignSubject(cls, subject);
+    setSaving(false);
+    setSubjectId('');
+  };
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-md w-full p-6 text-right space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-base text-[#1E3A5F]">صفوف {teacher.name}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <p className="text-xs text-slate-600">المعلم يرى طلاب وامتحانات الصفوف المسندة إليه فقط.</p>
+
+        {plainClasses.length > 0 && (
+          <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-3 space-y-2 text-xs">
+            <p className="font-bold text-slate-800">أسند له صفاً ومادة</p>
+            <select value={classId} onChange={(e) => { setClassId(e.target.value); setSubjectId(''); }} className="w-full p-2 border border-slate-300 rounded-lg bg-white">
+              <option value="">اختر الصف…</option>
+              {plainClasses.map((g) => <option key={g.id} value={g.id}>{g.name} ({g.studentCount} طالب)</option>)}
+            </select>
+            <select value={subjectId} disabled={!cls} onChange={(e) => setSubjectId(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg bg-white disabled:bg-slate-50">
+              <option value="">{cls && !subjects.length ? 'ما لقينا مواد لهذا الصف بالمنهاج' : 'اختر المادة…'}</option>
+              {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <button onClick={assign} disabled={saving || !cls || !subject} className="w-full bg-[#1E3A5F] text-white py-2 rounded-lg font-bold disabled:opacity-50">
+              {saving ? 'جاري الإسناد…' : 'أسند'}
+            </button>
+            <p className="text-[11px] text-slate-500 leading-relaxed">بننشئ «الصف – المادة» ونضيف له طلاب الصف نفسهم وبنفس رموزهم، وأي طالب تضيفه للصف بعدين بينضاف له تلقائياً.</p>
+          </div>
+        )}
+
+        {!raw.groups.some((g) => g.subjectName) ? (
+          !plainClasses.length && <p className="text-xs text-slate-500">لا توجد صفوف بعد.</p>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs font-bold text-slate-700">الصفوف والمواد</p>
+            {raw.groups.filter((g) => g.subjectName).map((g) => {
+              const on = g.teacherIds.includes(teacher.userId);
+              return (
+                <label key={g.id} className="flex items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs cursor-pointer">
+                  <input type="checkbox" checked={on} onChange={() => onToggle(g.id, !on)} />
+                  <span className="font-bold">{g.name}</span>
+                  {!g.name.includes(g.subjectName) && <span className="text-slate-500">· {g.subjectName}</span>}
+                </label>
+              );
+            })}
+          </div>
+        )}
+        <button onClick={onClose} className="w-full bg-slate-100 text-slate-700 py-2.5 rounded-xl text-xs font-bold">
+          تم
         </button>
       </div>
-      <p className="text-xs text-slate-600">المعلم يرى طلاب وامتحانات الصفوف المسندة إليه فقط.</p>
-      {!raw.groups.length ? (
-        <p className="text-xs text-slate-500">لا توجد صفوف بعد.</p>
-      ) : (
-        <div className="space-y-2">
-          {raw.groups.map((g) => {
-            const on = g.teacherIds.includes(teacher.userId);
-            return (
-              <label key={g.id} className="flex items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs cursor-pointer">
-                <input type="checkbox" checked={on} onChange={() => onToggle(g.id, !on)} />
-                <span className="font-bold">{g.name}</span>
-                {g.subjectName && <span className="text-slate-500">· {g.subjectName}</span>}
-              </label>
-            );
-          })}
-        </div>
-      )}
-      <button onClick={onClose} className="w-full bg-slate-100 text-slate-700 py-2.5 rounded-xl text-xs font-bold">
-        تم
-      </button>
     </div>
-  </div>
-);
+  );
+};
 
 // D3: School Report & Heatmap Page
 export const SchoolReportPage: React.FC<Nav> = ({ onNavigate }) => {

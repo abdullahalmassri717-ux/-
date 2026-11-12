@@ -13,6 +13,7 @@ import type {
   AssessmentRow,
   DashboardSummary,
   DataStore,
+  MoodleIdKind,
   NewAssessmentInput,
   NewGroupInput,
   QuestionGradeRow,
@@ -21,6 +22,7 @@ import type {
   StudentRow,
   SubmissionRow,
   TaughtLessons,
+  WeeklyReportRow,
 } from './types';
 
 /** Error with a short Arabic message the screen can show as-is. */
@@ -83,9 +85,13 @@ type CurriculumRow = {
 const bySort = <T extends { sort_order: number }>(a: T, b: T) => a.sort_order - b.sort_order;
 
 export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStore {
+  // Short-lived cache: the admin may publish a subject while a teacher screen is open.
   let curriculaCache: Promise<Curriculum[]> | null = null;
+  let curriculaCachedAt = 0;
 
   const listCurricula = (): Promise<Curriculum[]> => {
+    if (Date.now() - curriculaCachedAt > 30_000) curriculaCache = null;
+    if (!curriculaCache) curriculaCachedAt = Date.now();
     curriculaCache ??= (async () => {
       const { data, error } = await db
         .from('curricula')
@@ -183,13 +189,15 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
   type StudentDb = {
     id: string; full_name: string; student_code: string; parent_phone: string | null; student_phone: string | null;
     parent_whatsapp_consent: boolean; status: string;
+    moodle_identifier: string | null; moodle_identifier_kind: MoodleIdKind | null;
     group_students: { group_id: string; left_at: string | null; groups: { name: string; archived_at: string | null } | null }[];
   };
   const STUDENT_COLUMNS =
-    'id, full_name, student_code, parent_phone, student_phone, parent_whatsapp_consent, status, group_students(group_id, left_at, groups(name, archived_at))';
+    'id, full_name, student_code, parent_phone, student_phone, parent_whatsapp_consent, status, moodle_identifier, moodle_identifier_kind, group_students(group_id, left_at, groups(name, archived_at))';
 
   function toStudent(s: StudentDb, scores: Map<string, { pct: number; trend: 'up' | 'down' | 'steady' }>): StudentRow {
-    const membership = (s.group_students ?? []).find((m) => !m.left_at && !one(m.groups)?.archived_at);
+    const memberships = (s.group_students ?? []).filter((m) => !m.left_at && !one(m.groups)?.archived_at);
+    const membership = memberships[0];
     const score = scores.get(s.id);
     const pct = score?.pct ?? 0;
     return {
@@ -197,6 +205,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       name: s.full_name,
       group: one(membership?.groups)?.name ?? '',
       groupId: membership?.group_id ?? '',
+      groupIds: memberships.map((m) => m.group_id),
       parentPhone: localPhone(s.parent_phone),
       studentPhone: localPhone(s.student_phone),
       studentCode: s.student_code,
@@ -204,6 +213,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       totalScore: 100,
       trend: score?.trend ?? 'steady',
       parentApproval: s.parent_whatsapp_consent,
+      moodle: s.moodle_identifier && s.moodle_identifier_kind ? { kind: s.moodle_identifier_kind, value: s.moodle_identifier } : null,
       status: !score ? 'active' : pct >= 90 ? 'excellent' : pct < 60 ? 'at_risk' : 'active',
       weakLessons: [],
     };
@@ -224,7 +234,9 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     const { error } = await db.from('students').insert(rows);
     if (error) fail(error, 'تعذّر حفظ الطالب.');
     const links = rows
-      .map((r, idx) => ({ group_id: inputs[idx].groupId, student_id: r.id, organization_id: orgId }))
+      .flatMap((r, idx) =>
+        [...new Set([inputs[idx].groupId, ...(inputs[idx].extraGroupIds ?? [])])].map((g) => ({ group_id: g, student_id: r.id, organization_id: orgId })),
+      )
       .filter((l) => l.group_id);
     if (links.length) {
       const { error: linkError } = await db.from('group_students').insert(links);
@@ -455,7 +467,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     async listGroups() {
       const { data, error } = await db
         .from('groups')
-        .select('id, name, label, grade_id, subject_id, schedule, group_students(left_at), group_lesson_progress(lesson_id)')
+        .select('id, name, label, grade_id, subject_id, schedule, group_students(left_at, students(status)), group_lesson_progress(lesson_id)')
         .eq('organization_id', orgId)
         .is('archived_at', null)
         .order('created_at');
@@ -463,7 +475,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       const out: Group[] = [];
       for (const g of (data ?? []) as unknown as {
         id: string; name: string; label: string | null; grade_id: string | null; subject_id: string | null; schedule: string | null;
-        group_students: { left_at: string | null }[]; group_lesson_progress: { lesson_id: string }[];
+        group_students: { left_at: string | null; students: { status: string } | { status: string }[] | null }[]; group_lesson_progress: { lesson_id: string }[];
       }[]) {
         const names = await curriculumNames(g.grade_id, g.subject_id);
         out.push({
@@ -476,7 +488,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
           curriculumName: names.curriculumName,
           gradeName: names.gradeName,
           subjectName: names.subjectName,
-          studentCount: (g.group_students ?? []).filter((s) => !s.left_at).length,
+          studentCount: (g.group_students ?? []).filter((s) => !s.left_at && one(s.students)?.status !== 'archived').length,
           avgScore: 0,
           schedule: g.schedule ?? '',
           totalLessonsCount: names.totalLessons,
@@ -496,6 +508,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
         grade_id: input.gradeId,
         subject_id: input.subjectId,
         schedule: input.schedule?.trim() || null,
+        ...(input.classGroupId ? { class_group_id: input.classGroupId } : {}),
       });
       if (error) fail(error, 'تعذّر إنشاء المجموعة.');
       const names = await curriculumNames(input.gradeId, input.subjectId);
@@ -524,13 +537,30 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       if (input.gradeId !== undefined) patch.grade_id = input.gradeId;
       if (input.subjectId !== undefined) patch.subject_id = input.subjectId;
       if (input.schedule !== undefined) patch.schedule = input.schedule.trim() || null;
+      if (input.classGroupId !== undefined) patch.class_group_id = input.classGroupId;
       const { error } = await db.from('groups').update(patch).eq('id', id);
       if (error) fail(error, 'تعذّر حفظ المجموعة.');
     },
 
     async archiveGroup(id) {
       const { error } = await db.from('groups').update({ archived_at: new Date().toISOString() }).eq('id', id);
-      if (error) fail(error, 'تعذّر أرشفة المجموعة.');
+      if (error) fail(error, 'تعذّر إيقاف المجموعة.');
+    },
+
+    async listArchivedGroups() {
+      const { data, error } = await db
+        .from('groups')
+        .select('id, name')
+        .eq('organization_id', orgId)
+        .not('archived_at', 'is', null)
+        .order('name');
+      if (error) fail(error, 'تعذّر تحميل المجموعات الموقوفة.');
+      return (data ?? []) as { id: string; name: string }[];
+    },
+
+    async restoreGroup(id) {
+      const { error } = await db.from('groups').update({ archived_at: null }).eq('id', id);
+      if (error) fail(error, 'تعذّر تفعيل المجموعة.');
     },
 
     async listStudents() {
@@ -563,6 +593,11 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       if (input.parentPhone !== undefined) patch.parent_phone = phoneOrNull(input.parentPhone);
       if (input.studentPhone !== undefined) patch.student_phone = phoneOrNull(input.studentPhone);
       if (input.parentApproval !== undefined) patch.parent_whatsapp_consent = input.parentApproval;
+      if (input.moodle !== undefined) {
+        const value = input.moodle?.value.trim() || null;
+        patch.moodle_identifier = value;
+        patch.moodle_identifier_kind = value ? input.moodle!.kind : null;
+      }
       if (Object.keys(patch).length) {
         const { error } = await db.from('students').update(patch).eq('id', id);
         if (error) fail(error, 'تعذّر حفظ بيانات الطالب.');
@@ -585,9 +620,63 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       }
     },
 
+    async addStudentsToGroup(groupId, studentIds) {
+      const ids = [...new Set(studentIds)];
+      if (!ids.length) return 0;
+      const { error } = await db
+        .from('group_students')
+        .upsert(
+          ids.map((id) => ({ group_id: groupId, student_id: id, organization_id: orgId, left_at: null })),
+          { onConflict: 'group_id,student_id' },
+        );
+      if (error) fail(error, 'تعذّر إضافة الطلاب إلى المجموعة.');
+      return ids.length;
+    },
+
+    async setStudentGroups(studentId, groupIds) {
+      // Leave the groups that were unticked. RLS limits this to groups the user can see,
+      // so a teacher never takes a student out of another teacher's group.
+      let leave = db.from('group_students').update({ left_at: new Date().toISOString() }).eq('student_id', studentId).is('left_at', null);
+      if (groupIds.length) leave = leave.not('group_id', 'in', `(${groupIds.join(',')})`);
+      const { error: leaveError } = await leave;
+      if (leaveError) fail(leaveError, 'تعذّر حفظ مجموعات الطالب.');
+      if (groupIds.length) {
+        const { error } = await db
+          .from('group_students')
+          .upsert(
+            groupIds.map((g) => ({ group_id: g, student_id: studentId, organization_id: orgId, left_at: null })),
+            { onConflict: 'group_id,student_id' },
+          );
+        if (error) fail(error, 'تعذّر حفظ مجموعات الطالب.');
+      }
+    },
+
     async archiveStudent(id) {
       const { error } = await db.from('students').update({ status: 'archived' }).eq('id', id);
-      if (error) fail(error, 'تعذّر أرشفة الطالب.');
+      if (error) fail(error, 'تعذّر تعطيل الطالب.');
+    },
+
+    async listArchivedStudents() {
+      const { data, error } = await db
+        .from('students')
+        .select(STUDENT_COLUMNS)
+        .eq('organization_id', orgId)
+        .eq('status', 'archived')
+        .order('full_name');
+      if (error) fail(error, 'تعذّر تحميل الطلاب المعطّلين.');
+      return ((data ?? []) as unknown as StudentDb[]).map((s) => toStudent(s, new Map()));
+    },
+
+    async restoreStudent(id) {
+      const { error } = await db.from('students').update({ status: 'active' }).eq('id', id);
+      if (error) fail(error, 'تعذّر تفعيل الطالب.');
+    },
+
+    async deleteStudent(id) {
+      // RLS lets only the organization's owner delete; a teacher gets 0 rows back.
+      const { data, error } = await db.from('students').delete().eq('id', id).select('id');
+      if (error) fail(error, 'تعذّر حذف الطالب.');
+      if (!data?.length) throw new Error('حذف الطالب متاح لمالك الجهة فقط. يمكنك تعطيله بدلاً من ذلك.');
     },
 
     async getStudentHistory(id) {
@@ -651,6 +740,17 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
             { onConflict: 'group_id,lesson_id', ignoreDuplicates: true },
           )
         : await db.from('group_lesson_progress').delete().eq('group_id', groupId).eq('lesson_id', lessonId);
+      if (error) fail(error, 'تعذّر حفظ التقدّم.');
+    },
+
+    async setLessonsTaught(groupId, lessonIds, taught) {
+      if (!lessonIds.length) return;
+      const { error } = taught
+        ? await db.from('group_lesson_progress').upsert(
+            lessonIds.map((lessonId) => ({ group_id: groupId, organization_id: orgId, lesson_id: lessonId })),
+            { onConflict: 'group_id,lesson_id', ignoreDuplicates: true },
+          )
+        : await db.from('group_lesson_progress').delete().eq('group_id', groupId).in('lesson_id', lessonIds);
       if (error) fail(error, 'تعذّر حفظ التقدّم.');
     },
 
@@ -932,6 +1032,39 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       const { data, error: fnError } = await db.functions.invoke('send-reports', { body: { reportIds: rows.map((r) => r.id) } });
       if (fnError) return { queued: rows.length, sent: 0, error: 'حُفظت التقارير بانتظار تفعيل إرسال واتساب على الخادم.' };
       return { queued: rows.length, sent: Number(data?.sent ?? 0), error: data?.error };
+    },
+
+    async weeklyReportPreview() {
+      const { data, error } = await db.rpc('weekly_report_preview', { p_org: orgId });
+      if (error) fail(error, 'تعذّر تحميل التقرير الأسبوعي.');
+      type R = {
+        student_id: string; student_name: string; parent_phone: string | null; consent: boolean; subject_name: string | null;
+        papers: number; body: string; last_status: string | null; last_period_end: string | null;
+      };
+      return ((data ?? []) as R[]).map(
+        (r): WeeklyReportRow => ({
+          studentId: r.student_id,
+          studentName: r.student_name,
+          parentPhone: localPhone(r.parent_phone),
+          consent: r.consent,
+          subjectName: r.subject_name ?? '',
+          papers: r.papers,
+          body: r.body,
+          lastStatus: (r.last_status as ReportStatus | null) ?? null,
+          lastPeriodEnd: r.last_period_end,
+        }),
+      );
+    },
+
+    async getWeeklyReportsEnabled() {
+      const { data, error } = await db.from('organizations').select('weekly_reports_enabled').eq('id', orgId).maybeSingle();
+      if (error) fail(error, 'تعذّر تحميل الإعداد.');
+      return data?.weekly_reports_enabled !== false;
+    },
+
+    async setWeeklyReportsEnabled(on) {
+      const { error } = await db.from('organizations').update({ weekly_reports_enabled: on }).eq('id', orgId);
+      if (error) fail(error, 'تعذّر حفظ الإعداد. هذا الإعداد لمالك الجهة فقط.');
     },
 
     async approveSubmission(submissionId) {
