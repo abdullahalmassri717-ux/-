@@ -46,7 +46,8 @@ def page_text(p):
         out.append(l)
     return '\n'.join(out)
 
-def run(raw):
+def run(raw, bad=frozenset()):
+    """bad: pages to skip (found to be a contents list: several lessons landed on them)."""
     lines = Path(raw).read_text(encoding='utf-8').splitlines()
     book = next(l.split('|', 1)[1] for l in lines if l.startswith('#book|'))
     pages = json.loads((S / 'txt' / f'{book}.json').read_text(encoding='utf-8'))
@@ -72,7 +73,8 @@ def run(raw):
     skh = [x[:450] for x in skn]
     tocish = [bool(re.search(r'المحتويات|الموضوع الصفحه|الفرع الموضوع|المحتوي الصفحه', n)
                    or len(re.findall(r'(^| )الدرس ', n)) >= 3
-                   or re.search(r'يتوقع من (الطلبه|الطالب|المتعلم)[^.]{0,80}(هذه الوحده|الوحده)', n[:300])) for n in norm]
+                   or re.search(r'يتوقع من (الطلبه|الطالب|المتعلم)[^.]{0,80}(هذه الوحده|الوحده)', n[:300])
+                   or i in bad) for i, n in enumerate(norm)]
     def find(arr, k, lo, hi):
         if len(k) < 2: return None
         pat = re.compile(r'(^| )' + re.escape(k) + r'( |$)')
@@ -148,6 +150,10 @@ def run(raw):
                     break
             if starts[i] is not None:
                 break
+    # a page that three or more lessons start on is a contents list the checks above missed (OCR text)
+    crowded = {p for p in starts if p is not None and starts.count(p) >= 3} - bad
+    if crowded:
+        return run(raw, bad | crowded)
     out, hit = {}, 0
     known = [(i, s) for i, s in enumerate(starts) if s is not None]
     for n, (i, s) in enumerate(known):
