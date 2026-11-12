@@ -49,7 +49,11 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
   const isReal = auth.mode === 'real';
   // Account Type
   const [entityType, setEntityType] = useState<EntityType>('individual_teacher');
-  const [step, setStep] = useState<number>(1);
+  // «/register?type=tutor»: a signed-in teacher (e.g. at a school) asks for their own
+  // private-tutor page. It goes straight to the tutor form and waits for approval.
+  const tutorRequest = isReal && auth.status === 'signed_in' && auth.entities.length > 0 &&
+    new URLSearchParams(window.location.search).get('type') === 'tutor';
+  const [step, setStep] = useState<number>(tutorRequest ? 2 : 1);
 
   // Teacher Form State
   // The curriculum list is data: the real one comes from the database (available curricula only).
@@ -294,6 +298,13 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
         )}
 
         {/* STEP 2: TEACHER (Curriculum, Grades, Subjects) */}
+        {tutorRequest && entityType === 'individual_teacher' && step > 1 && (
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 leading-relaxed">
+            <strong className="block mb-0.5">طلب صفحة دروس خصوصية خاصة بك</strong>
+            هذا حساب مستقل عن حساب مدرستك، ببياناته وطلابه واشتراكه الشهري الخاص. يصل طلبك لإدارة المنصة، وتُفتح الصفحة بعد موافقتها.
+          </div>
+        )}
+
         {step === 2 && entityType === 'individual_teacher' && (
           <div className="space-y-5">
             <div>
@@ -465,7 +476,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                 fullName={teacherName}
                 orgName={`أكاديمية ${teacherName.trim()}`}
                 kind="individual_teacher"
-                buttonLabel="ابدأ الآن وادخل للوحة التحكم"
+                buttonLabel={tutorRequest ? 'أرسل الطلب لإدارة المنصة' : 'ابدأ الآن وادخل للوحة التحكم'}
                 onBack={() => setStep(2)}
                 onCreated={(id, kind) => onOrganizationCreated?.(id, kind)}
               />

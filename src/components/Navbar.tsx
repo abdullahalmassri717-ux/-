@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { UserRole, ScreenId, Entity } from '../types';
 import {
   Sparkles,
@@ -54,6 +55,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   // A platform admin who also teaches reaches both areas from the header.
   const canOpenAdmin = auth.mode === 'real' && auth.status === 'signed_in' && !!auth.profile?.isPlatformAdmin;
   const hasOwnAccount = auth.mode === 'real' && auth.entities.length > 0;
+  const navigate = useNavigate();
+  // A teacher with no private-tutor page of their own may ask for one (admin approves it).
+  const canRequestTutorPage = hasOwnAccount && !auth.entities.some((e) => e.type === 'individual_teacher' && e.role === 'owner');
   // The owner of a school or centre may also teach there.
   const isSchoolOwner = activeEntity.role === 'owner' && activeEntity.type !== 'individual_teacher';
 
@@ -290,6 +294,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                               <div className="text-[10px] text-slate-500">
                                 {ent.type === 'individual_teacher' ? 'مدرّس خصوصي مستقل' : 'مدرسة خاصة'} · الدور: {ent.role === 'owner' ? 'مالك' : 'معلم'}
                               </div>
+                              {ent.status === 'pending' && <div className="text-[10px] font-bold text-amber-700">بانتظار موافقة إدارة المنصة</div>}
                             </div>
                           </div>
                           {isSelected && <Check className="w-4 h-4 text-blue-600 shrink-0" />}
@@ -340,6 +345,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                     >
                       + إضافة جهة أو مدرسة جديدة
                     </button>
+                    {canRequestTutorPage && (
+                      <>
+                        <button
+                          onClick={() => {
+                            setShowEntityDropdown(false);
+                            navigate('/register?type=tutor');
+                          }}
+                          className="w-full text-center py-2 text-emerald-800 hover:bg-emerald-50 rounded-xl font-bold transition-colors cursor-pointer text-xs"
+                        >
+                          + طلب صفحة دروس خصوصية خاصة بي
+                        </button>
+                        <p className="text-[10px] text-slate-500 text-center px-2">حساب مستقل باشتراك شهري، يُفتح بعد موافقة إدارة المنصة</p>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
