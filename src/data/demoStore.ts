@@ -24,7 +24,9 @@ import type {
   StudentRow,
   SubmissionRow,
   TaughtLessons,
+  WeeklyReportRow,
 } from './types';
+import { buildWeeklyText } from '../lib/weeklyReportText';
 
 const wait = <T,>(value: T): Promise<T> => new Promise((r) => setTimeout(() => r(value), 120));
 let seq = 0;
@@ -130,6 +132,7 @@ function initialState(): DemoState {
 let state: DemoState | null = null;
 const s = () => (state ??= initialState());
 let archivedGroups: Group[] = [];
+let weeklyEnabled = true;
 
 function summary(a: AssessmentDetail): AssessmentRow {
   const { questions, ...row } = a;
@@ -497,6 +500,7 @@ export function createDemoStore(): DataStore {
             title: a.title,
             subject: a.subject,
             feedbackLanguage: 'ar',
+            classRoster: s().students.filter((x) => x.groupId === a.groupId).map((x) => x.name),
             questions: a.questions.map((q) => ({
               questionNumber: q.questionNumber, text: q.text, type: q.type, maxScore: q.maxScore,
               modelAnswer: q.modelAnswer, criteria: q.criteria, lesson: q.lesson,
@@ -507,6 +511,10 @@ export function createDemoStore(): DataStore {
         if (!sub.studentId && result.studentCodeOnPaper) {
           const st = s().students.find((x) => x.studentCode === result.studentCodeOnPaper);
           if (st) Object.assign(sub, { studentId: st.id, studentName: st.name, studentCode: st.studentCode });
+        }
+        if (!sub.studentId && result.studentNameOnPaper) {
+          const hits = s().students.filter((x) => x.groupId === a.groupId && x.name === result.studentNameOnPaper);
+          if (hits.length === 1) Object.assign(sub, { studentId: hits[0].id, studentName: hits[0].name, studentCode: hits[0].studentCode });
         }
         s().grades = s().grades.filter((g) => g.submissionId !== id);
         for (const r of result.questions) {
@@ -547,6 +555,41 @@ export function createDemoStore(): DataStore {
     async queueReports(items) {
       for (const i of items) s().reports[i.submissionId] = 'queued';
       return wait({ queued: items.length, sent: 0, error: 'وضع التجربة: الإرسال الآلي يعمل بعد ربط واتساب. استخدم زر «أرسل يدوياً» الآن.' });
+    },
+    weeklyReportPreview(orgKind) {
+      // Demo: every graded paper counts as "this week" so the screen has something to show.
+      const pct = (sc: number, t: number) => (t ? Math.round((sc / t) * 100) : 0);
+      const perStudent = new Map<string, { name: string; phone: string; consent: boolean; subjects: Map<string, string[]> }>();
+      for (const sub of s().submissions) {
+        const st = s().students.find((x) => x.id === sub.studentId);
+        const ex = s().assessments.find((a) => a.id === sub.assessmentId);
+        if (!st || !ex) continue;
+        const total = summary(ex).totalScore;
+        const entry = perStudent.get(st.id) ?? { name: st.name, phone: st.parentPhone, consent: st.parentApproval, subjects: new Map() };
+        const lines = entry.subjects.get(ex.subject) ?? [];
+        lines.push(`• ${ex.title}: ${sub.totalScore} من ${total} (${pct(sub.totalScore, total)}%)`);
+        entry.subjects.set(ex.subject, lines);
+        perStudent.set(st.id, entry);
+      }
+      const rows: WeeklyReportRow[] = [];
+      for (const [studentId, e] of perStudent) {
+        const sections = [...e.subjects].map(([subject, lines]) => ({ subject, text: lines.join('\n') }));
+        const base = { studentId, studentName: e.name, parentPhone: e.phone, consent: e.consent, lastStatus: null, lastPeriodEnd: null };
+        if (orgKind === 'individual_teacher') {
+          for (const sec of sections)
+            rows.push({ ...base, subjectName: sec.subject, papers: sec.text.split('\n').length,
+              body: buildWeeklyText({ kind: orgKind, studentName: e.name, orgName: 'وضع التجربة', sections: [sec] }) });
+        } else {
+          rows.push({ ...base, subjectName: '', papers: sections.reduce((n, x) => n + x.text.split('\n').length, 0),
+            body: buildWeeklyText({ kind: orgKind, studentName: e.name, orgName: 'وضع التجربة', sections }) });
+        }
+      }
+      return wait(rows);
+    },
+    getWeeklyReportsEnabled: () => wait(weeklyEnabled),
+    async setWeeklyReportsEnabled(on) {
+      weeklyEnabled = on;
+      return wait(undefined);
     },
     async approveSubmission(id) {
       const sub = s().submissions.find((x) => x.id === id);

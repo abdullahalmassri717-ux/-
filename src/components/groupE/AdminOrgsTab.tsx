@@ -38,12 +38,15 @@ export const AdminOrgsTab: React.FC<{ onChanged?: () => void }> = ({ onChanged }
   const [q, setQ] = useState('');
   const [kind, setKind] = useState<'all' | 'individual_teacher' | 'school'>('all');
   const [status, setStatus] = useState<'all' | AdminOrg['status']>('all');
+  // Demo accounts are only for trying the platform, so they are hidden unless asked for.
+  const [showDemo, setShowDemo] = useState(false);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (orgs.error) return <ErrorBox text={orgs.error} />;
   if (!orgs.data) return <Spinner />;
-  const all = orgs.data;
+  const all = orgs.data.filter((o) => showDemo || !o.isDemo);
+  const demoCount = orgs.data.filter((o) => o.isDemo).length;
   const pendingCount = all.filter((o) => o.status === 'pending').length;
   const list = all.filter(
     (o) =>
@@ -112,6 +115,12 @@ export const AdminOrgsTab: React.FC<{ onChanged?: () => void }> = ({ onChanged }
             <option value="active">مفعّلة</option>
             <option value="disabled">معطّلة</option>
           </select>
+          {demoCount > 0 && (
+            <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+              <input type="checkbox" checked={showDemo} onChange={(e) => setShowDemo(e.target.checked)} />
+              إظهار الحسابات التجريبية ({demoCount})
+            </label>
+          )}
           <button
             onClick={() => setDialog({ kind: 'new', name: '', orgKind: 'individual_teacher', region: '', ownerName: '', ownerPhone: '', planId: '' })}
             className="ms-auto bg-[#1E3A5F] text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5"
@@ -131,6 +140,7 @@ export const AdminOrgsTab: React.FC<{ onChanged?: () => void }> = ({ onChanged }
                     <div className="flex flex-wrap items-center gap-2">
                       <strong className="text-sm text-slate-900">{o.name}</strong>
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${ORG_STATUS[o.status].c}`}>{ORG_STATUS[o.status].t}</span>
+                      {o.isDemo && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-700">تجريبية</span>}
                     </div>
                     <span className="text-[11px] text-slate-500 block">
                       {KIND_LABEL[o.kind]}
@@ -144,6 +154,11 @@ export const AdminOrgsTab: React.FC<{ onChanged?: () => void }> = ({ onChanged }
                       </span>
                       {o.ownerInvited ? ' (مدعو، لم يسجّل بعد)' : ''}
                     </span>
+                    {o.ownerAlsoTeachesAt && (
+                      <span className="text-[11px] text-blue-800 block">
+                        حساب مدرّس خصوصي مستقل لنفس الشخص، وهو أيضاً معلم في: {o.ownerAlsoTeachesAt}
+                      </span>
+                    )}
                     {o.statusNote && o.status === 'disabled' && <span className="text-[11px] text-rose-700 block">سبب التعطيل: {o.statusNote}</span>}
                   </div>
                   {o.status === 'pending' && (

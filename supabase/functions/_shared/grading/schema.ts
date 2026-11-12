@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 export const GradingOutputSchema = z.object({
   student_code_on_paper: z.string().nullable(),
+  student_name_on_paper: z.string().nullable(),
   questions: z.array(
     z.object({
       question_number: z.number().int(),

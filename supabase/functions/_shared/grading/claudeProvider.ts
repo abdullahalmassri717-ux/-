@@ -63,6 +63,7 @@ export class ClaudeGradingProvider implements GradingProvider {
 
     return {
       studentCodeOnPaper: response.parsed_output.student_code_on_paper,
+      studentNameOnPaper: response.parsed_output.student_name_on_paper,
       questions: normalizeQuestions(input.exam, response.parsed_output),
       usage: {
         inputTokens: response.usage.input_tokens,

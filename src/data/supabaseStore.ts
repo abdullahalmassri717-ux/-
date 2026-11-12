@@ -22,6 +22,7 @@ import type {
   StudentRow,
   SubmissionRow,
   TaughtLessons,
+  WeeklyReportRow,
 } from './types';
 
 /** Error with a short Arabic message the screen can show as-is. */
@@ -1031,6 +1032,39 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       const { data, error: fnError } = await db.functions.invoke('send-reports', { body: { reportIds: rows.map((r) => r.id) } });
       if (fnError) return { queued: rows.length, sent: 0, error: 'حُفظت التقارير بانتظار تفعيل إرسال واتساب على الخادم.' };
       return { queued: rows.length, sent: Number(data?.sent ?? 0), error: data?.error };
+    },
+
+    async weeklyReportPreview() {
+      const { data, error } = await db.rpc('weekly_report_preview', { p_org: orgId });
+      if (error) fail(error, 'تعذّر تحميل التقرير الأسبوعي.');
+      type R = {
+        student_id: string; student_name: string; parent_phone: string | null; consent: boolean; subject_name: string | null;
+        papers: number; body: string; last_status: string | null; last_period_end: string | null;
+      };
+      return ((data ?? []) as R[]).map(
+        (r): WeeklyReportRow => ({
+          studentId: r.student_id,
+          studentName: r.student_name,
+          parentPhone: localPhone(r.parent_phone),
+          consent: r.consent,
+          subjectName: r.subject_name ?? '',
+          papers: r.papers,
+          body: r.body,
+          lastStatus: (r.last_status as ReportStatus | null) ?? null,
+          lastPeriodEnd: r.last_period_end,
+        }),
+      );
+    },
+
+    async getWeeklyReportsEnabled() {
+      const { data, error } = await db.from('organizations').select('weekly_reports_enabled').eq('id', orgId).maybeSingle();
+      if (error) fail(error, 'تعذّر تحميل الإعداد.');
+      return data?.weekly_reports_enabled !== false;
+    },
+
+    async setWeeklyReportsEnabled(on) {
+      const { error } = await db.from('organizations').update({ weekly_reports_enabled: on }).eq('id', orgId);
+      if (error) fail(error, 'تعذّر حفظ الإعداد. هذا الإعداد لمالك الجهة فقط.');
     },
 
     async approveSubmission(submissionId) {

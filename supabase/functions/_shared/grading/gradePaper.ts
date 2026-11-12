@@ -73,6 +73,7 @@ export async function gradePaper(
   const totalMaxScore = input.exam.questions.reduce((s, q) => s + q.maxScore, 0);
   return {
     studentCodeOnPaper: output.studentCodeOnPaper,
+    studentNameOnPaper: output.studentNameOnPaper,
     questions,
     totalScore,
     totalMaxScore,

@@ -30,6 +30,8 @@ export interface ExamToGrade {
   questions: QuestionToGrade[];
   /** Text of the curriculum lessons the questions come from (from the textbook), for background. */
   lessonTexts?: { lesson: string; text: string }[];
+  /** Names of the students in the exam's class, so the AI can tell whose paper it is from a handwritten name. */
+  classRoster?: string[];
 }
 
 export interface PaperImage {
@@ -82,6 +84,8 @@ export interface ModelAttempt {
 export interface GradePaperResult {
   /** Student code as written on the paper, or null if not found. */
   studentCodeOnPaper: string | null;
+  /** The class-list name the AI matched to the name written on the paper, or null if unsure. */
+  studentNameOnPaper: string | null;
   questions: QuestionResult[];
   totalScore: number;
   totalMaxScore: number;
@@ -110,6 +114,7 @@ export interface GradeOnceOptions {
 
 export interface ProviderOutput {
   studentCodeOnPaper: string | null;
+  studentNameOnPaper: string | null;
   questions: QuestionResult[];
   usage: Omit<ModelAttempt, 'model' | 'costUsd' | 'replacedBecause'>;
 }

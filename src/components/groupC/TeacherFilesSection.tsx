@@ -14,6 +14,7 @@ import {
 import { MOCK_TEACHER_FILES, CURRICULA_DATA } from '../../mockData';
 import { TeacherFile } from '../../types';
 import { notify } from '../../lib/notify';
+import { useAuth } from '../../lib/auth';
 
 interface TeacherFilesSectionProps {
   onOpenExamGenWithFiles?: (fileIds: string[]) => void;
@@ -22,7 +23,10 @@ interface TeacherFilesSectionProps {
 export const TeacherFilesSection: React.FC<TeacherFilesSectionProps> = ({ 
   onOpenExamGenWithFiles 
 }) => {
-  const [files, setFiles] = useState<TeacherFile[]>(MOCK_TEACHER_FILES);
+  // Saving files is not built yet. Real accounts start empty (the sample files
+  // belong to demo mode only), and uploading stays off until it is saved for real.
+  const isReal = useAuth().mode === 'real';
+  const [files, setFiles] = useState<TeacherFile[]>(isReal ? [] : MOCK_TEACHER_FILES);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [filterLesson, setFilterLesson] = useState<string>('all');
 
@@ -100,12 +104,19 @@ export const TeacherFilesSection: React.FC<TeacherFilesSectionProps> = ({
 
         <button
           onClick={() => setShowUploadModal(true)}
-          className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition-colors cursor-pointer self-start md:self-auto"
+          disabled={isReal}
+          className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition-colors cursor-pointer self-start md:self-auto disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Upload className="w-4 h-4" />
-          <span>رفع ملف جديد وربطه بدرس</span>
+          <span>{isReal ? 'رفع الملفات قريباً' : 'رفع ملف جديد وربطه بدرس'}</span>
         </button>
       </div>
+
+      {isReal && files.length === 0 && (
+        <div className="bg-slate-50 border border-dashed border-slate-300 rounded-2xl p-6 text-center text-xs text-slate-600 leading-relaxed">
+          لا توجد ملفات بعد. رفع ملفاتك الخاصة وربطها بالدروس قيد التجهيز، وسيظهر هنا عند تفعيله.
+        </div>
+      )}
 
       {/* Filter by lesson */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
