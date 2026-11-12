@@ -5,7 +5,8 @@
 # Needs these repository secrets (Settings > Secrets and variables > Actions):
 #   SUPABASE_ACCESS_TOKEN  personal access token from supabase.com/dashboard/account/tokens
 #   SUPABASE_DB_PASSWORD   the database password chosen when the project was created
-#   ANTHROPIC_API_KEY      Claude key for grading and the AI tools (optional until AI is used)
+#   ANTHROPIC_API_KEY      Claude key for grading and the AI tools (optional until AI is used;
+#                          without it papers get made-up practice grades marked «تجريبي»)
 # Optional: WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_REPORT_TEMPLATE, LINK_ATTEMPT_SALT
 name: Deploy Supabase
 

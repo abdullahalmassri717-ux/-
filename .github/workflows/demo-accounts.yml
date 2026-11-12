@@ -1,0 +1,84 @@
+# Creates the demo accounts on the live site so the platform can be tried
+# without paying for WhatsApp codes or AI (see scripts/demo/demo-accounts.sql).
+# Each demo number logs in with the fixed code 123456 (Supabase "test phone
+# numbers": no message is sent). Numbers already in the test list are kept.
+# Runs when the demo files change, or by hand from the Actions tab.
+name: Demo accounts
+
+on:
+  push:
+    branches: [main]
+    paths: ['scripts/demo/**', '.github/workflows/demo-accounts.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: demo-accounts
+  cancel-in-progress: false
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    env:
+      REF: roeweplhofhjtcnbfmvo
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      DEMO_PHONES: '970599990001 970599990002 970599990003 970599990004 970599990005'
+      DEMO_CODE: '123456'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secret
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then echo "::error::SUPABASE_ACCESS_TOKEN is missing"; exit 1; fi
+
+      - name: Add demo numbers to the test phone list
+        run: |
+          api="https://api.supabase.com/v1/projects/$REF/config/auth"
+          curl -fsS --retry 3 --retry-all-errors "$api" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" > /tmp/auth.json
+          current=$(jq -r '.sms_test_otp // ""' /tmp/auth.json)
+          merged="$current"
+          for p in $DEMO_PHONES; do
+            case ",$merged," in *",$p="*) ;; *) merged="${merged:+$merged,}$p=$DEMO_CODE" ;; esac
+          done
+          until=$(date -u -d '+1 year' +%Y-%m-%dT%H:%M:%SZ)
+          old_until=$(jq -r '.sms_test_otp_valid_until // ""' /tmp/auth.json)
+          if [ -n "$old_until" ] && [ "$(date -u -d "$old_until" +%s)" -gt "$(date -u -d "$until" +%s)" ]; then until="$old_until"; fi
+          jq -n --arg otp "$merged" --arg until "$until" '{sms_test_otp: $otp, sms_test_otp_valid_until: $until}' > /tmp/patch.json
+          code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --retry 3 --retry-all-errors -X PATCH "$api" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/patch.json)
+          echo "HTTP $code"
+          case "$code" in 2*) ;; *) head -c 500 /tmp/out.json; exit 1 ;; esac
+          # Count only: the list also holds the owner's own number.
+          echo "Test numbers now: $(echo "$merged" | tr ',' '\n' | grep -c =) (valid until $until)"
+
+      - name: Create the demo users
+        run: |
+          keys=$(curl -fsS --retry 3 --retry-all-errors "https://api.supabase.com/v1/projects/$REF/api-keys?reveal=true" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN")
+          key=$(echo "$keys" | jq -r '[.[] | select(.name == "service_role")][0].api_key // empty')
+          auth_header=yes
+          if [ -z "$key" ]; then
+            key=$(echo "$keys" | jq -r '[.[] | select(.type == "secret")][0].api_key // empty')
+            auth_header=no
+          fi
+          if [ -z "$key" ]; then echo "::error::No server key found"; exit 1; fi
+          echo "::add-mask::$key"
+          for p in $DEMO_PHONES; do
+            args=(-H "apikey: $key" -H 'Content-Type: application/json')
+            if [ "$auth_header" = yes ]; then args+=(-H "Authorization: Bearer $key"); fi
+            code=$(curl -sS -o /tmp/u.json -w '%{http_code}' --retry 3 --retry-all-errors -X POST \
+              "https://$REF.supabase.co/auth/v1/admin/users" "${args[@]}" \
+              --data "{\"phone\":\"$p\",\"phone_confirm\":true}")
+            if [ "$code" = 200 ] || [ "$code" = 201 ]; then echo "$p created";
+            elif [ "$code" = 422 ]; then echo "$p already exists";
+            else echo "$p HTTP $code"; head -c 300 /tmp/u.json; echo; exit 1; fi
+          done
+
+      - name: Add demo organizations, classes and students
+        run: |
+          jq -Rs '{query: .}' scripts/demo/demo-accounts.sql > /tmp/body.json
+          code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --retry 3 --retry-all-errors --max-time 300 \
+            -X POST "https://api.supabase.com/v1/projects/$REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/body.json)
+          echo "HTTP $code"; head -c 2000 /tmp/out.json; echo
+          case "$code" in 2*) ;; *) exit 1 ;; esac
