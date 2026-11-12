@@ -52,6 +52,12 @@ begin
     (o4, 'تجربة: دروس أ. رامي الخصوصية', 'individual_teacher', 'غزة', u4, 'active', now())
   on conflict (id) do nothing;
 
+  -- علامة «تجريبية»: تخفيها من قائمة الجهات عند المدير ومن الفواتير الجماعية.
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'organizations' and column_name = 'is_demo') then
+    execute 'update public.organizations set is_demo = true where id = any($1)' using array[o1, o2, o3, o4];
+  end if;
+
   insert into public.memberships (organization_id, user_id, role, status) values
     (o1, u1, 'owner', 'active'),
     (o2, u2, 'owner', 'active'),

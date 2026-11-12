@@ -162,7 +162,8 @@ const OverviewTab: React.FC<{ go: (t: Tab) => void; showReceipts: boolean }> = (
   const receipts = useAsync(() => (showReceipts ? api.listReceipts('pending') : Promise.resolve([])), [showReceipts]);
   if (orgs.error) return <ErrorBox text={orgs.error} />;
   if (!orgs.data) return <Spinner />;
-  const list = orgs.data;
+  // Demo accounts are for trying the platform, not real customers.
+  const list = orgs.data.filter((o) => !o.isDemo);
   const tutors = list.filter((o) => o.kind === 'individual_teacher');
   const schools = list.filter((o) => o.kind !== 'individual_teacher');
   const students = list.reduce((n, o) => n + o.activeStudents, 0);

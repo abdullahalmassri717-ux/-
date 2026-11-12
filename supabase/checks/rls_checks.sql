@@ -192,6 +192,7 @@ select tests.login('+970590000011');
 set local role authenticated;
 select tests.throws($$select public.admin_organizations()$$, 'المعلم: لا يصل لملخص الجهات');
 select tests.throws($$select public.admin_issue_invoice(tests.org('school'))$$, 'المعلم: لا يصدر فواتير');
+select tests.throws($$update public.organizations set is_demo = true$$, 'المعلم: لا يعلّم جهته كتجريبية');
 insert into public.support_tickets (subject) values ('مشكلة في رفع الأوراق');
 insert into public.support_messages (ticket_id, body, from_admin) select id, 'الصور لا ترفع', true from public.support_tickets;
 select tests.eq((select from_admin from public.support_messages limit 1), false, 'الدعم: المعلم لا يستطيع انتحال رد الدعم');
@@ -291,6 +292,18 @@ select public.admin_create_org('مدرسة الأمل', 'school', 'غزة', '+97
 select tests.eq((select status::text from public.organizations where name = 'مدرسة الأمل'), 'active', 'المدير: الجهة التي يضيفها نشطة مباشرة');
 select tests.eq((select owner_invited from public.admin_organizations() where name = 'مدرسة الأمل'), true, 'المدير: المالك مدعو حتى يسجّل');
 select tests.eq(public.admin_issue_invoices_bulk('individual_teacher') >= 0, true, 'المدير: إصدار جماعي');
+select tests.eq((select bool_and(not is_demo) from public.admin_organizations()), true, 'المدير: الجهات العادية ليست تجريبية');
+-- مالك حساب مدرّس خصوصي وهو معلم أيضاً في مدرسة: يظهر اسم المدرسة بجانبه
+reset role;
+insert into public.memberships (organization_id, user_id, role, status)
+select tests.org('school'), m.user_id, 'teacher', 'active'
+  from public.memberships m where m.organization_id = tests.org('individual_teacher') and m.role = 'owner'
+on conflict (organization_id, user_id) do nothing;
+update public.organizations set is_demo = true where id = tests.org('learning_center');
+set local role authenticated;
+select tests.eq((select owner_also_teaches_at is not null from public.admin_organizations() where id = tests.org('individual_teacher')), true, 'المدير: يرى أن المدرّس الخصوصي معلم أيضاً في مدرسة');
+select tests.eq((select owner_also_teaches_at is null from public.admin_organizations() where id = tests.org('school')), true, 'المدير: المدرسة لا تُعلَّم بذلك');
+select tests.eq((select is_demo from public.admin_organizations() where id = tests.org('learning_center')), true, 'المدير: الجهة التجريبية معلّمة');
 -- حذف نهائي يشترط الاسم
 select tests.throws($$select public.admin_delete_org(tests.org('learning_center'), 'اسم خطأ')$$, 'الحذف: يرفض اسماً غير مطابق');
 select public.admin_delete_org(tests.org('learning_center'), 'مركز معدّل');

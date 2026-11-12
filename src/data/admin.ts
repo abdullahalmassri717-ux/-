@@ -30,6 +30,10 @@ export interface AdminOrg {
   papers30d: number;
   gradingCost30d: number;
   unpaidAmount: number;
+  /** One of the demo accounts used to try the platform (not a real customer). */
+  isDemo: boolean;
+  /** For a private tutor: the schools or centres where the same person also teaches. */
+  ownerAlsoTeachesAt: string;
 }
 
 export interface AdminReceipt {
@@ -254,6 +258,7 @@ function realApi(): AdminApi {
         active_students: number; teachers: number; plan_id: string | null; plan_name: string | null; pricing_model: PricingModel | null;
         subscription_status: AdminOrg['subscriptionStatus']; trial_ends_on: string | null;
         papers_30d: number; grading_cost_30d: number; unpaid_amount: number;
+        is_demo: boolean | null; owner_also_teaches_at: string | null;
       };
       return ((data ?? []) as Row[]).map((r) => ({
         id: r.id,
@@ -276,6 +281,8 @@ function realApi(): AdminApi {
         papers30d: r.papers_30d,
         gradingCost30d: Number(r.grading_cost_30d),
         unpaidAmount: Number(r.unpaid_amount),
+        isDemo: !!r.is_demo,
+        ownerAlsoTeachesAt: r.owner_also_teaches_at ?? '',
       }));
     },
     async setOrgStatus(id, status, note = '') {
@@ -502,6 +509,8 @@ function demoApi(): AdminApi {
       papers30d: c.studentsCount * 3,
       gradingCost30d: c.studentsCount * 0.02,
       unpaidAmount: c.paymentStatus === 'paid' ? 0 : c.amount,
+      isDemo: false,
+      ownerAlsoTeachesAt: '',
     };
   });
   const invoices: AdminInvoice[] = MOCK_PLATFORM_CLIENTS.map((c, i) => ({
@@ -638,6 +647,8 @@ function demoApi(): AdminApi {
         papers30d: 0,
         gradingCost30d: 0,
         unpaidAmount: 0,
+        isDemo: false,
+        ownerAlsoTeachesAt: '',
       });
       await wait(null);
     },
