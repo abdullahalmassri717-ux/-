@@ -509,4 +509,24 @@ select tests.eq((select count(*) from auth.users where phone = '970599990001'), 
 select tests.eq((select count(*) from public.organizations where id = tests.org('individual_teacher')), 1::bigint, 'التجريبي: الجهة الحقيقية باقية');
 rollback;
 
+-- داخل الحساب التجريبي: أول طالب حقيقي يحذف الطلاب التجريبيين فقط، ويبقي الجهة وما أضافه المستخدم
+begin;
+insert into public.organizations (id, name, kind, status, is_demo)
+values ('de300000-0000-4000-8000-000000000009', 'تجربة', 'individual_teacher', 'active', true);
+insert into public.groups (id, organization_id, name) values
+  ('de301000-0000-4000-8000-000000000009', 'de300000-0000-4000-8000-000000000009', 'مجموعة تجريبية'),
+  ('de399999-0000-4000-8000-000000000019', 'de300000-0000-4000-8000-000000000009', 'مجموعة المستخدم');
+insert into public.students (id, organization_id, full_name) values ('de302000-0000-4000-8000-000000000009', 'de300000-0000-4000-8000-000000000009', 'طالب (تجريبي)');
+insert into public.group_students (group_id, student_id, organization_id)
+values ('de301000-0000-4000-8000-000000000009', 'de302000-0000-4000-8000-000000000009', 'de300000-0000-4000-8000-000000000009');
+select tests.eq((select count(*) from public.students where organization_id = 'de300000-0000-4000-8000-000000000009'), 1::bigint, 'التجريبي: الطالب التجريبي باقٍ قبل البيانات الحقيقية');
+insert into public.students (id, organization_id, full_name) values ('de399999-0000-4000-8000-000000000029', 'de300000-0000-4000-8000-000000000009', 'طالب أضافه المستخدم');
+insert into public.group_students (group_id, student_id, organization_id)
+values ('de399999-0000-4000-8000-000000000019', 'de399999-0000-4000-8000-000000000029', 'de300000-0000-4000-8000-000000000009');
+select tests.eq((select count(*) from public.students where id = 'de302000-0000-4000-8000-000000000009'), 0::bigint, 'التجريبي: الطالب التجريبي حُذف');
+select tests.eq((select count(*) from public.groups where id = 'de301000-0000-4000-8000-000000000009'), 0::bigint, 'التجريبي: المجموعة التجريبية الفارغة حُذفت');
+select tests.eq((select count(*) from public.students where id = 'de399999-0000-4000-8000-000000000029'), 1::bigint, 'التجريبي: طالب المستخدم باقٍ');
+select tests.eq((select count(*) from public.organizations where id = 'de300000-0000-4000-8000-000000000009'), 1::bigint, 'التجريبي: الجهة التجريبية باقية');
+rollback;
+
 \echo 'كل الفحوص نجحت ✓'
