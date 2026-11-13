@@ -646,28 +646,33 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                 <td className="p-3.5">
                   <div className="flex items-center gap-1.5 font-mono text-slate-700 tabular-nums">
                     <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>{st.parentPhone}</span>
+                    <span>{st.parentPhone || <span className="font-sans text-slate-400 text-[11px]">لا يوجد رقم ولي أمر</span>}</span>
                   </div>
                 </td>
                 <td className="p-3.5 text-center">
-                  <span className={`font-bold font-mono text-sm tabular-nums ${
-                    st.latestScore >= 85 ? 'text-emerald-600' : st.latestScore >= 65 ? 'text-amber-600' : 'text-red-600'
-                  }`}>
-                    {st.latestScore} / {st.totalScore}
-                  </span>
+                  {st.hasScore === false ? (
+                    <span className="text-[11px] text-slate-400">لا علامات بعد</span>
+                  ) : (
+                    <span dir="ltr" className={`inline-block font-bold font-mono text-sm tabular-nums ${
+                      st.latestScore >= 85 ? 'text-emerald-600' : st.latestScore >= 65 ? 'text-amber-600' : 'text-red-600'
+                    }`}>
+                      {st.latestScore} / {st.totalScore}
+                    </span>
+                  )}
                 </td>
                 <td className="p-3.5 text-center">
-                  {st.trend === 'up' && (
+                  {st.hasScore === false && <span className="text-slate-300 text-xs">—</span>}
+                  {st.hasScore !== false && st.trend === 'up' && (
                     <span className="inline-flex items-center gap-0.5 text-emerald-700 font-bold text-xs bg-emerald-50 px-2 py-0.5 rounded">
                       <ArrowUp className="w-3.5 h-3.5" /> تحسن
                     </span>
                   )}
-                  {st.trend === 'down' && (
+                  {st.hasScore !== false && st.trend === 'down' && (
                     <span className="inline-flex items-center gap-0.5 text-red-700 font-bold text-xs bg-red-50 px-2 py-0.5 rounded">
                       <ArrowDown className="w-3.5 h-3.5" /> تراجع
                     </span>
                   )}
-                  {st.trend === 'steady' && (
+                  {st.hasScore !== false && st.trend === 'steady' && (
                     <span className="inline-flex items-center gap-0.5 text-slate-500 text-xs bg-slate-100 px-2 py-0.5 rounded">
                       <Minus className="w-3.5 h-3.5" /> ثابت
                     </span>
@@ -730,24 +735,28 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                 <h3 className="font-bold text-slate-900 text-sm">{st.name}</h3>
                 <span className="text-[10px] text-slate-400 font-mono">رمز: {st.studentCode} · {groupsLabel(st)}</span>
               </div>
-              <div className="text-left">
-                <span className={`font-black text-base tabular-nums ${
-                  st.latestScore >= 85 ? 'text-emerald-600' : st.latestScore >= 65 ? 'text-amber-600' : 'text-red-600'
-                }`}>
-                  {st.latestScore} / {st.totalScore}
-                </span>
+              <div className="text-left shrink-0">
+                {st.hasScore === false ? (
+                  <span className="text-[11px] text-slate-400">لا علامات بعد</span>
+                ) : (
+                  <span dir="ltr" className={`inline-block font-black text-base tabular-nums ${
+                    st.latestScore >= 85 ? 'text-emerald-600' : st.latestScore >= 65 ? 'text-amber-600' : 'text-red-600'
+                  }`}>
+                    {st.latestScore} / {st.totalScore}
+                  </span>
+                )}
               </div>
             </div>
 
             <div className="flex items-center justify-between text-xs text-slate-600">
               <span className="flex items-center gap-1 font-mono text-[11px]">
                 <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-                {st.parentPhone}
+                {st.parentPhone || <span className="font-sans text-slate-400">لا يوجد رقم ولي أمر</span>}
               </span>
               <div className="flex items-center gap-2">
-                {st.trend === 'up' && <span className="text-emerald-700 text-xs font-bold">↑ تحسن</span>}
-                {st.trend === 'down' && <span className="text-red-700 text-xs font-bold">↓ تراجع</span>}
-                {st.trend === 'steady' && <span className="text-slate-500 text-xs">− ثابت</span>}
+                {st.hasScore !== false && st.trend === 'up' && <span className="text-emerald-700 text-xs font-bold">↑ تحسن</span>}
+                {st.hasScore !== false && st.trend === 'down' && <span className="text-red-700 text-xs font-bold">↓ تراجع</span>}
+                {st.hasScore !== false && st.trend === 'steady' && <span className="text-slate-500 text-xs">− ثابت</span>}
                 <span className="text-blue-700 font-bold text-xs">عرض الملف ←</span>
               </div>
             </div>

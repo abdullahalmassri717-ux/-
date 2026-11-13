@@ -212,6 +212,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       latestScore: pct,
       totalScore: 100,
       trend: score?.trend ?? 'steady',
+      hasScore: !!score,
       parentApproval: s.parent_whatsapp_consent,
       moodle: s.moodle_identifier && s.moodle_identifier_kind ? { kind: s.moodle_identifier_kind, value: s.moodle_identifier } : null,
       status: !score ? 'active' : pct >= 90 ? 'excellent' : pct < 60 ? 'at_risk' : 'active',

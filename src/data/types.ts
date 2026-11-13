@@ -25,6 +25,8 @@ export interface StudentRow extends Student {
   groupIds: string[];
   /** The student's account on the school's Moodle, when the teacher linked it. */
   moodle?: MoodleLink | null;
+  /** False when no approved grade exists yet, so the score and trend mean nothing. */
+  hasScore?: boolean;
 }
 
 export interface NewGroupInput {
