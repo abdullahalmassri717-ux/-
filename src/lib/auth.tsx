@@ -136,12 +136,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     type Row = { role: string; organizations: OrgRow | OrgRow[] | null };
     const rows = (membershipsRes.data ?? []) as unknown as Row[];
-    setEntities(
-      rows.flatMap((row) => {
-        const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations;
-        return org ? [toEntity(org, row.role, fullName ?? '')] : [];
-      })
+    const list = rows.flatMap((row) => {
+      const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations;
+      return org ? [toEntity(org, row.role, fullName ?? '')] : [];
+    });
+    // The top bar shows how many students each organization has (the ones this person can see).
+    const counts = await Promise.all(
+      list.map((e) =>
+        supabase!.from('students').select('id', { count: 'exact', head: true }).eq('organization_id', e.id).eq('status', 'active')
+      )
     );
+    setEntities(list.map((e, i) => ({ ...e, activeStudentsCount: counts[i].count ?? 0 })));
   }, []);
 
   useEffect(() => {
