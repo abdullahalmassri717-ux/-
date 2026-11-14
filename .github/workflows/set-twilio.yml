@@ -44,6 +44,12 @@ on:
       report_content_sid:
         description: 'optional: approved weekly report Content template SID (HX...)'
         required: false
+      ops:
+        description: 'apply only, comma list: status, otp_template, report_template, hook (login codes on WhatsApp via Supabase Send SMS hook; needs otp_content_sid + whatsapp_from)'
+        required: false
+      otp_content_sid:
+        description: 'hook only: approved WhatsApp authentication template SID (HX...)'
+        required: false
 
 permissions:
   contents: read
@@ -88,6 +94,8 @@ jobs:
           VA: ${{ inputs.verify_service_sid }}
           FROM: ${{ inputs.whatsapp_from }}
           HX: ${{ inputs.report_content_sid }}
+          OPS: ${{ inputs.ops }}
+          OTPHX: ${{ inputs.otp_content_sid }}
         run: |
           set -euo pipefail
           if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then echo "::error::SUPABASE_ACCESS_TOKEN is missing"; exit 1; fi
@@ -151,11 +159,61 @@ jobs:
             echo "Supabase phone login now uses Twilio Verify."
           fi
 
+          tw() { curl -sS -u "$SID:$token" "$@"; }
+          if [[ ",$OPS," == *",status,"* ]]; then
+            echo "== WhatsApp senders =="
+            tw "https://messaging.twilio.com/v2/Channels/Senders?Channel=whatsapp&PageSize=20" \
+              | jq -c '.senders[]? | {sid, sender_id, status, display_name: .profile.name, offline_reasons}' || true
+            echo "== Verify services =="
+            tw "https://verify.twilio.com/v2/Services" | jq -c '.services[]? | {sid, friendly_name, whatsapp}' || true
+            echo "== Last verification attempts =="
+            tw "https://verify.twilio.com/v2/Attempts?PageSize=5" \
+              | jq -c '.attempts[]? | {date_created, channel, conversion_status, price, to: (.channel_data.to // "" | .[0:6])}' || true
+            echo "== Content templates =="
+            tw "https://content.twilio.com/v1/ContentAndApprovals?PageSize=20" \
+              | jq -c '.contents[]? | {sid, friendly_name, language, approval: .approval_requests}' || true
+          fi
+          if [[ ",$OPS," == *",otp_template,"* ]]; then
+            jq -n '{friendly_name:"daqa_login_code", language:"ar", variables:{"1":"123456"},
+                types:{"whatsapp/authentication":{add_security_recommendation:true, code_expiration_minutes:10,
+                  actions:[{type:"COPY_CODE", copy_code_text:"نسخ الرمز"}]}}}' > /tmp/otp.json
+            otphx=$(tw -X POST https://content.twilio.com/v1/Content -H 'content-type: application/json' --data @/tmp/otp.json | tee /tmp/otp_out.json | jq -r '.sid // empty')
+            if [ -z "$otphx" ]; then cat /tmp/otp_out.json; exit 1; fi
+            echo "Login code template: $otphx"
+            tw -X POST "https://content.twilio.com/v1/Content/$otphx/ApprovalRequests/whatsapp" -H 'content-type: application/json' \
+              -d '{"name":"daqa_login_code","category":"AUTHENTICATION"}' | jq -c '{name, category, status, rejection_reason, code, message}'
+          fi
+          if [[ ",$OPS," == *",hook,"* ]]; then
+            [ -n "$OTPHX" ] && [ -n "$FROM" ] || { echo "::error::hook needs otp_content_sid and whatsapp_from"; exit 1; }
+            tw "https://content.twilio.com/v1/Content/$OTPHX/ApprovalRequests" | jq -c '{whatsapp_status: .whatsapp.status, rejection: .whatsapp.rejection_reason}'
+            hook="v1,whsec_$(openssl rand -base64 32 | tr -d '\n')"
+            echo "::add-mask::$hook"
+            jq -n --arg h "$hook" --arg o "$OTPHX" '[{name:"SEND_SMS_HOOK_SECRET",value:$h},{name:"TWILIO_OTP_CONTENT_SID",value:$o}]' > /tmp/hs.json
+            curl -fsS --retry 3 --retry-all-errors -X POST "https://api.supabase.com/v1/projects/$REF/secrets" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'content-type: application/json' --data @/tmp/hs.json
+            jq -n --arg h "$hook" --arg u "https://$REF.supabase.co/functions/v1/send-sms-hook" \
+              '{hook_send_sms_enabled:true, hook_send_sms_uri:$u, hook_send_sms_secrets:$h, sms_otp_exp:600}' > /tmp/hk.json
+            curl -fsS --retry 3 --retry-all-errors -X PATCH "https://api.supabase.com/v1/projects/$REF/config/auth" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'content-type: application/json' --data @/tmp/hk.json -o /dev/null
+            rm -f /tmp/hs.json /tmp/hk.json
+            echo "Login codes now go through the send-sms-hook function (WhatsApp only)."
+          fi
+          if [[ ",$OPS," == *",report_template,"* ]]; then
+            body=$(printf '%s\n\n%s\n\n%s' 'السلام عليكم، هذا التقرير الأسبوعي من منصة دقة:' '{{1}}' 'مع تحيات فريق دقة.')
+            jq -n --arg b "$body" '{friendly_name:"daqa_weekly_report", language:"ar",
+                variables:{"1":"الرياضيات: 18/20"}, types:{"twilio/text":{body:$b}}}' > /tmp/content.json
+            hx=$(tw -X POST https://content.twilio.com/v1/Content -H 'content-type: application/json' --data @/tmp/content.json | tee /tmp/content_out.json | jq -r '.sid // empty')
+            if [ -z "$hx" ]; then cat /tmp/content_out.json; exit 1; fi
+            echo "Report template: $hx"
+            tw -X POST "https://content.twilio.com/v1/Content/$hx/ApprovalRequests/whatsapp" -H 'content-type: application/json' \
+              -d '{"name":"daqa_weekly_report","category":"UTILITY"}' | jq -c '{name, category, status, rejection_reason, code, message}'
+          fi
+
       - name: Show phone login settings
         if: inputs.step == 'apply' || inputs.step == 'status'
         run: |
           curl -fsS "https://api.supabase.com/v1/projects/$REF/config/auth" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            | jq '{external_phone_enabled, sms_provider, sms_otp_length, sms_otp_exp,
+            | jq '{external_phone_enabled, sms_provider, sms_otp_length, sms_otp_exp, hook_send_sms_enabled, hook_send_sms_uri,
                    verify_service: .sms_twilio_verify_message_service_sid,
                    test_numbers: ((.sms_test_otp // "") | split(",") | length)}'
           curl -fsS "https://api.supabase.com/v1/projects/$REF/secrets" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
