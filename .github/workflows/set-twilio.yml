@@ -25,10 +25,10 @@ on:
         description: 'apply only: the run id of the prepare run'
         required: false
       ciphertext:
-        description: 'apply only: the encrypted auth token (base64)'
+        description: 'apply only: the encrypted auth token, or "ACCOUNT_SID:AUTH_TOKEN" (base64)'
         required: false
       account_sid:
-        description: 'apply only: Twilio Account SID (AC...)'
+        description: 'apply only: Twilio Account SID (AC...), unless it is inside the ciphertext'
         required: false
       verify_service_sid:
         description: 'optional: Twilio Verify service SID (VA...) for login codes, or "create" to make one named Daqa'
@@ -86,10 +86,11 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then echo "::error::SUPABASE_ACCESS_TOKEN is missing"; exit 1; fi
-          [[ "$SID" =~ ^AC[0-9a-f]{32}$ ]] || { echo "::error::account_sid must look like AC + 32 hex characters"; exit 1; }
           token=$(printf %s "$CIPHERTEXT" | base64 -d | openssl pkeyutl -decrypt -inkey ~/twkey/priv.pem \
             -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 | tr -d '[:space:]')
+          if [[ "$token" == *:* ]]; then SID="${token%%:*}"; token="${token#*:}"; fi
           echo "::add-mask::$token"
+          [[ "$SID" =~ ^AC[0-9a-f]{32}$ ]] || { echo "::error::account_sid must look like AC + 32 hex characters"; exit 1; }
           rm -f ~/twkey/priv.pem
 
           code=$(curl -sS -o /tmp/acct.json -w '%{http_code}' -u "$SID:$token" \
