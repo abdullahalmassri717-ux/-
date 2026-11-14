@@ -633,7 +633,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
                 نرفق لكم نتيجة ورقة امتحان الرياضيات (الشهر الأول - التفاضل والتكامل):<br />
                 📊 <strong>الدرجة: 88 / 100</strong> (مستوى ممتاز ↗ أعلى بـ 6 درجات عن الاختبار السابق)<br />
                 💪 <strong>نقاط القوة:</strong> إتقان ممتاز لقواعد الاشتقاق الضمني والمشتقات العليا.<br />
-                🎯 <strong>يحتاج تركيزاً على:</strong> تطبيقات القيم القصوى والمعدلات المرتبطة بالزمن.<br />
+                🎯 <strong>نقاط تحتاج تقوية:</strong> تطبيقات القيم القصوى والمعدلات المرتبطة بالزمن.<br />
                 📎 مرفق أدناه صورة ورقة الامتحان المصححة كاملة مع ملاحظات المعلم.
               </p>
               <div className="p-2 bg-emerald-50 border border-emerald-200 rounded text-emerald-900 flex items-center justify-between text-[11px]">
