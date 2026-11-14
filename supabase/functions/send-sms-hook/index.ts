@@ -9,8 +9,11 @@
 //   TWILIO_WHATSAPP_FROM     the platform's WhatsApp sender, e.g. +970595353012
 //   TWILIO_OTP_CONTENT_SID   approved authentication template (HX...), variable {{1}} = code
 
-function b64ToBytes(b64: string): Uint8Array {
-  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+function b64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
+  const raw = atob(b64);
+  const out = new Uint8Array(new ArrayBuffer(raw.length));
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
 }
 
 function bytesToB64(bytes: ArrayBuffer): string {
