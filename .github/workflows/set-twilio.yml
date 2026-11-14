@@ -45,7 +45,7 @@ on:
         description: 'optional: approved weekly report Content template SID (HX...)'
         required: false
       ops:
-        description: 'apply only, comma list: status, otp_template, report_template, hook (login codes on WhatsApp via Supabase Send SMS hook; needs otp_content_sid + whatsapp_from)'
+        description: 'apply only, comma list: status, otp_template, report_template, hook (login codes via Supabase Send SMS hook; otp_content_sid optional), inbound (reply to «رمز» with the code; needs whatsapp_from)'
         required: false
       otp_content_sid:
         description: 'hook only: approved WhatsApp authentication template SID (HX...)'
@@ -184,11 +184,14 @@ jobs:
               -d '{"name":"daqa_login_code","category":"AUTHENTICATION"}' | jq -c '{name, category, status, rejection_reason, code, message}'
           fi
           if [[ ",$OPS," == *",hook,"* ]]; then
-            [ -n "$OTPHX" ] && [ -n "$FROM" ] || { echo "::error::hook needs otp_content_sid and whatsapp_from"; exit 1; }
-            tw "https://content.twilio.com/v1/Content/$OTPHX/ApprovalRequests" | jq -c '{whatsapp_status: .whatsapp.status, rejection: .whatsapp.rejection_reason}'
+            # The approved template is optional: without it, people get the code by
+            # sending «رمز» to the platform number (see ops=inbound).
+            if [ -n "$OTPHX" ]; then
+              tw "https://content.twilio.com/v1/Content/$OTPHX/ApprovalRequests" | jq -c '{whatsapp_status: .whatsapp.status, rejection: .whatsapp.rejection_reason}'
+            fi
             hook="v1,whsec_$(openssl rand -base64 32 | tr -d '\n')"
             echo "::add-mask::$hook"
-            jq -n --arg h "$hook" --arg o "$OTPHX" '[{name:"SEND_SMS_HOOK_SECRET",value:$h},{name:"TWILIO_OTP_CONTENT_SID",value:$o}]' > /tmp/hs.json
+            jq -n --arg h "$hook" --arg o "$OTPHX" '[{name:"SEND_SMS_HOOK_SECRET",value:$h}] + (if $o == "" then [] else [{name:"TWILIO_OTP_CONTENT_SID",value:$o}] end)' > /tmp/hs.json
             curl -fsS --retry 3 --retry-all-errors -X POST "https://api.supabase.com/v1/projects/$REF/secrets" \
               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'content-type: application/json' --data @/tmp/hs.json
             jq -n --arg h "$hook" --arg u "https://$REF.supabase.co/functions/v1/send-sms-hook" \
@@ -197,6 +200,25 @@ jobs:
               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'content-type: application/json' --data @/tmp/hk.json -o /dev/null
             rm -f /tmp/hs.json /tmp/hk.json
             echo "Login codes now go through the send-sms-hook function (WhatsApp only)."
+          fi
+          if [[ ",$OPS," == *",inbound,"* ]]; then
+            [ -n "$FROM" ] || { echo "::error::inbound needs whatsapp_from"; exit 1; }
+            # Messages people send to the platform number go to whatsapp-inbound,
+            # which replies with their login code.
+            xe=$(tw "https://messaging.twilio.com/v2/Channels/Senders?Channel=whatsapp&PageSize=50" \
+              | jq -r --arg s "whatsapp:+${FROM#+}" '.senders[]? | select(.sender_id == $s) | .sid' | head -1)
+            [ -n "$xe" ] || { echo "::error::No WhatsApp sender for $FROM"; exit 1; }
+            jq -n --arg u "https://$REF.supabase.co/functions/v1/whatsapp-inbound" \
+              '{webhook:{callback_url:$u, callback_method:"POST"}}' > /tmp/wh.json
+            tw -X POST "https://messaging.twilio.com/v2/Channels/Senders/$xe" -H 'content-type: application/json' \
+              --data @/tmp/wh.json | jq -c '{sid, status, webhook}'
+            # Show the "open WhatsApp and ask for the code" button on the login screens.
+            num="${FROM//[^0-9]/}"
+            sql="insert into public.platform_settings (key, value, is_public) values ('whatsapp_login', jsonb_build_object('number', '$num'), true) on conflict (key) do update set value = excluded.value, is_public = true;"
+            jq -n --arg q "$sql" '{query: $q}' > /tmp/q.json
+            code=$(curl -sS -o /tmp/q_out.json -w '%{http_code}' --retry 3 --retry-all-errors -X POST "https://api.supabase.com/v1/projects/$REF/database/query" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'content-type: application/json' --data-binary @/tmp/q.json)
+            echo "Login button setting: HTTP $code"; case "$code" in 2*) ;; *) cat /tmp/q_out.json; exit 1 ;; esac
           fi
           if [[ ",$OPS," == *",report_template,"* ]]; then
             body=$(printf '%s\n\n%s\n\n%s' 'السلام عليكم، هذا التقرير الأسبوعي من منصة دقة:' '{{1}}' 'مع تحيات فريق دقة.')
