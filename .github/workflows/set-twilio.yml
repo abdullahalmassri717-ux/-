@@ -169,6 +169,9 @@ jobs:
             echo "== Last verification attempts =="
             tw "https://verify.twilio.com/v2/Attempts?PageSize=5" \
               | jq -c '.attempts[]? | {date_created, channel, conversion_status, price, to: (.channel_data.to // "" | .[0:6])}' || true
+            echo "== Last WhatsApp messages =="
+            tw "https://api.twilio.com/2010-04-01/Accounts/$SID/Messages.json?PageSize=10" \
+              | jq -c '.messages[]? | {date_sent, direction, status, error_code, from: (.from | .[0:16]), to: (.to | .[0:16]), body_len: (.body | length)}' || true
             echo "== Content templates =="
             tw "https://content.twilio.com/v1/ContentAndApprovals?PageSize=20" \
               | jq -c '.contents[]? | {sid, friendly_name, language, approval: .approval_requests}' || true
