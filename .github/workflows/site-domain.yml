@@ -50,3 +50,5 @@ jobs:
             grep -o '<title>[^<]*</title>' /tmp/page.html 2>/dev/null || true
             rm -f /tmp/page.html
           done
+          echo "=== redirect test (old address, /login)"
+          curl -sS -o /dev/null -D - --max-time 20 https://dequa.vercel.app/login | grep -iE '^(HTTP|location|x-vercel-id|age|x-vercel-cache|server)' || true
