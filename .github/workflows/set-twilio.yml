@@ -167,9 +167,32 @@ jobs:
           PHONE: ${{ inputs.test_phone }}
         run: |
           set -euo pipefail
-          anon=$(curl -fsS "https://api.supabase.com/v1/projects/$REF/api-keys" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            | jq -r '[.[] | select(.name=="anon")][0].api_key')
+          api="https://api.supabase.com/v1/projects/$REF"
+          auth=(-H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'content-type: application/json')
+          anon=$(curl -fsS "$api/api-keys" "${auth[@]}" | jq -r '[.[] | select(.name=="anon")][0].api_key')
           echo "::add-mask::$anon"
+          # A Supabase test number never gets a real message, so take it out of
+          # the test list for this one send and always put the list back after.
+          curl -fsS "$api/config/auth" "${auth[@]}" > /tmp/cfg.json
+          orig=$(jq -r '.sms_test_otp // ""' /tmp/cfg.json)
+          until=$(jq -r '.sms_test_otp_valid_until // ""' /tmp/cfg.json)
+          echo "Test numbers valid until: ${until:-not set}"
+          patch_list() {
+            jq -n --arg v "$1" --arg u "$until" '{sms_test_otp: $v} + (if $u == "" then {} else {sms_test_otp_valid_until: $u} end)' \
+              | curl -sS -X PATCH "$api/config/auth" "${auth[@]}" --data @- -o /tmp/patch.json -w '%{http_code}'
+          }
+          digits="${PHONE//[^0-9]/}"
+          trimmed=$(printf %s "$orig" | tr ',' '\n' | grep -v "^${digits}=" | paste -sd, - || true)
+          restore() {
+            c=$(patch_list "$orig"); echo "Restore test number list: HTTP $c"; [ "$c" = 200 ] || cat /tmp/patch.json
+          }
+          if [ "$trimmed" != "$orig" ]; then
+            echo "$PHONE is a test number: taking it out of the list for this send."
+            trap restore EXIT
+            c=$(patch_list "$trimmed"); echo "Remove from test list: HTTP $c"
+            if [ "$c" != 200 ]; then cat /tmp/patch.json; trap - EXIT; exit 1; fi
+            sleep 5
+          fi
           code=$(curl -sS -o /tmp/otp.json -w '%{http_code}' "https://$REF.supabase.co/auth/v1/otp" \
             -H "apikey: $anon" -H 'content-type: application/json' \
             -d "$(jq -n --arg p "$PHONE" '{phone:$p, channel:"whatsapp"}')")
