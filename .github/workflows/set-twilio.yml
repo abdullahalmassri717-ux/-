@@ -167,9 +167,25 @@ jobs:
           PHONE: ${{ inputs.test_phone }}
         run: |
           set -euo pipefail
-          anon=$(curl -fsS "https://api.supabase.com/v1/projects/$REF/api-keys" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            | jq -r '[.[] | select(.name=="anon")][0].api_key')
+          api="https://api.supabase.com/v1/projects/$REF"
+          auth=(-H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'content-type: application/json')
+          anon=$(curl -fsS "$api/api-keys" "${auth[@]}" | jq -r '[.[] | select(.name=="anon")][0].api_key')
           echo "::add-mask::$anon"
+          # A Supabase test number never gets a real message, so take it out of
+          # the test list for this one send and always put the list back after.
+          orig=$(curl -fsS "$api/config/auth" "${auth[@]}" | jq -r '.sms_test_otp // ""')
+          digits="${PHONE//[^0-9]/}"
+          trimmed=$(printf %s "$orig" | tr ',' '\n' | grep -v "^${digits}=" | paste -sd, - || true)
+          restore() {
+            jq -n --arg v "$orig" '{sms_test_otp: $v}' | curl -fsS -X PATCH "$api/config/auth" "${auth[@]}" --data @- -o /dev/null
+            echo "Test number list restored."
+          }
+          if [ "$trimmed" != "$orig" ]; then
+            echo "$PHONE is a test number: taking it out of the list for this send."
+            trap restore EXIT
+            jq -n --arg v "$trimmed" '{sms_test_otp: $v}' | curl -fsS -X PATCH "$api/config/auth" "${auth[@]}" --data @- -o /dev/null
+            sleep 5
+          fi
           code=$(curl -sS -o /tmp/otp.json -w '%{http_code}' "https://$REF.supabase.co/auth/v1/otp" \
             -H "apikey: $anon" -H 'content-type: application/json' \
             -d "$(jq -n --arg p "$PHONE" '{phone:$p, channel:"whatsapp"}')")
