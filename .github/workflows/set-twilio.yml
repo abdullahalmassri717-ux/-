@@ -44,6 +44,9 @@ on:
       report_content_sid:
         description: 'optional: approved weekly report Content template SID (HX...)'
         required: false
+      ops:
+        description: 'apply only, comma list: status, verify_whatsapp (send login codes from whatsapp_from), report_template (create + submit the weekly report template)'
+        required: false
 
 permissions:
   contents: read
@@ -88,6 +91,7 @@ jobs:
           VA: ${{ inputs.verify_service_sid }}
           FROM: ${{ inputs.whatsapp_from }}
           HX: ${{ inputs.report_content_sid }}
+          OPS: ${{ inputs.ops }}
         run: |
           set -euo pipefail
           if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then echo "::error::SUPABASE_ACCESS_TOKEN is missing"; exit 1; fi
@@ -149,6 +153,36 @@ jobs:
               --data @/tmp/auth.json -o /dev/null
             rm -f /tmp/auth.json
             echo "Supabase phone login now uses Twilio Verify."
+          fi
+
+          tw() { curl -sS -u "$SID:$token" "$@"; }
+          if [[ ",$OPS," == *",status,"* ]]; then
+            echo "== WhatsApp senders =="
+            tw "https://messaging.twilio.com/v2/Channels/Senders?Channel=whatsapp&PageSize=20" \
+              | jq -c '.senders[]? | {sid, sender_id, status, display_name: .profile.name, offline_reasons}' || true
+            echo "== Verify services =="
+            tw "https://verify.twilio.com/v2/Services" | jq -c '.services[]? | {sid, friendly_name, whatsapp}' || true
+            echo "== Last verification attempts =="
+            tw "https://verify.twilio.com/v2/Attempts?PageSize=5" \
+              | jq -c '.attempts[]? | {date_created, channel, conversion_status, price, to: (.channel_data.to // "" | .[0:6])}' || true
+            echo "== Content templates =="
+            tw "https://content.twilio.com/v1/ContentAndApprovals?PageSize=20" \
+              | jq -c '.contents[]? | {sid, friendly_name, language, approval: .approval_requests}' || true
+          fi
+          if [[ ",$OPS," == *",verify_whatsapp,"* ]]; then
+            [ -n "$FROM" ] && [ -n "$VA" ] || { echo "::error::verify_whatsapp needs whatsapp_from and verify_service_sid"; exit 1; }
+            tw -X POST "https://verify.twilio.com/v2/Services/$VA" --data-urlencode "Whatsapp.From=whatsapp:$FROM" \
+              | jq -c '{sid, friendly_name, whatsapp, code: .code, message: .message}'
+          fi
+          if [[ ",$OPS," == *",report_template,"* ]]; then
+            body=$(printf '%s\n\n%s\n\n%s' 'السلام عليكم، هذا التقرير الأسبوعي من منصة دقة:' '{{1}}' 'مع تحيات فريق دقة.')
+            jq -n --arg b "$body" '{friendly_name:"daqa_weekly_report", language:"ar",
+                variables:{"1":"الرياضيات: 18/20"}, types:{"twilio/text":{body:$b}}}' > /tmp/content.json
+            hx=$(tw -X POST https://content.twilio.com/v1/Content -H 'content-type: application/json' --data @/tmp/content.json | tee /tmp/content_out.json | jq -r '.sid // empty')
+            if [ -z "$hx" ]; then cat /tmp/content_out.json; exit 1; fi
+            echo "Report template: $hx"
+            tw -X POST "https://content.twilio.com/v1/Content/$hx/ApprovalRequests/whatsapp" -H 'content-type: application/json' \
+              -d '{"name":"daqa_weekly_report","category":"UTILITY"}' | jq -c '{name, category, status, rejection_reason, code, message}'
           fi
 
       - name: Show phone login settings
