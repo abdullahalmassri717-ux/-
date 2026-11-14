@@ -8,6 +8,7 @@
 #   ANTHROPIC_API_KEY      Claude key for grading and the AI tools (optional until AI is used;
 #                          without it papers get made-up practice grades marked «تجريبي»)
 # Optional: WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_REPORT_TEMPLATE, LINK_ATTEMPT_SALT
+# Twilio (login codes + reports) is set by the "Set Twilio" workflow, not here.
 name: Deploy Supabase
 
 on:
