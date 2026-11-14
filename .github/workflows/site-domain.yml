@@ -1,0 +1,52 @@
+# Moves the platform to its own domain (dequa.study).
+#   step=check  shows whether dequa.study / www.dequa.study resolve and serve
+#               the site over HTTPS (nothing is changed).
+#   step=apply  sets Supabase Auth "Site URL" to https://dequa.study and the
+#               allowed redirect URLs (the new domain + the old dequa.vercel.app
+#               + local dev), then runs the check.
+name: Site domain
+
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: 'check or apply'
+        required: true
+        default: check
+
+permissions:
+  contents: read
+
+jobs:
+  domain:
+    runs-on: ubuntu-latest
+    env:
+      REF: roeweplhofhjtcnbfmvo
+      SITE: https://dequa.study
+    steps:
+      - name: Set Supabase Auth site URL and redirect URLs
+        if: inputs.step == 'apply'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          api="https://api.supabase.com/v1/projects/$REF/config/auth"
+          allow="https://dequa.study/**,https://www.dequa.study/**,https://dequa.vercel.app/**,http://localhost:3000/**,http://localhost:5173/**"
+          jq -n --arg s "$SITE" --arg a "$allow" '{site_url:$s, uri_allow_list:$a}' > /tmp/auth.json
+          curl -fsS --retry 3 --retry-all-errors -X PATCH "$api" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'content-type: application/json' \
+            --data @/tmp/auth.json -o /dev/null
+          curl -fsS "$api" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" | jq '{site_url, uri_allow_list}'
+
+      - name: Check the domain
+        run: |
+          for h in dequa.study www.dequa.study dequa.vercel.app; do
+            echo "=== $h"
+            echo "A:    $(dig +short A $h | tr '\n' ' ')"
+            echo "CNAME:$(dig +short CNAME $h | tr '\n' ' ')"
+            [ "$h" = dequa.study ] && echo "NS:   $(dig +short NS $h | tr '\n' ' ')"
+            curl -sS -o /tmp/page.html --max-time 20 \
+              -w 'HTTPS: %{http_code}  redirect: %{redirect_url}  ssl_verify: %{ssl_verify_result}\n' "https://$h/" || echo "HTTPS: failed"
+            grep -o '<title>[^<]*</title>' /tmp/page.html 2>/dev/null || true
+            rm -f /tmp/page.html
+          done
