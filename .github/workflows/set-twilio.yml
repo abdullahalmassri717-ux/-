@@ -1,0 +1,152 @@
+# Connects Twilio (WhatsApp login codes + weekly parent reports) to Supabase
+# without the Twilio auth token ever appearing in the repository, the logs or a chat.
+# Same two-run pattern as set-ai-key.yml:
+#   1. step=prepare  makes a one-time key pair, keeps the private half in the
+#                    Actions cache and prints the public half in the log.
+#   2. step=apply    takes the auth token encrypted with that public half
+#                    (base64, RSA-OAEP-SHA256), checks it with Twilio, then:
+#                    - saves TWILIO_* function secrets (used by the report sender),
+#                    - if verify_service_sid is given, switches Supabase phone
+#                      login to Twilio Verify (WhatsApp codes),
+#                    then deletes the private half.
+#   step=status      prints the current (non-secret) phone login settings.
+# The account SID, Verify service SID, sender number and template SID are not
+# secret, so they are plain inputs.
+name: Set Twilio
+
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: 'prepare, apply or status'
+        required: true
+        default: prepare
+      prepare_run_id:
+        description: 'apply only: the run id of the prepare run'
+        required: false
+      ciphertext:
+        description: 'apply only: the encrypted auth token (base64)'
+        required: false
+      account_sid:
+        description: 'apply only: Twilio Account SID (AC...)'
+        required: false
+      verify_service_sid:
+        description: 'optional: Twilio Verify service SID (VA...) for login codes'
+        required: false
+      whatsapp_from:
+        description: 'optional: approved WhatsApp sender number, e.g. +970599000000'
+        required: false
+      report_content_sid:
+        description: 'optional: approved weekly report Content template SID (HX...)'
+        required: false
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  twilio:
+    runs-on: ubuntu-latest
+    env:
+      REF: roeweplhofhjtcnbfmvo
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - name: Make key pair
+        if: inputs.step == 'prepare'
+        run: |
+          mkdir -p ~/twkey && cd ~/twkey
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out priv.pem 2>/dev/null
+          openssl pkey -in priv.pem -pubout -out pub.pem
+          echo "PUBLIC KEY (safe to share):"
+          cat pub.pem
+
+      - name: Keep private half
+        if: inputs.step == 'prepare'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/twkey/priv.pem
+          key: twilio-keypair-${{ github.run_id }}
+
+      - name: Restore private half
+        if: inputs.step == 'apply'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/twkey/priv.pem
+          key: twilio-keypair-${{ inputs.prepare_run_id }}
+          fail-on-cache-miss: true
+
+      - name: Decrypt, check and save
+        if: inputs.step == 'apply'
+        env:
+          CIPHERTEXT: ${{ inputs.ciphertext }}
+          SID: ${{ inputs.account_sid }}
+          VA: ${{ inputs.verify_service_sid }}
+          FROM: ${{ inputs.whatsapp_from }}
+          HX: ${{ inputs.report_content_sid }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then echo "::error::SUPABASE_ACCESS_TOKEN is missing"; exit 1; fi
+          [[ "$SID" =~ ^AC[0-9a-f]{32}$ ]] || { echo "::error::account_sid must look like AC + 32 hex characters"; exit 1; }
+          token=$(printf %s "$CIPHERTEXT" | base64 -d | openssl pkeyutl -decrypt -inkey ~/twkey/priv.pem \
+            -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 | tr -d '[:space:]')
+          echo "::add-mask::$token"
+          rm -f ~/twkey/priv.pem
+
+          code=$(curl -sS -o /tmp/acct.json -w '%{http_code}' -u "$SID:$token" \
+            "https://api.twilio.com/2010-04-01/Accounts/$SID.json")
+          echo "Twilio account check: HTTP $code"
+          if [ "$code" != 200 ]; then jq -c '{code,message}' /tmp/acct.json || true; exit 1; fi
+          jq -r '"Account: \(.friendly_name) | status: \(.status) | type: \(.type)"' /tmp/acct.json
+
+          secrets=$(jq -n --arg sid "$SID" --arg tok "$token" \
+            '[{name:"TWILIO_ACCOUNT_SID",value:$sid},{name:"TWILIO_AUTH_TOKEN",value:$tok}]')
+          if [ -n "$FROM" ]; then secrets=$(jq --arg v "$FROM" '. + [{name:"TWILIO_WHATSAPP_FROM",value:$v}]' <<<"$secrets"); fi
+          if [ -n "$HX" ]; then
+            hcode=$(curl -sS -o /tmp/hx.json -w '%{http_code}' -u "$SID:$token" "https://content.twilio.com/v1/Content/$HX")
+            echo "Report template check: HTTP $hcode"
+            if [ "$hcode" != 200 ]; then jq -c '{code,message}' /tmp/hx.json || true; exit 1; fi
+            curl -sS -u "$SID:$token" "https://content.twilio.com/v1/Content/$HX/ApprovalRequests" \
+              | jq -c '{whatsapp_status: .whatsapp.status, rejection: .whatsapp.rejection_reason}' || true
+            secrets=$(jq --arg v "$HX" '. + [{name:"TWILIO_REPORT_CONTENT_SID",value:$v}]' <<<"$secrets")
+          fi
+          printf %s "$secrets" > /tmp/body.json
+          curl -fsS --retry 3 --retry-all-errors -X POST "https://api.supabase.com/v1/projects/$REF/secrets" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'content-type: application/json' \
+            --data @/tmp/body.json
+          rm -f /tmp/body.json
+          echo "Function secrets saved: $(jq -r '[.[].name] | join(", ")' <<<"$secrets")"
+
+          if [ -n "$VA" ]; then
+            vcode=$(curl -sS -o /tmp/va.json -w '%{http_code}' -u "$SID:$token" "https://verify.twilio.com/v2/Services/$VA")
+            echo "Verify service check: HTTP $vcode"
+            if [ "$vcode" != 200 ]; then jq -c '{code,message}' /tmp/va.json || true; exit 1; fi
+            jq -r '"Verify service: \(.friendly_name) | code length: \(.code_length)"' /tmp/va.json
+            jq -n --arg sid "$SID" --arg tok "$token" --arg va "$VA" '{
+                external_phone_enabled: true,
+                sms_provider: "twilio_verify",
+                sms_twilio_verify_account_sid: $sid,
+                sms_twilio_verify_auth_token: $tok,
+                sms_twilio_verify_message_service_sid: $va
+              }' > /tmp/auth.json
+            curl -fsS --retry 3 --retry-all-errors -X PATCH "https://api.supabase.com/v1/projects/$REF/config/auth" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'content-type: application/json' \
+              --data @/tmp/auth.json -o /dev/null
+            rm -f /tmp/auth.json
+            echo "Supabase phone login now uses Twilio Verify."
+          fi
+
+      - name: Show phone login settings
+        if: inputs.step == 'apply' || inputs.step == 'status'
+        run: |
+          curl -fsS "https://api.supabase.com/v1/projects/$REF/config/auth" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            | jq '{external_phone_enabled, sms_provider, sms_otp_length, sms_otp_exp,
+                   verify_service: .sms_twilio_verify_message_service_sid,
+                   test_numbers: ((.sms_test_otp // "") | split(",") | length)}'
+          curl -fsS "https://api.supabase.com/v1/projects/$REF/secrets" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            | jq -r '[.[].name | select(startswith("TWILIO") or startswith("WHATSAPP"))] | "WhatsApp secrets: \(join(", "))"'
+
+      - name: Delete private half from the cache
+        if: always() && inputs.step == 'apply' && inputs.prepare_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh cache delete "twilio-keypair-${{ inputs.prepare_run_id }}" --repo "$GITHUB_REPOSITORY" || true
