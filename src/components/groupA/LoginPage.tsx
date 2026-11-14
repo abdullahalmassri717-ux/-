@@ -3,6 +3,7 @@ import { useAuth } from '../../lib/auth';
 import { toInternationalPhone } from '../../lib/phone';
 import { ScreenId, UserRole } from '../../types';
 import { ArrowRight, MessageCircle, ShieldCheck, Check, Sparkles, Phone, RotateCcw } from 'lucide-react';
+import WhatsAppCodeButton from '../WhatsAppCodeButton';
 
 interface LoginPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -255,6 +256,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
                 تغيير الرقم
               </button>
             </div>
+
+            {isReal && <WhatsAppCodeButton />}
 
             <label className="block">
               <span className="block text-slate-700 font-bold mb-1.5">رمز التحقق ({CODE_LENGTH} أرقام)</span>

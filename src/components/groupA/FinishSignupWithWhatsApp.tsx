@@ -3,6 +3,7 @@ import { ShieldCheck, Sparkles, RotateCcw } from 'lucide-react';
 import { useAuth } from '../../lib/auth';
 import { toInternationalPhone } from '../../lib/phone';
 import { EntityType } from '../../types';
+import WhatsAppCodeButton from '../WhatsAppCodeButton';
 
 // Last step of sign-up when a real Supabase project is connected:
 // 1) send a 6-digit code to the WhatsApp number, 2) check it, 3) create the
@@ -112,6 +113,7 @@ export const FinishSignupWithWhatsApp: React.FC<Props> = ({ phone, fullName, org
               <span dir="ltr" className="font-bold tabular-nums">{toInternationalPhone(phone)}</span>
             </span>
           </div>
+          <WhatsAppCodeButton />
           <label className="block">
             <span className="block text-slate-700 font-bold mb-1.5">رمز التحقق ({CODE_LENGTH} أرقام)</span>
             <input
