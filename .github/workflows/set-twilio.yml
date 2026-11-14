@@ -10,6 +10,8 @@
 #                      login to Twilio Verify (WhatsApp codes),
 #                    then deletes the private half.
 #   step=status      prints the current (non-secret) phone login settings.
+#   step=test        asks Supabase to send a real WhatsApp login code to test_phone
+#                    (a Supabase test number gets no message).
 # The account SID, Verify service SID, sender number and template SID are not
 # secret, so they are plain inputs.
 name: Set Twilio
@@ -18,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       step:
-        description: 'prepare, apply or status'
+        description: 'prepare, apply, status or test'
         required: true
         default: prepare
       prepare_run_id:
@@ -35,6 +37,9 @@ on:
         required: false
       whatsapp_from:
         description: 'optional: approved WhatsApp sender number, e.g. +970599000000'
+        required: false
+      test_phone:
+        description: 'test only: phone number to send a real login code to, e.g. +970599000000'
         required: false
       report_content_sid:
         description: 'optional: approved weekly report Content template SID (HX...)'
@@ -155,6 +160,21 @@ jobs:
                    test_numbers: ((.sms_test_otp // "") | split(",") | length)}'
           curl -fsS "https://api.supabase.com/v1/projects/$REF/secrets" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             | jq -r '[.[].name | select(startswith("TWILIO") or startswith("WHATSAPP"))] | "WhatsApp secrets: \(join(", "))"'
+
+      - name: Send a test login code
+        if: inputs.step == 'test'
+        env:
+          PHONE: ${{ inputs.test_phone }}
+        run: |
+          set -euo pipefail
+          anon=$(curl -fsS "https://api.supabase.com/v1/projects/$REF/api-keys" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            | jq -r '[.[] | select(.name=="anon")][0].api_key')
+          echo "::add-mask::$anon"
+          code=$(curl -sS -o /tmp/otp.json -w '%{http_code}' "https://$REF.supabase.co/auth/v1/otp" \
+            -H "apikey: $anon" -H 'content-type: application/json' \
+            -d "$(jq -n --arg p "$PHONE" '{phone:$p, channel:"whatsapp", create_user:false}')")
+          echo "Supabase send code: HTTP $code"
+          cat /tmp/otp.json; echo
 
       - name: Delete private half from the cache
         if: always() && inputs.step == 'apply' && inputs.prepare_run_id != ''
