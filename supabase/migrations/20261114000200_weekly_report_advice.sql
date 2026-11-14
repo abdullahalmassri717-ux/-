@@ -1,4 +1,4 @@
--- التقرير الأسبوعي لولي الأمر: إضافة ملاحظات المعلم ونصيحة للبيت،
+-- التقرير الأسبوعي لولي الأمر: اسم الجهة والطالب والصف في أعلى الرسالة، ملاحظات المعلم ونصيحة للبيت،
 -- وتسمية «نقاط القوة» و«نقاط تحتاج تقوية» (طلب صاحب المشروع 2026-11-14).
 -- نفس الدالة من 20261111000300_weekly_reports.sql مع هذه الإضافات فقط.
 
@@ -126,9 +126,22 @@ language sql stable security definer set search_path = '' as $$
     from public.students st
     where st.organization_id = p_org and st.status = 'active'
   ),
+  -- صف الطالب وشعبته (كل الرسائل تصل من رقم «دقة» نفسه، فلازم يبان مين الطالب ومن أي جهة).
+  cls as (
+    select distinct on (gs.student_id) gs.student_id,
+           case when gr.name is null or position(gr.name in g.name) > 0 then g.name
+                else gr.name || ' – ' || g.name end as label
+    from public.group_students gs
+    join public.groups g on g.id = gs.group_id and g.organization_id = p_org and g.archived_at is null
+    left join public.grades gr on gr.id = g.grade_id
+    where gs.left_at is null
+    order by gs.student_id, gr.sort_order nulls last, g.name
+  ),
   header as (
     select '🗓️ من ' || to_char(w.d0, 'DD/MM') || ' إلى ' || to_char(w.d1, 'DD/MM') as period,
-           '— ' || o.name as footer, o.kind
+           case o.kind when 'individual_teacher' then '👨‍🏫 المعلم: '
+                       when 'school' then '🏫 المدرسة: ' else '🏫 المركز: ' end || o.name as org_line,
+           null::text as footer, o.kind
     from win w, org o
   )
   -- مدرّس خصوصي: رسالة لكل مادة.
@@ -136,13 +149,15 @@ language sql stable security definer set search_path = '' as $$
          s.subj, s.subject_name, s.papers,
          concat_ws(E'\n',
            '📘 التقرير الأسبوعي لمادة ' || s.subject_name,
-           'ولي أمر الطالب ' || st.full_name || ' 🌸',
+           h.org_line,
+           '👤 الطالب: ' || st.full_name || coalesce(' | الصف: ' || c.label, ''),
            h.period,
            '',
            s.text,
            h.footer)
   from section s
   join stu st on st.id = s.student_id
+  left join cls c on c.student_id = st.id
   cross join header h
   where h.kind = 'individual_teacher'
   union all
@@ -150,7 +165,9 @@ language sql stable security definer set search_path = '' as $$
   select st.id, st.full_name, st.parent_phone, st.parent_whatsapp_consent,
          null::uuid, null::text, sum(s.papers)::int,
          concat_ws(E'\n',
-           '📋 التقرير الأسبوعي للطالب ' || st.full_name,
+           '📋 التقرير الأسبوعي',
+           h.org_line,
+           '👤 الطالب: ' || st.full_name || coalesce(' | الصف: ' || c.label, ''),
            h.period,
            '',
            string_agg('📘 ' || s.subject_name || E'\n' || s.text, E'\n\n' order by s.subject_name),
@@ -158,8 +175,9 @@ language sql stable security definer set search_path = '' as $$
            h.footer)
   from section s
   join stu st on st.id = s.student_id
+  left join cls c on c.student_id = st.id
   cross join header h
   where h.kind <> 'individual_teacher'
-  group by st.id, st.full_name, st.parent_phone, st.parent_whatsapp_consent, h.period, h.footer
+  group by st.id, st.full_name, st.parent_phone, st.parent_whatsapp_consent, c.label, h.period, h.org_line, h.footer
 $$;
 revoke execute on function private.weekly_report_rows(uuid, timestamptz, boolean) from public, anon, authenticated;
