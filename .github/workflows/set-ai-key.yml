@@ -1,0 +1,92 @@
+# Stores the Claude API key as the Supabase function secret ANTHROPIC_API_KEY
+# without the key ever appearing in the repository, the logs or a chat.
+# Two runs, both started by hand (Actions tab or API):
+#   1. step=prepare  makes a one-time key pair, keeps the private half in the
+#                    Actions cache and prints the public half in the log.
+#   2. step=apply    takes the Claude key encrypted with that public half
+#                    (base64, RSA-OAEP-SHA256), decrypts it on the runner,
+#                    checks it with Anthropic, saves it in Supabase, then
+#                    deletes the private half.
+# Encrypt locally with:
+#   printf %s "$KEY" | openssl pkeyutl -encrypt -pubin -inkey pub.pem \
+#     -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 | base64 -w0
+name: Set AI key
+
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: 'prepare or apply'
+        required: true
+        default: prepare
+      prepare_run_id:
+        description: 'apply only: the run id of the prepare run'
+        required: false
+      ciphertext:
+        description: 'apply only: the encrypted key (base64)'
+        required: false
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  key:
+    runs-on: ubuntu-latest
+    env:
+      REF: roeweplhofhjtcnbfmvo
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - name: Make key pair
+        if: inputs.step == 'prepare'
+        run: |
+          mkdir -p ~/aikey && cd ~/aikey
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out priv.pem 2>/dev/null
+          openssl pkey -in priv.pem -pubout -out pub.pem
+          echo "PUBLIC KEY (safe to share):"
+          cat pub.pem
+
+      - name: Keep private half
+        if: inputs.step == 'prepare'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/aikey/priv.pem
+          key: ai-keypair-${{ github.run_id }}
+
+      - name: Restore private half
+        if: inputs.step == 'apply'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/aikey/priv.pem
+          key: ai-keypair-${{ inputs.prepare_run_id }}
+          fail-on-cache-miss: true
+
+      - name: Decrypt, check and save the key
+        if: inputs.step == 'apply'
+        env:
+          CIPHERTEXT: ${{ inputs.ciphertext }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then echo "::error::SUPABASE_ACCESS_TOKEN is missing"; exit 1; fi
+          key=$(printf %s "$CIPHERTEXT" | base64 -d | openssl pkeyutl -decrypt -inkey ~/aikey/priv.pem \
+            -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256)
+          echo "::add-mask::$key"
+          rm -f ~/aikey/priv.pem
+          code=$(curl -sS -o /tmp/check.json -w '%{http_code}' https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $key" -H 'anthropic-version: 2023-06-01' -H 'content-type: application/json' \
+            -d '{"model":"claude-haiku-4-5","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}')
+          echo "Anthropic check: HTTP $code"
+          if [ "$code" != 200 ]; then jq -c '.error' /tmp/check.json || true; exit 1; fi
+          jq -n --arg v "$key" '[{name:"ANTHROPIC_API_KEY",value:$v}]' > /tmp/body.json
+          curl -fsS --retry 3 --retry-all-errors -X POST "https://api.supabase.com/v1/projects/$REF/secrets" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'content-type: application/json' \
+            --data @/tmp/body.json
+          rm -f /tmp/body.json
+          curl -fsS "https://api.supabase.com/v1/projects/$REF/secrets" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            | jq -r '.[].name' | grep -qx ANTHROPIC_API_KEY && echo "ANTHROPIC_API_KEY saved in Supabase."
+
+      - name: Delete private half from the cache
+        if: always() && inputs.step == 'apply' && inputs.prepare_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh cache delete "ai-keypair-${{ inputs.prepare_run_id }}" --repo "$GITHUB_REPOSITORY" || true
