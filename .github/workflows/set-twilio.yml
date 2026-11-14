@@ -31,7 +31,7 @@ on:
         description: 'apply only: Twilio Account SID (AC...)'
         required: false
       verify_service_sid:
-        description: 'optional: Twilio Verify service SID (VA...) for login codes'
+        description: 'optional: Twilio Verify service SID (VA...) for login codes, or "create" to make one named Daqa'
         required: false
       whatsapp_from:
         description: 'optional: approved WhatsApp sender number, e.g. +970599000000'
@@ -116,6 +116,16 @@ jobs:
           rm -f /tmp/body.json
           echo "Function secrets saved: $(jq -r '[.[].name] | join(", ")' <<<"$secrets")"
 
+          if [ "$VA" = create ]; then
+            VA=$(curl -sS -u "$SID:$token" https://verify.twilio.com/v2/Services | jq -r '.services[] | select(.friendly_name=="Daqa") | .sid' | head -1)
+            if [ -z "$VA" ]; then
+              VA=$(curl -fsS -u "$SID:$token" -X POST https://verify.twilio.com/v2/Services \
+                --data-urlencode FriendlyName=Daqa --data-urlencode CodeLength=6 | jq -r .sid)
+              echo "Created Verify service $VA"
+            else
+              echo "Using existing Verify service $VA"
+            fi
+          fi
           if [ -n "$VA" ]; then
             vcode=$(curl -sS -o /tmp/va.json -w '%{http_code}' -u "$SID:$token" "https://verify.twilio.com/v2/Services/$VA")
             echo "Verify service check: HTTP $vcode"
