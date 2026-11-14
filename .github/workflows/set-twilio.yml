@@ -172,7 +172,7 @@ jobs:
           echo "::add-mask::$anon"
           code=$(curl -sS -o /tmp/otp.json -w '%{http_code}' "https://$REF.supabase.co/auth/v1/otp" \
             -H "apikey: $anon" -H 'content-type: application/json' \
-            -d "$(jq -n --arg p "$PHONE" '{phone:$p, channel:"whatsapp", create_user:false}')")
+            -d "$(jq -n --arg p "$PHONE" '{phone:$p, channel:"whatsapp"}')")
           echo "Supabase send code: HTTP $code"
           cat /tmp/otp.json; echo
 
