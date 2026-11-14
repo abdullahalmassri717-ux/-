@@ -240,9 +240,19 @@ const OverviewTab: React.FC<{ go: (t: Tab) => void; showReceipts: boolean }> = (
 };
 
 // ---------------------------------------------------------------- Grading quality & cost
+const AI_TASK_LABEL: Record<string, string> = {
+  generate_questions: 'توليد أسئلة',
+  extract_exam: 'قراءة امتحان من صورة',
+  study_plan: 'خطة علاجية',
+  suggest_rubric: 'اقتراح معايير التصحيح',
+  parent_reply: 'رد على ولي الأمر',
+  assistant: 'المساعد الذكي',
+};
+
 const QualityTab: React.FC = () => {
   const [days, setDays] = useState(30);
   const q = useAsync(() => api.gradingQuality(days), [days]);
+  const sym = usePublicSetting<{ symbol?: string }>('currency', { symbol: PLATFORM_CONFIG.currencySymbol }).symbol ?? '';
   if (q.error) return <ErrorBox text={q.error} />;
   if (!q.data) return <Spinner />;
   const d = q.data;
@@ -250,6 +260,7 @@ const QualityTab: React.FC = () => {
   const lowRate = d.answers ? Math.round((d.lowConfidence / d.answers) * 1000) / 10 : 0;
   const perPaper = d.runs ? d.costUsd / d.runs : 0;
   const maxRuns = Math.max(1, ...d.byDay.map((x) => x.runs));
+  const totalAi = d.costUsd + d.tools.costUsd;
 
   return (
     <div className="space-y-6">
@@ -260,6 +271,44 @@ const QualityTab: React.FC = () => {
           </button>
         ))}
       </div>
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="font-extrabold text-[#1E3A5F] text-sm">استهلاك رصيد الذكاء الاصطناعي (آخر {days} يوماً)</h3>
+          <span className="text-2xl font-extrabold text-[#1E3A5F]">
+            ${fmt(totalAi, 2)}
+            <span className="text-xs font-bold text-slate-500 ms-2">≈ {fmt(totalAi * d.usdToIls, 2)} {sym}</span>
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          <div className="bg-slate-50 rounded-xl p-3 flex justify-between">
+            <span>تصحيح الأوراق ({fmt(d.runs)} ورقة)</span>
+            <span className="font-bold">${fmt(d.costUsd, 2)}</span>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-3 flex justify-between">
+            <span>أدوات الذكاء ({fmt(d.tools.runs)} طلب)</span>
+            <span className="font-bold">${fmt(d.tools.costUsd, 2)}</span>
+          </div>
+        </div>
+        {d.tools.byTask.length > 0 && (
+          <div className="text-xs space-y-1.5 border-t border-slate-100 pt-2">
+            {d.tools.byTask.map((t) => (
+              <div key={t.task} className="flex justify-between">
+                <span>{AI_TASK_LABEL[t.task] ?? t.task}</span>
+                <span>
+                  {fmt(t.runs)} طلب · ${fmt(t.costUsd, 2)}
+                </span>
+              </div>
+            ))}
+            <p className="text-slate-500">
+              حجم النصوص المُرسلة والمستلمة في أدوات الذكاء: {fmt(d.tools.inputTokens + d.tools.outputTokens)} وحدة نص (token)
+            </p>
+          </div>
+        )}
+        <p className="text-[11px] text-slate-500">
+          الرصيد المتبقي نفسه يظهر فقط في حسابك على console.anthropic.com، لأن Anthropic لا تتيح قراءته من المنصة.
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card title="أوراق صُحّحت" value={fmt(d.runs)} hint={`${d.failed} فشلت · ${d.escalated} احتاجت النموذج الأقوى`} />
         <Card title="تكلفة التصحيح" value={`$${fmt(d.costUsd, 2)}`} hint={`≈ $${fmt(perPaper, 4)} للورقة`} />

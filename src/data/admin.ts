@@ -128,6 +128,16 @@ export interface GradingQuality {
   byOrg: OrgGradingCost[];
   /** Dollar to shekel rate from platform settings (AI is billed in dollars). */
   usdToIls: number;
+  /** Other AI use (question generation, exam reading, assistant...), billed to the same Claude credit. */
+  tools: AiToolsUsage;
+}
+
+export interface AiToolsUsage {
+  runs: number;
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  byTask: { task: string; runs: number; costUsd: number }[];
 }
 
 export interface OrgGradingCost {
@@ -428,9 +438,10 @@ function realApi(): AdminApi {
       if (error) fail(error, 'تعذّر حفظ الباقة.');
     },
     async gradingQuality(days) {
-      const [{ data, error }, byOrgRes] = await Promise.all([
+      const [{ data, error }, byOrgRes, toolsRes] = await Promise.all([
         db.rpc('admin_grading_quality', { p_days: days }),
         db.rpc('admin_grading_cost_by_org', { p_days: days }),
+        db.rpc('admin_ai_tools_usage', { p_days: days }),
       ]);
       if (error) fail(error, 'تعذّر تحميل بيانات الجودة.');
       if (byOrgRes.error) fail(byOrgRes.error, 'تعذّر تحميل تكلفة الجهات.');
@@ -450,6 +461,17 @@ function realApi(): AdminApi {
         byDay: ((d.by_day ?? []) as { day: string; runs: number; cost_usd: number }[]).map((x) => ({ day: x.day, runs: x.runs, costUsd: Number(x.cost_usd) })),
         bySubject: (d.by_subject ?? []) as GradingQuality['bySubject'],
         usdToIls: Number(o.usd_to_ils ?? 3.7),
+        // Older databases may not have this function yet: show zero instead of failing the page.
+        tools: (() => {
+          const t = (toolsRes.error ? {} : toolsRes.data ?? {}) as Record<string, unknown>;
+          return {
+            runs: Number(t.runs ?? 0),
+            costUsd: Number(t.cost_usd ?? 0),
+            inputTokens: Number(t.input_tokens ?? 0),
+            outputTokens: Number(t.output_tokens ?? 0),
+            byTask: ((t.by_task ?? []) as { task: string; runs: number; cost_usd: number }[]).map((x) => ({ task: x.task, runs: x.runs, costUsd: Number(x.cost_usd) })),
+          };
+        })(),
         byOrg: (o.orgs ?? []).map((x) => ({
           orgId: String(x.org_id),
           name: String(x.name ?? ''),
@@ -752,6 +774,17 @@ function demoApi(): AdminApi {
           { subject: 'اللغة الإنجليزية', answers: 1490, edited: 92 },
         ],
         usdToIls: 3.7,
+        tools: {
+          runs: 64,
+          costUsd: 1.92,
+          inputTokens: 410000,
+          outputTokens: 96000,
+          byTask: [
+            { task: 'generate_questions', runs: 30, costUsd: 1.1 },
+            { task: 'extract_exam', runs: 12, costUsd: 0.52 },
+            { task: 'assistant', runs: 22, costUsd: 0.3 },
+          ],
+        },
         byOrg: [
           { orgId: 'o1', name: 'مدرسة النور الخاصة', kind: 'school', papers: 290, pages: 560, escalated: 25, costUsd: 6.9, activeStudents: 180, billed: 4500 },
           { orgId: 'o2', name: 'أ. محمد سالم', kind: 'individual_teacher', papers: 122, pages: 230, escalated: 12, costUsd: 2.94, activeStudents: 55, billed: 275 },
