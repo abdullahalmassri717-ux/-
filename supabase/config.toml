@@ -27,3 +27,7 @@ import_map = "./functions/deno.json"
 [functions.weekly-reports]
 verify_jwt = false
 import_map = "./functions/deno.json"
+
+# يستدعيها Supabase Auth (Send SMS hook) لإرسال رمز الدخول على واتساب، بتوقيع سرّي لا بتسجيل دخول.
+[functions.send-sms-hook]
+verify_jwt = false
