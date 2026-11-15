@@ -58,7 +58,8 @@ export async function submitPaper(code: string, studentCode: string, pages: Link
   return call<{ firstName: string }>(endpoint(), {
     method: 'POST',
     headers: headers(),
-    body: JSON.stringify({ code, studentCode, pages }),
+    // The server reads each page as { data, mediaType }.
+    body: JSON.stringify({ code, studentCode, pages: pages.map((p) => ({ data: p.base64, mediaType: p.mediaType })) }),
   });
 }
 
