@@ -1,0 +1,25 @@
+# TEMPORARY diagnostic: builds the database on a throwaway local PostgreSQL (seed data
+# only, no secrets, no live project), runs the real PostgREST in front of it, and
+# replays the «الواجبات والامتحانات» list request as each seed member. Removed after use.
+name: Diag assessments
+on:
+  push:
+    branches: [claude/project-thread-aaj0wt]
+    paths: ['.github/workflows/diag-assessments.yml', 'scripts/diag/**']
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check-database.sh
+      - name: PostgREST replay
+        run: bash scripts/diag/replay.sh
