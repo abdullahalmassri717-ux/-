@@ -11,6 +11,5 @@ jobs:
           for id in TzzGJE52 TzzGJE9N; do
             echo "===== $id"
             curl -sS "https://documenter.gw.postman.com/api/collections/1142337/$id?segregateAuth=true&versionTag=latest" > c.json
-            jq -r '.info.name? // .name? // ""' c.json
-            jq -c '.. | objects | select(has("request")) | {n:.name, m:.request.method, u:(.request.url|if type=="object" then .raw // ((.host|join("."))+"/"+(.path|join("/"))) else . end), b:[(.request.body.urlencoded // .request.body.formdata // [])[]? | (.key+"="+(.value|tostring|.[0:30]))], raw:(.request.body.raw // "" | .[0:300]), q:[(if (.request.url|type)=="object" then (.request.url.query // []) else [] end)[]? | (.key+"="+(.value|tostring|.[0:30]))], d:((.request.description // "")|gsub("<[^>]*>";"")|.[0:500]), r:[.response[]? | (.body // "" | .[0:200])]}' c.json | grep -iv "group\|contact\|template\|subuser\|archive\|excel\|card\|notification" || true
+            jq -c '.. | objects | select(has("request")) | select((.name|test("send|sms|Send|SMS")) and (.name|test("template";"i")|not)) | {n:.name, m:.request.method, u:(.request.url|if type=="object" then .raw // ((.host|join("."))+"/"+(.path|join("/"))) else . end), b:[(.request.body.urlencoded // .request.body.formdata // [])[]? | (.key+"="+(.value|tostring|.[0:40])+" :: "+((.description//"")|tostring|gsub("<[^>]*>";"")))], raw:(.request.body.raw // ""), d:((.request.description // "")|gsub("<[^>]*>";"")), r:[.response[]? | (.body // "" | .[0:300])]}' c.json || true
           done
