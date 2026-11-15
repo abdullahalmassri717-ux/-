@@ -151,8 +151,27 @@ export async function generateQuestions(
     .filter(Boolean)
     .join('\n\n');
 
+  const first = await writeAndCheck(model, config, config.mainModel, prompt, o.lessons, lessonIds);
+  // Cheap model first. If fewer than half of the requested questions pass the
+  // curriculum check, the stronger model writes the set again.
+  const strong = config.strongModel;
+  if (first.data.questions.length * 2 >= count || !strong || strong === config.mainModel) return first;
+  const second = await writeAndCheck(model, config, strong, prompt, o.lessons, lessonIds);
+  const usage = [...first.usage, ...second.usage];
+  return second.data.questions.length >= first.data.questions.length ? { ...second, usage } : { ...first, usage };
+}
+
+async function writeAndCheck(
+  model: ToolModel,
+  config: ToolModelConfig,
+  writer: string,
+  prompt: string,
+  lessons: LessonContext[],
+  lessonIds: Set<string>,
+): Promise<ToolResult<{ questions: DraftQuestion[]; rejected: { text: string; reason: string }[] }>> {
+  const o = { lessons };
   const gen = await model.json({
-    model: config.mainModel,
+    model: writer,
     effort: 'medium',
     system: GENERATE_SYSTEM,
     content: [{ type: 'text', text: prompt }],
@@ -216,8 +235,8 @@ export async function extractExam(
 ): Promise<ToolResult<{ questions: DraftQuestion[]; readable: boolean }>> {
   const lessonIds = new Set(o.lessons.map((l) => l.id));
   const list = o.lessons.map((l) => `- ${l.id}: ${l.title}${l.outcomes.length ? ` (${l.outcomes.slice(0, 4).join('؛ ')})` : ''}`).join('\n');
-  const res = await model.json({
-    model: config.mainModel,
+  const ask = (m: string) => model.json({
+    model: m,
     effort: 'medium',
     system: `أنت تقرأ صور ورقة امتحان مطبوعة أو مكتوبة بخط اليد وتحوّلها لأسئلة منفصلة.
 انسخ نص كل سؤال كما هو (صحّح الأخطاء الإملائية الواضحة فقط)، واقترح درجة ونموذج إجابة ومعايير تصحيح مجموعها يساوي الدرجة.
@@ -230,11 +249,18 @@ export async function extractExam(
     ],
     schema: ExtractSchema,
   });
+  let res = await ask(config.mainModel);
+  const usage = [res.usage];
+  // A photo the cheap model could not read gets one more look from the stronger model.
+  if ((!res.data.readable || !res.data.questions.length) && config.strongModel && config.strongModel !== config.mainModel) {
+    res = await ask(config.strongModel);
+    usage.push(res.usage);
+  }
   const questions = res.data.questions
     .sort((a, b) => a.number - b.number)
     .map((q) => normalizeQuestion({ ...q }, lessonIds))
     .filter((q): q is DraftQuestion => !!q);
-  return { data: { questions, readable: res.data.readable }, usage: [res.usage] };
+  return { data: { questions, readable: res.data.readable }, usage };
 }
 
 const PlanSchema = z.object({

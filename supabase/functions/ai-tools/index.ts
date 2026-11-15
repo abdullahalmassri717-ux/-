@@ -4,7 +4,7 @@
 // so only published curriculum can be used.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { adminClient, corsHeaders, env, json, userClient } from '../_shared/http.ts';
-import { ClaudeToolModel, ToolError, toolConfigFromEnv, type Usage } from '../_shared/aiTools/model.ts';
+import { ClaudeToolModel, EscalatingToolModel, ToolError, toolConfigFromEnv, type Usage } from '../_shared/aiTools/model.ts';
 import {
   assistantChat,
   extractExam,
@@ -103,10 +103,12 @@ Deno.serve(async (req) => {
   const { count } = await admin.from('ai_tool_runs').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', since);
   if ((count ?? 0) >= limit) return json({ error: 'وصلت للحد اليومي لاستخدام أدوات الذكاء الاصطناعي. حاول غداً.' }, 429);
 
-  const model = new ClaudeToolModel(apiKey);
   const config = toolConfigFromEnv(env());
-  const log = (usage: Usage[], ok = true) =>
-    usage.length
+  // Cheap model first; the stronger one only when the cheap one fails.
+  const model = new EscalatingToolModel(new ClaudeToolModel(apiKey), config.strongModel);
+  const log = (ran: Usage[], ok = true) => {
+    const usage = [...model.takeFailedUsage(), ...ran];
+    return usage.length
       ? admin.from('ai_tool_runs').insert(
           usage.map((u) => ({
             organization_id: orgId, user_id: userId, task, model: u.model,
@@ -114,6 +116,7 @@ Deno.serve(async (req) => {
           })),
         )
       : Promise.resolve();
+  };
 
   try {
     switch (task) {
@@ -230,6 +233,7 @@ Deno.serve(async (req) => {
         return json({ error: 'أداة غير معروفة.' }, 400);
     }
   } catch (e) {
+    await log(e instanceof ToolError && e.usage ? [e.usage] : [], false);
     if (e instanceof ToolError) {
       console.error(task, e.message);
       return json({ error: e.userMessage }, e.status);

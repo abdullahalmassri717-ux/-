@@ -84,11 +84,20 @@ export async function gradePaper(
   };
 }
 
-/** Unsure, non multiple-choice questions: the only ones worth the stronger model. */
+/**
+ * Unsure, non multiple-choice questions: the only ones worth the stronger
+ * model. Essays are judgement calls, so they go up already at medium confidence.
+ */
 export function questionsToEscalate(input: GradePaperInput, output: ProviderOutput, config: GradingConfig): number[] {
   const mcq = new Set(input.exam.questions.filter((q) => q.type === 'multiple_choice').map((q) => q.questionNumber));
+  const essay = new Set(input.exam.questions.filter((q) => q.type === 'essay').map((q) => q.questionNumber));
   return output.questions
-    .filter((q) => q.unreadable || q.confidence === 'low' || (config.escalateAt === 'medium' && q.confidence === 'medium'))
+    .filter(
+      (q) =>
+        q.unreadable ||
+        q.confidence === 'low' ||
+        (q.confidence === 'medium' && (config.escalateAt === 'medium' || essay.has(q.questionNumber))),
+    )
     .map((q) => q.questionNumber)
     .filter((n) => !mcq.has(n));
 }
