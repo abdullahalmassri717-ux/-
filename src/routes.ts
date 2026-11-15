@@ -24,6 +24,7 @@ export const SCREEN_PATHS: Record<ScreenId, string> = {
   B10: '/app/reports',
   B11: '/app/billing',
   B12: '/app/corrected-paper',
+  B13: '/app/assignments/questions',
   B14: '/app/progress',
   B15: '/app/diagnostics',
   SUPPORT: '/app/support',

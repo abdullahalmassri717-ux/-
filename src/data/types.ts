@@ -234,6 +234,8 @@ export interface DataStore extends BillingStore, SchoolStore, AiStore {
     patch: Partial<{ title: string; status: Exam['status']; submissionOpen: boolean; autoSendReports: boolean }>,
   ): Promise<void>;
   deleteAssessment(id: string): Promise<void>;
+  /** Replace an exam's questions and rubric (an `id` keeps an existing question and its grades). */
+  saveAssessmentQuestions(id: string, questions: (QuestionInput & { id?: string })[]): Promise<void>;
   // Submissions & grading
   listSubmissions(assessmentId: string): Promise<SubmissionRow[]>;
   listQuestionGrades(submissionId: string): Promise<QuestionGradeRow[]>;

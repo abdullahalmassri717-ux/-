@@ -449,6 +449,29 @@ export function createDemoStore(): DataStore {
       }
       return wait(undefined);
     },
+    async saveAssessmentQuestions(id, questions) {
+      const a = s().assessments.find((x) => x.id === id);
+      if (a) {
+        const subject = findSubject(a.subjectId);
+        const lessonTitle = (lessonId: string | null) => {
+          for (const u of subject?.s.units ?? []) for (const l of u.lessons) if (l.id === lessonId) return l.title;
+          return '';
+        };
+        a.questions = questions.map((q, i) => ({
+          id: q.id ?? newId('q'),
+          questionNumber: i + 1,
+          text: q.text.trim() || `السؤال ${i + 1}`,
+          type: q.type,
+          maxScore: q.maxScore,
+          lesson: lessonTitle(q.lessonId),
+          lessonId: q.lessonId,
+          modelAnswer: q.modelAnswer,
+          criteria: q.criteria.filter((c) => c.description.trim()),
+        }));
+        a.questionsCount = a.questions.length;
+      }
+      return wait(undefined);
+    },
     async deleteAssessment(id) {
       s().assessments = s().assessments.filter((a) => a.id !== id);
       return wait(undefined);
