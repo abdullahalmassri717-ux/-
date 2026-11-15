@@ -1,5 +1,5 @@
 import { MessageCircle } from 'lucide-react';
-import { usePublicSetting } from '../lib/settings';
+import { useCodeChannel, usePublicSetting } from '../lib/settings';
 
 /**
  * "Open WhatsApp and ask for the code": the person sends «رمز» to the platform's
@@ -8,8 +8,10 @@ import { usePublicSetting } from '../lib/settings';
  */
 export default function WhatsAppCodeButton() {
   const setting = usePublicSetting<{ number?: string }>('whatsapp_login', {});
+  const channel = useCodeChannel();
   const number = String(setting?.number ?? '').replace(/\D/g, '');
-  if (!number) return null;
+  // When codes go by SMS the WhatsApp request button is not needed.
+  if (!number || channel === 'sms') return null;
   return (
     <div className="space-y-1.5">
       <a

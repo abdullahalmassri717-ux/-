@@ -1,8 +1,9 @@
 // Supabase "Send SMS" auth hook: Supabase makes the 6-digit login code and
-// calls this function to deliver it. We deliver it on WhatsApp only (owner's
-// rule: no SMS), through Twilio. Supabase still checks the code itself.
+// calls this function to deliver it. Supabase still checks the code itself.
 //
 // How it reaches the person:
+//   0. When SMS is connected (TweetSMS secrets, see ../_shared/sms.ts) it goes by
+//      text message right away. This is the main way while WhatsApp is not ready.
 //   1. The code is kept for 10 minutes in whatsapp_login_codes. The login screen
 //      shows "open WhatsApp and ask for the code": the person sends «رمز» to the
 //      platform number and whatsapp-inbound replies with the code. No Meta
@@ -19,6 +20,7 @@
 
 import { adminClient } from '../_shared/http.ts';
 import { CODE_MINUTES, codeText } from '../_shared/login-code.ts';
+import { sendSms, smsReady } from '../_shared/sms.ts';
 
 function b64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const raw = atob(b64);
@@ -83,6 +85,16 @@ Deno.serve(async (req) => {
   if (saveError) {
     console.error('Could not keep the login code', saveError.message);
     return hookError('Could not prepare the WhatsApp code');
+  }
+
+  // Text message (SMS) first, when it is connected.
+  if (smsReady()) {
+    const smsError = await sendSms(phone, codeText(otp));
+    if (!smsError) return ok();
+    console.error('Login code SMS failed', smsError);
+    // Fall through to WhatsApp; if that is not possible either, tell the login screen.
+    const hasWhatsApp = Deno.env.get('TWILIO_ACCOUNT_SID') && Deno.env.get('TWILIO_WHATSAPP_FROM');
+    if (!hasWhatsApp) return hookError('تعذّر إرسال رمز الدخول برسالة نصية. حاول بعد قليل.');
   }
 
   const sid = Deno.env.get('TWILIO_ACCOUNT_SID');

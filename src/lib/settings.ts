@@ -42,3 +42,19 @@ export function usePublicSetting<T>(key: string, demoFallback: T): T {
   }, [key]);
   return value;
 }
+
+/**
+ * How login codes reach people right now: 'sms' when the platform admin turned on
+ * text-message codes (platform_settings.login_sms = { enabled: true }), else 'whatsapp'.
+ */
+export function useCodeChannel(): 'sms' | 'whatsapp' {
+  const setting = usePublicSetting<{ enabled?: boolean }>('login_sms', {});
+  return setting?.enabled ? 'sms' : 'whatsapp';
+}
+
+/** Words for the code channel, e.g. «على واتساب» or «برسالة نصية (SMS)». */
+export function codeChannelWords(channel: 'sms' | 'whatsapp') {
+  return channel === 'sms'
+    ? { by: 'برسالة نصية (SMS)', phoneLabel: 'رقم الجوال' }
+    : { by: 'على واتساب', phoneLabel: 'رقم الواتساب' };
+}

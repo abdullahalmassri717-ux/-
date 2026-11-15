@@ -11,8 +11,13 @@
 //   WHATSAPP_PHONE_NUMBER_ID  the sender number id
 //   WHATSAPP_REPORT_TEMPLATE  approved template name with ONE body variable {{1}}
 //   WHATSAPP_TEMPLATE_LANG    template language code (default "ar")
-// Without either set the reports stay "queued".
+// 3. When WhatsApp is not ready but SMS is (../_shared/sms.ts), each parent gets a
+//    short text message with a link to the full report page (dequa.study/r/<code>).
+// Without any of them the reports stay "queued".
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { sendSms, smsReady } from './sms.ts';
+
+const SITE_URL = (Deno.env.get('SITE_URL') ?? 'https://dequa.study').replace(/\/+$/, '');
 
 const GRAPH = 'https://graph.facebook.com/v21.0';
 
@@ -29,6 +34,18 @@ function metaReady(): boolean {
 
 export function whatsappReady(): boolean {
   return twilioReady() || metaReady();
+}
+
+/** True when reports can go out by WhatsApp or by SMS. */
+export function messagingReady(): boolean {
+  return whatsappReady() || smsReady();
+}
+
+/** The short SMS: the student's first name and the report link (fits one Arabic SMS). */
+export function reportSmsText(fullName: string, shareCode: string): string {
+  const first = String(fullName ?? '').trim().split(/\s+/)[0] ?? '';
+  const link = `${SITE_URL}/r/${shareCode}`;
+  return first ? `تقرير ${first} الأسبوعي من دقة:\n${link}` : `تقرير دقة الأسبوعي:\n${link}`;
 }
 
 function waNumber(phone: string): string {
@@ -88,19 +105,30 @@ export function templateText(body: string): string {
 
 /** Sends the given queued reports with the admin client and records the result on each row. */
 export async function sendQueuedReports(admin: SupabaseClient, ids: string[]): Promise<number> {
-  if (!whatsappReady() || !ids.length) return 0;
+  if (!messagingReady() || !ids.length) return 0;
+  const bySms = !whatsappReady();
   const send = twilioReady() ? sendTwilio : sendMeta;
 
   let sent = 0;
   for (let i = 0; i < ids.length; i += 200) {
     const { data: reports } = await admin
       .from('reports')
-      .select('id, recipient_phone, body, status')
+      .select('id, recipient_phone, body, status, share_code, student_id')
       .in('id', ids.slice(i, i + 200))
       .eq('status', 'queued');
+    const names = new Map<string, string>();
+    if (bySms && reports?.length) {
+      const { data: students } = await admin
+        .from('students')
+        .select('id, full_name')
+        .in('id', [...new Set(reports.map((r) => String(r.student_id)))]);
+      for (const st of students ?? []) names.set(String(st.id), String(st.full_name ?? ''));
+    }
     for (const r of reports ?? []) {
       if (!r.recipient_phone) continue;
-      const error = await send(String(r.recipient_phone), templateText(String(r.body ?? '')));
+      const error = bySms
+        ? await sendSms(String(r.recipient_phone), reportSmsText(names.get(String(r.student_id)) ?? '', String(r.share_code)))
+        : await send(String(r.recipient_phone), templateText(String(r.body ?? '')));
       if (!error) {
         sent++;
         await admin.from('reports').update({ status: 'sent', sent_at: new Date().toISOString(), error: null }).eq('id', r.id);
