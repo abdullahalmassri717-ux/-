@@ -4,6 +4,7 @@ import { useAuth } from '../../lib/auth';
 import { toInternationalPhone } from '../../lib/phone';
 import { EntityType } from '../../types';
 import WhatsAppCodeButton from '../WhatsAppCodeButton';
+import { codeChannelWords, useCodeChannel } from '../../lib/settings';
 
 // Last step of sign-up when a real Supabase project is connected:
 // 1) send a 6-digit code to the WhatsApp number, 2) check it, 3) create the
@@ -28,6 +29,7 @@ interface Props {
 export const FinishSignupWithWhatsApp: React.FC<Props> = ({ phone, fullName, orgName, kind, region, invites, buttonLabel, onBack, onCreated }) => {
   const auth = useAuth();
   const signedIn = auth.status === 'signed_in';
+  const words = codeChannelWords(useCodeChannel());
   const [codeSent, setCodeSent] = useState(false);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -86,7 +88,7 @@ export const FinishSignupWithWhatsApp: React.FC<Props> = ({ phone, fullName, org
     e.preventDefault();
     setError(null);
     if (code.length !== CODE_LENGTH) {
-      setError(`اكتب الرمز المكوّن من ${CODE_LENGTH} أرقام كما وصلك على واتساب.`);
+      setError(`اكتب الرمز المكوّن من ${CODE_LENGTH} أرقام كما وصلك ${words.by}.`);
       return;
     }
     setBusy(true);
@@ -109,7 +111,7 @@ export const FinishSignupWithWhatsApp: React.FC<Props> = ({ phone, fullName, org
           <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-950 flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-[#1E3A5F] shrink-0" />
             <span>
-              أرسلنا رمز التحقق على واتساب إلى{' '}
+              أرسلنا رمز التحقق {words.by} إلى{' '}
               <span dir="ltr" className="font-bold tabular-nums">{toInternationalPhone(phone)}</span>
             </span>
           </div>
@@ -171,7 +173,7 @@ export const FinishSignupWithWhatsApp: React.FC<Props> = ({ phone, fullName, org
             className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-5 sm:px-7 py-3 rounded-xl font-black text-sm flex items-center gap-2 cursor-pointer transition-all shadow-md active:scale-95"
           >
             <Sparkles className="w-4 h-4 shrink-0" />
-            <span>{busy ? 'لحظة...' : signedIn ? buttonLabel : 'أرسل رمز التحقق على واتساب'}</span>
+            <span>{busy ? 'لحظة...' : signedIn ? buttonLabel : `أرسل رمز التحقق ${words.by}`}</span>
           </button>
         </div>
       )}

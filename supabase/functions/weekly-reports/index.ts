@@ -8,7 +8,7 @@
 //    WhatsApp Business is connected (secrets in ../_shared/whatsapp.ts).
 //    Otherwise they stay queued and teachers can still send them by hand.
 import { adminClient, json } from '../_shared/http.ts';
-import { sendQueuedReports, whatsappReady } from '../_shared/whatsapp.ts';
+import { messagingReady, sendQueuedReports } from '../_shared/whatsapp.ts';
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
   const { data: queued, error: qErr } = await admin.rpc('queue_weekly_reports');
   if (qErr) console.error('queue_weekly_reports', qErr.message);
 
-  if (!whatsappReady()) return json({ prepared: queued ?? 0, sent: 0, note: 'WhatsApp is not connected yet.' });
+  if (!messagingReady()) return json({ prepared: queued ?? 0, sent: 0, note: 'WhatsApp and SMS are not connected yet.' });
 
   const since = new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   const ids: string[] = [];

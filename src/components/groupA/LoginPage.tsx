@@ -4,6 +4,7 @@ import { toInternationalPhone } from '../../lib/phone';
 import { ScreenId, UserRole } from '../../types';
 import { ArrowRight, MessageCircle, ShieldCheck, Check, Sparkles, Phone, RotateCcw } from 'lucide-react';
 import WhatsAppCodeButton from '../WhatsAppCodeButton';
+import { codeChannelWords, useCodeChannel } from '../../lib/settings';
 
 interface LoginPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -68,6 +69,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
     return () => clearTimeout(timer);
   }, [resendIn]);
   const [step, setStep] = useState<'phone' | 'code'>('phone');
+  const words = codeChannelWords(useCodeChannel());
   const [code, setCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState<string | null>(null);
@@ -113,7 +115,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
     e.preventDefault();
     setError(null);
     if (code.length !== CODE_LENGTH) {
-      setError(`اكتب الرمز المكوّن من ${CODE_LENGTH} أرقام كما وصلك على واتساب.`);
+      setError(`اكتب الرمز المكوّن من ${CODE_LENGTH} أرقام كما وصلك ${words.by}.`);
       return;
     }
     if (isReal) {
@@ -153,8 +155,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
           <h1 className="text-xl sm:text-2xl font-black text-[#1E3A5F]">تسجيل الدخول إلى دِقّـة</h1>
           <p className="text-xs text-slate-500">
             {step === 'phone'
-              ? 'ادخل برقم واتساب، وسيصلك رمز تحقق. لا حاجة لكلمة مرور.'
-              : 'أرسلنا رمز التحقق إلى واتساب. اكتبه هنا.'}
+              ? `ادخل برقمك، وسيصلك رمز تحقق ${words.by}. لا حاجة لكلمة مرور.`
+              : `أرسلنا رمز التحقق ${words.by}. اكتبه هنا.`}
           </p>
         </div>
 
@@ -204,7 +206,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
         {step === 'phone' ? (
           <form onSubmit={sendCode} className="space-y-4 text-xs">
             <label className="block">
-              <span className="block text-slate-700 font-bold mb-1.5">رقم الواتساب</span>
+              <span className="block text-slate-700 font-bold mb-1.5">{words.phoneLabel}</span>
               <div className="relative">
                 <input
                   type="tel"
@@ -231,7 +233,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
               ) : (
                 <>
                   <MessageCircle className="w-4 h-4" />
-                  <span>أرسل رمز التحقق على واتساب</span>
+                  <span>أرسل رمز التحقق {words.by}</span>
                 </>
               )}
             </button>
