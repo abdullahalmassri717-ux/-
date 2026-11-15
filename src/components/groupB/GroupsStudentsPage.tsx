@@ -26,7 +26,7 @@ import {
   X
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
-import { setSelected } from '../../data/selection';
+import { getSelected, setSelected } from '../../data/selection';
 import { rowsFromFile } from '../../data/curriculumImport';
 import { classesIn, gradeNumber, parseStudentTable, textToRows } from '../../lib/studentImport';
 
@@ -57,7 +57,11 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   const canCreateGroups = !isSchool || org.role === 'owner';
   const NO_GROUP_MSG = 'المجموعات في المدرسة تنشئها الإدارة وتسندها للمعلمين. اطلب من إدارة المدرسة إضافة المجموعة لك.';
   const openNewGroup = () => (canCreateGroups ? setShowAddGroupModal(true) : notify(NO_GROUP_MSG, 'info'));
-  const [selectedGroup, setSelectedGroup] = useState<string>('all');
+  // Opened from a class's «الطلاب» button: start on that class.
+  const [selectedGroup, setSelectedGroup] = useState<string>(() => getSelected('openGroup') ?? 'all');
+  useEffect(() => {
+    setSelected('openGroup', null);
+  }, []);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showExcelModal, setShowExcelModal] = useState(false);

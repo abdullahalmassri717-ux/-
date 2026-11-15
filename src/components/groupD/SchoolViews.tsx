@@ -16,8 +16,13 @@ import {
   Loader2,
   UserPlus,
   X,
+  PauseCircle,
+  Trash2,
+  RotateCcw,
+  Users,
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
+import { setSelected } from '../../data/selection';
 
 type Nav = { onNavigate: (screen: ScreenId) => void };
 
@@ -207,8 +212,75 @@ export const TeachersClassesPage: React.FC<Nav> = ({ onNavigate }) => {
   const [invite, setInvite] = useState({ name: '', phone: '' });
   const [assignFor, setAssignFor] = useState<TeacherStat | null>(null);
   const [busy, setBusy] = useState(false);
+  // Pick many classes, then pause or delete them together.
+  const [picked, setPicked] = useState<string[]>([]);
+  const [pausedPicked, setPausedPicked] = useState<string[]>([]);
+  const [confirm, setConfirm] = useState<{ kind: 'pause' | 'delete'; ids: string[] } | null>(null);
+  const [alsoStudents, setAlsoStudents] = useState(false);
+  const pausedQ = useLoad((st) => st.listArchivedGroups());
+  const studentsQ = useLoad((st) => st.listStudents());
 
   if (loading || error || !data || !stats) return <Loading error={error} />;
+  const paused = pausedQ.data ?? [];
+  const toggleIn = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
+  const allNames = new Map([...data.groups.map((g) => [g.id, g.name] as const), ...paused.map((g) => [g.id, g.name] as const)]);
+  // A class without a subject takes its «class – subject» groups with it.
+  const withSubjects = (ids: string[]) => {
+    const out = new Set(ids);
+    for (const id of ids) {
+      const name = allNames.get(id);
+      if (!name) continue;
+      for (const [gid, gname] of allNames) if (gname.startsWith(`${name} – `)) out.add(gid);
+    }
+    return [...out];
+  };
+  // Students that are only in the classes being deleted (they would be left in no class).
+  const orphansOf = (ids: string[]) =>
+    (studentsQ.data ?? []).filter((st) => st.groupIds.length > 0 && st.groupIds.every((g) => ids.includes(g)));
+  const reloadClasses = () => {
+    reload();
+    pausedQ.reload();
+    studentsQ.reload();
+  };
+  const doConfirm = async () => {
+    if (!confirm) return;
+    const ids = withSubjects(confirm.ids);
+    const n = confirm.ids.length;
+    setBusy(true);
+    try {
+      if (confirm.kind === 'pause') {
+        await store.archiveGroups(ids);
+        notify(`تم إيقاف ${n === 1 ? allNames.get(confirm.ids[0]) : `${n} صف`}. تجدها في «الصفوف الموقوفة».`, 'success');
+      } else {
+        const studentIds = alsoStudents ? orphansOf(ids).map((st) => st.id) : [];
+        await store.deleteGroups(ids);
+        if (studentIds.length) await store.deleteStudents(studentIds);
+        notify(`تم حذف ${n === 1 ? allNames.get(confirm.ids[0]) : `${n} صف`} نهائياً${studentIds.length ? ` مع ${studentIds.length} طالب` : ''}`, 'success');
+      }
+      setConfirm(null);
+      setPicked([]);
+      setPausedPicked([]);
+    } catch (e) {
+      notify(errorMessage(e, 'تعذّر الحفظ.'));
+    } finally {
+      setBusy(false);
+      reloadClasses();
+    }
+  };
+  const restore = async (ids: string[]) => {
+    setBusy(true);
+    try {
+      await store.restoreGroups(withSubjects(ids));
+      notify(ids.length === 1 ? `رجع ${allNames.get(ids[0])} يعمل من جديد` : `رجع ${ids.length} صف يعمل من جديد`, 'success');
+      setPausedPicked([]);
+    } catch (e) {
+      notify(errorMessage(e, 'تعذّر الحفظ.'));
+    } finally {
+      setBusy(false);
+      reloadClasses();
+    }
+  };
+  const canDelete = org.role === 'owner';
   const teachers = stats.teachers;
   // A class without a subject has no teacher of its own: its teachers are those of its
   // «class – subject» groups.
@@ -267,7 +339,7 @@ export const TeachersClassesPage: React.FC<Nav> = ({ onNavigate }) => {
             className="bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1.5 self-start"
           >
             <FileSpreadsheet className="w-4 h-4" />
-            <span>إضافة صفوف واستيراد طلاب</span>
+            <span>الطلاب: إضافة واستيراد وكشف الأسماء</span>
           </button>
         )}
       </div>
@@ -379,13 +451,48 @@ export const TeachersClassesPage: React.FC<Nav> = ({ onNavigate }) => {
           </table>
         </div>
       ) : (
+        <div className="space-y-4">
+        {stats.classes.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <label className="inline-flex items-center gap-2 font-bold text-slate-700 cursor-pointer bg-white border border-slate-200 rounded-lg px-3 py-2">
+              <input
+                type="checkbox"
+                className="w-4 h-4 accent-[#1E3A5F]"
+                checked={stats.classes.every((c) => picked.includes(c.group.id))}
+                onChange={(e) => setPicked(e.target.checked ? stats.classes.map((c) => c.group.id) : [])}
+              />
+              تحديد الكل ({stats.classes.length})
+            </label>
+            <span className="text-slate-600 font-semibold">تم تحديد {picked.length}</span>
+            <button
+              disabled={!picked.length || busy}
+              onClick={() => setConfirm({ kind: 'pause', ids: picked })}
+              className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <PauseCircle className="w-4 h-4" /> إيقاف
+            </button>
+            {canDelete && (
+              <button
+                disabled={!picked.length || busy}
+                onClick={() => {
+                  setAlsoStudents(false);
+                  setConfirm({ kind: 'delete', ids: picked });
+                }}
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Trash2 className="w-4 h-4" /> حذف
+              </button>
+            )}
+          </div>
+        )}
         <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-x-auto">
           {!stats.classes.length ? (
-            <p className="p-6 text-xs text-slate-500">لا توجد صفوف بعد.</p>
+            <p className="p-6 text-xs text-slate-500">لا توجد صفوف شغّالة.</p>
           ) : (
-            <table className="w-full text-right text-xs min-w-[640px]">
+            <table className="w-full text-right text-xs min-w-[680px]">
               <thead className="bg-[#F7F8FA] text-slate-700 font-bold border-b border-slate-200">
                 <tr>
+                  <th className="p-3.5 w-10"><span className="sr-only">تحديد</span></th>
                   <th className="p-3.5">الصف/الشعبة</th>
                   <th className="p-3.5">المادة</th>
                   <th className="p-3.5 text-center">الطلاب</th>
@@ -396,8 +503,33 @@ export const TeachersClassesPage: React.FC<Nav> = ({ onNavigate }) => {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {stats.classes.map((c) => (
-                  <tr key={c.group.id} className="hover:bg-slate-50">
-                    <td className="p-3.5 font-bold text-slate-900">{c.group.name}</td>
+                  <tr
+                    key={c.group.id}
+                    onClick={() => setPicked((prev) => toggleIn(prev, c.group.id))}
+                    className={`cursor-pointer ${picked.includes(c.group.id) ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
+                  >
+                    <td className="p-3.5">
+                      <input
+                        type="checkbox"
+                        aria-label={`تحديد ${c.group.name}`}
+                        className="w-4 h-4 accent-[#1E3A5F] pointer-events-none"
+                        checked={picked.includes(c.group.id)}
+                        readOnly
+                      />
+                    </td>
+                    <td className="p-3.5 font-bold text-slate-900">
+                      <span className="block">{c.group.name}</span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelected('openGroup', c.group.id);
+                          onNavigate('B2');
+                        }}
+                        className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:underline cursor-pointer"
+                      >
+                        <Users className="w-3.5 h-3.5" /> كشف الطلاب
+                      </button>
+                    </td>
                     <td className="p-3.5 text-slate-600">{c.group.subjectName || '—'}</td>
                     <td className="p-3.5 text-center font-mono tabular-nums">{c.group.studentCount}</td>
                     <td className="p-3.5 text-slate-700">{classTeachers(c)}</td>
@@ -409,7 +541,115 @@ export const TeachersClassesPage: React.FC<Nav> = ({ onNavigate }) => {
             </table>
           )}
         </div>
+
+        {paused.length > 0 && (
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            <div className="p-3.5 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 text-xs">
+              <p className="font-bold text-slate-700 flex items-center gap-1.5">
+                <PauseCircle className="w-4 h-4 text-amber-600" /> الصفوف الموقوفة ({paused.length})
+              </p>
+              <label className="inline-flex items-center gap-1.5 font-semibold text-slate-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 accent-[#1E3A5F]"
+                  checked={paused.every((g) => pausedPicked.includes(g.id))}
+                  onChange={(e) => setPausedPicked(e.target.checked ? paused.map((g) => g.id) : [])}
+                />
+                تحديد الكل
+              </label>
+            </div>
+            {pausedPicked.length > 0 && (
+              <div className="p-2.5 bg-slate-50 border-b border-slate-100 flex flex-wrap items-center gap-2 text-xs">
+                <span className="font-bold text-slate-700">{pausedPicked.length} محدد</span>
+                <button
+                  disabled={busy}
+                  onClick={() => restore(pausedPicked)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold cursor-pointer disabled:opacity-60"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> تفعيل المحدد
+                </button>
+                {canDelete && (
+                  <button
+                    onClick={() => {
+                      setAlsoStudents(false);
+                      setConfirm({ kind: 'delete', ids: pausedPicked });
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 font-bold cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> حذف المحدد
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="divide-y divide-slate-100">
+              {paused.map((g) => (
+                <div key={g.id} className="p-3 flex items-center justify-between gap-2 text-xs">
+                  <label className="flex items-center gap-2 min-w-0 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      aria-label={`تحديد ${g.name}`}
+                      className="w-4 h-4 shrink-0 accent-[#1E3A5F]"
+                      checked={pausedPicked.includes(g.id)}
+                      onChange={() => setPausedPicked((prev) => toggleIn(prev, g.id))}
+                    />
+                    <span className="font-bold text-slate-700 truncate">{g.name}</span>
+                  </label>
+                  <button
+                    disabled={busy}
+                    onClick={() => restore([g.id])}
+                    className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold cursor-pointer disabled:opacity-60"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" /> تفعيل
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        </div>
       )}
+
+      {confirm && (() => {
+        const ids = withSubjects(confirm.ids);
+        const extra = ids.length - confirm.ids.length;
+        const orphans = confirm.kind === 'delete' ? orphansOf(ids) : [];
+        const label = confirm.ids.length === 1 ? allNames.get(confirm.ids[0]) : `${confirm.ids.length} صف`;
+        const del = confirm.kind === 'delete';
+        return (
+          <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-right space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+              <h3 className={`font-bold text-base ${del ? 'text-red-700' : 'text-amber-800'}`}>{del ? `حذف ${label} نهائياً؟` : `إيقاف ${label}؟`}</h3>
+              {confirm.ids.length > 1 && (
+                <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg p-2 leading-relaxed">{confirm.ids.map((id) => allNames.get(id)).join('، ')}</p>
+              )}
+              {extra > 0 && <p className="text-[11px] text-slate-600">ومعها {extra} من المواد التابعة لهذه الصفوف.</p>}
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {del
+                  ? 'ستُحذف مع كل امتحاناتها وأوراقها ودرجاتها، ولا يمكن التراجع. الطلاب أنفسهم يبقون محفوظين. إذا بدك ترجعها لاحقاً فالأفضل «إيقافها» بدل الحذف.'
+                  : 'تختفي من القوائم، وطلابها لا يُحسبون في الاشتراك (إلا إذا كانوا في صف ثاني شغّال). الطلاب والدرجات والامتحانات محفوظة، وترجعها متى بدك من «الصفوف الموقوفة».'}
+              </p>
+              {del && orphans.length > 0 && (
+                <label className="flex items-start gap-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 cursor-pointer">
+                  <input type="checkbox" className="w-4 h-4 mt-0.5 shrink-0 accent-red-600" checked={alsoStudents} onChange={(e) => setAlsoStudents(e.target.checked)} />
+                  <span>واحذف كمان طلابها ({orphans.length} طالب) نهائياً. فقط الطلاب اللي مش موجودين بأي صف ثاني.</span>
+                </label>
+              )}
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  disabled={busy}
+                  onClick={doConfirm}
+                  className={`flex-1 text-white py-2 rounded-lg font-bold text-xs cursor-pointer disabled:opacity-60 ${del ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'}`}
+                >
+                  {busy ? 'لحظة...' : del ? 'نعم، احذف نهائياً' : 'نعم، أوقف'}
+                </button>
+                <button onClick={() => setConfirm(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-4 rounded-lg font-medium text-xs cursor-pointer">
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {inviteOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">

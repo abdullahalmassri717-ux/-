@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { deflateSync } from 'node:zlib';
-import { open, pathname, toast, watchErrors } from './helpers';
+import { expectNoHorizontalScroll, open, pathname, toast, watchErrors } from './helpers';
 
 // The main jobs people do on the platform, from start to end, in demo mode.
 
@@ -234,6 +234,45 @@ test.describe('school owner', () => {
     await page.getByPlaceholder(/059/).first().fill('0599111222');
     await page.getByRole('button', { name: /إرسال الدعوة|دعوة|حفظ/ }).last().click();
     expect(pathname(page)).toBe('/school/teachers');
+    expect(errors).toEqual([]);
+  });
+
+  test('pauses, turns back on and deletes several classes', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/school/teachers');
+    await page.getByRole('button', { name: /^الصفوف \(/ }).click();
+    const total = Number((await page.getByText(/^تحديد الكل \(\d+\)$/).innerText()).match(/\d+/)![0]);
+    await page.getByRole('checkbox', { name: /^تحديد (?!الكل)/ }).nth(0).click({ force: true });
+    await page.getByRole('checkbox', { name: /^تحديد (?!الكل)/ }).nth(1).click({ force: true });
+    await expect(page.getByText('تم تحديد 2')).toBeVisible();
+    await page.getByRole('button', { name: 'إيقاف', exact: true }).click();
+    await page.getByRole('button', { name: 'نعم، أوقف' }).click();
+    await expect(page.getByText(/تم إيقاف/).first()).toBeVisible();
+    await expect(page.getByText('الصفوف الموقوفة (2)')).toBeVisible();
+    await expect(page.getByRole('button', { name: `الصفوف (${total - 2})` })).toBeVisible();
+    await expectNoHorizontalScroll(page);
+
+    await page.getByRole('checkbox', { name: /^تحديد (?!الكل)/ }).last().check();
+    await page.getByRole('button', { name: 'تفعيل المحدد' }).click();
+    await expect(page.getByText('الصفوف الموقوفة (1)')).toBeVisible();
+
+    await page.getByText('تحديد الكل', { exact: true }).click();
+    await page.getByRole('button', { name: 'حذف المحدد' }).click();
+    await page.getByRole('button', { name: 'نعم، احذف نهائياً' }).click();
+    await expect(page.getByText(/الصفوف الموقوفة/)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: `الصفوف (${total - 1})` })).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
+  test('opens the student list of a class', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/school/teachers');
+    await page.getByRole('button', { name: /^الصفوف \(/ }).click();
+    const name = (await page.locator('tbody tr td:nth-child(2) span').first().innerText()).trim();
+    await page.getByRole('button', { name: 'كشف الطلاب' }).first().click();
+    await expect(page).toHaveURL(/\/school\/classes$/);
+    // That class's tab is the one picked.
+    await expect(page.getByRole('button', { name: new RegExp(`^${name.split('(')[0].trim()}`) }).first()).toHaveClass(/bg-\[#1E3A5F\]/);
     expect(errors).toEqual([]);
   });
 });
