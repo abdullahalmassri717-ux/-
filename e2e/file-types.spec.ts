@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
-import { open, toast, watchErrors } from './helpers';
+import { expectNoHorizontalScroll, open, toast, watchErrors } from './helpers';
 
 // PDF papers and Excel student lists are accepted, not only photos and CSV.
 const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
@@ -97,10 +97,34 @@ test('a school imports students by class, then gives a teacher a class and subje
     dispatchEvent(new PopStateEvent('popstate'));
   });
   await page.getByRole('button', { name: 'الصفوف', exact: true }).first().click();
-  await page.locator('select').filter({ hasText: 'اختر الصف' }).selectOption({ label: 'المرحلة الثالثة – الصف السادس (1 طالب)' });
+  await page.locator('label', { hasText: /^المرحلة الثالثة – الصف السادس\s*\(1 طالب\)$/ }).locator('input').check();
   await page.locator('select').filter({ hasText: 'اختر المادة' }).selectOption({ index: 1 });
   await page.getByRole('button', { name: 'أسند', exact: true }).click();
   await expect(toast(page, /أسندنا «المرحلة الثالثة – الصف السادس – /)).toBeVisible();
   await expect(page.locator('label', { hasText: 'المرحلة الثالثة – الصف السادس – ' }).locator('input')).toBeChecked();
+  expect(errors).toEqual([]);
+});
+
+test('a school gives a teacher several classes with one subject in one press', async ({ page }) => {
+  const errors = watchErrors(page);
+  await open(page, '/school/classes');
+  await page.getByRole('button', { name: 'استيراد من Excel' }).click();
+  await page.locator('input[type=file][accept*=".xlsx"]').setInputFiles(fixture('students-two-sections.xlsx'));
+  await page.getByRole('button', { name: 'أنشئ المجموعات واستورد 2 طالب' }).click();
+  await expect(toast(page, /أنشأنا 2 مجموعة/)).toBeVisible();
+  await page.evaluate(() => {
+    history.pushState({}, '', '/school/teachers');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await page.getByRole('button', { name: 'الصفوف', exact: true }).first().click();
+  // Two sections of the same grade, ticked together.
+  await page.locator('label', { hasText: /^شعبة 1/ }).locator('input').check();
+  await page.locator('label', { hasText: /^شعبة 2/ }).locator('input').check();
+  await page.locator('select').filter({ hasText: 'اختر المادة' }).selectOption({ index: 1 });
+  await expectNoHorizontalScroll(page);
+  await page.getByRole('button', { name: 'أسند 2 صفوف' }).click();
+  await expect(toast(page, /أسندنا 2 صفوف/)).toBeVisible();
+  await expect(page.locator('label', { hasText: /^شعبة 1 – الصف السادس – / }).locator('input')).toBeChecked();
+  await expect(page.locator('label', { hasText: /^شعبة 2 – الصف السادس – / }).locator('input')).toBeChecked();
   expect(errors).toEqual([]);
 });

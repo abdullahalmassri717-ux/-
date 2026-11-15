@@ -699,19 +699,24 @@ export const TeachersClassesPage: React.FC<Nav> = ({ onNavigate }) => {
           teacher={assignFor}
           onClose={() => setAssignFor(null)}
           onToggle={(groupId, on) => run(() => store.setGroupTeacher(groupId, assignFor.userId, on))}
-          onAssignSubject={(classGroup, subject) =>
+          onAssignSubject={(pairs) =>
             run(async () => {
-              // A class imported without a subject: make (or reuse) the class + subject group,
-              // put the class's students in it, and give it to the teacher.
-              const name = `${classGroup.name} – ${subject.name}`;
-              const existing = data.groups.find((g) => g.name === name);
-              const id = existing?.id ?? (await store.createGroup({ name, gradeId: classGroup.gradeId || null, subjectId: subject.id, schedule: '', classGroupId: classGroup.id })).id;
-              // Older groups made before the link existed: link them so new students follow.
-              if (existing) await store.updateGroup(id, { classGroupId: classGroup.id });
-              const ids = (await store.listStudents()).filter((st) => st.groupIds.includes(classGroup.id)).map((st) => st.id);
-              if (ids.length) await store.addStudentsToGroup(id, ids);
-              await store.setGroupTeacher(id, assignFor.userId, true);
-            }, `أسندنا «${classGroup.name} – ${subject.name}» إلى ${assignFor.name}`)
+              // Classes imported without a subject: for each one make (or reuse) the class + subject
+              // group, put the class's students in it, and give it to the teacher.
+              const all = await store.listStudents();
+              for (const { classGroup, subject } of pairs) {
+                const name = `${classGroup.name} – ${subject.name}`;
+                const existing = data.groups.find((g) => g.name === name);
+                const id = existing?.id ?? (await store.createGroup({ name, gradeId: classGroup.gradeId || null, subjectId: subject.id, schedule: '', classGroupId: classGroup.id })).id;
+                // Older groups made before the link existed: link them so new students follow.
+                if (existing) await store.updateGroup(id, { classGroupId: classGroup.id });
+                const ids = all.filter((st) => st.groupIds.includes(classGroup.id)).map((st) => st.id);
+                if (ids.length) await store.addStudentsToGroup(id, ids);
+                await store.setGroupTeacher(id, assignFor.userId, true);
+              }
+            }, pairs.length === 1
+              ? `أسندنا «${pairs[0].classGroup.name} – ${pairs[0].subject.name}» إلى ${assignFor.name}`
+              : `أسندنا ${pairs.length} صفوف (${pairs[0].subject.name}) إلى ${assignFor.name}`)
           }
         />
       )}
@@ -719,32 +724,48 @@ export const TeachersClassesPage: React.FC<Nav> = ({ onNavigate }) => {
   );
 };
 
+type ClassGroup = SchoolRaw['groups'][number];
+type SubjectRef = { id: string; name: string };
+
 const AssignGroupsModal: React.FC<{
   raw: SchoolRaw;
   teacher: TeacherStat;
   onClose: () => void;
   onToggle: (groupId: string, on: boolean) => Promise<void>;
-  onAssignSubject: (classGroup: SchoolRaw['groups'][number], subject: { id: string; name: string }) => Promise<void>;
+  onAssignSubject: (pairs: { classGroup: ClassGroup; subject: SubjectRef }[]) => Promise<void>;
 }> = ({ raw, teacher, onClose, onToggle, onAssignSubject }) => {
   const curriculaQ = useLoad((st) => st.listCurricula());
   // Classes imported without a subject (the school adds students first, then teachers).
   const plainClasses = raw.groups.filter((g) => !g.subjectName);
-  const [classId, setClassId] = useState('');
-  const [subjectId, setSubjectId] = useState('');
-  const cls = plainClasses.find((g) => g.id === classId);
+  const [classIds, setClassIds] = useState<string[]>([]);
+  const [subjectName, setSubjectName] = useState('');
+  const picked = plainClasses.filter((g) => classIds.includes(g.id));
+  // Published subjects of each picked class's grade.
+  const subjectsOf = useMemo(() => {
+    const grades = (curriculaQ.data ?? []).flatMap((c) => c.grades);
+    return (gradeId: string | null | undefined): SubjectRef[] =>
+      (grades.find((g) => g.id === gradeId)?.subjects ?? []).filter((s) => s.status === 'published');
+  }, [curriculaQ.data]);
+  // Only subjects every picked class has (matched by name, so sections of different grades still work).
   const subjects = useMemo(() => {
-    if (!cls) return [];
-    const grade = (curriculaQ.data ?? []).flatMap((c) => c.grades).find((g) => g.id === cls.gradeId);
-    return (grade?.subjects ?? []).filter((s) => s.status === 'published');
-  }, [cls, curriculaQ.data]);
-  const subject = subjects.find((s) => s.id === subjectId);
+    if (!picked.length) return [];
+    const [first, ...rest] = picked.map((g) => subjectsOf(g.gradeId));
+    return first.filter((s) => rest.every((list) => list.some((x) => x.name === s.name)));
+  }, [picked, subjectsOf]);
+  const toggleClass = (id: string) => {
+    setClassIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+    setSubjectName('');
+  };
+  const allPicked = plainClasses.length > 0 && classIds.length === plainClasses.length;
   const [saving, setSaving] = useState(false);
   const assign = async () => {
-    if (!cls || !subject) return notify('اختر الصف والمادة.');
+    if (!picked.length || !subjectName) return notify('اختر الصفوف والمادة.');
+    const pairs = picked.map((classGroup) => ({ classGroup, subject: subjectsOf(classGroup.gradeId).find((s) => s.name === subjectName)! }));
     setSaving(true);
-    await onAssignSubject(cls, subject);
+    await onAssignSubject(pairs);
     setSaving(false);
-    setSubjectId('');
+    setClassIds([]);
+    setSubjectName('');
   };
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
@@ -759,19 +780,37 @@ const AssignGroupsModal: React.FC<{
 
         {plainClasses.length > 0 && (
           <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-3 space-y-2 text-xs">
-            <p className="font-bold text-slate-800">أسند له صفاً ومادة</p>
-            <select value={classId} onChange={(e) => { setClassId(e.target.value); setSubjectId(''); }} className="w-full p-2 border border-slate-300 rounded-lg bg-white">
-              <option value="">اختر الصف…</option>
-              {plainClasses.map((g) => <option key={g.id} value={g.id}>{g.name} ({g.studentCount} طالب)</option>)}
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-bold text-slate-800">أسند له صفاً أو أكثر ومادة</p>
+              <button
+                type="button"
+                onClick={() => { setClassIds(allPicked ? [] : plainClasses.map((g) => g.id)); setSubjectName(''); }}
+                className="text-blue-700 font-bold shrink-0"
+              >
+                {allPicked ? 'إلغاء التحديد' : 'تحديد الكل'}
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500">١) علّم على الصفوف (تقدر تختار أكثر من صف):</p>
+            <div className="max-h-48 overflow-y-auto space-y-1.5 bg-white border border-slate-200 rounded-lg p-2">
+              {plainClasses.map((g) => (
+                <label key={g.id} className="flex items-center gap-2 p-1.5 rounded-md hover:bg-slate-50 cursor-pointer">
+                  <input type="checkbox" checked={classIds.includes(g.id)} onChange={() => toggleClass(g.id)} />
+                  <span className="font-bold">{g.name}</span>
+                  <span className="text-slate-500">({g.studentCount} طالب)</span>
+                </label>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-500">٢) اختر المادة:</p>
+            <select value={subjectName} disabled={!picked.length} onChange={(e) => setSubjectName(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg bg-white disabled:bg-slate-50">
+              <option value="">
+                {!picked.length ? 'اختر صفاً أولاً…' : !subjects.length ? (picked.length > 1 ? 'ما في مادة مشتركة بين الصفوف المختارة' : 'ما لقينا مواد لهذا الصف بالمنهاج') : 'اختر المادة…'}
+              </option>
+              {subjects.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
             </select>
-            <select value={subjectId} disabled={!cls} onChange={(e) => setSubjectId(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg bg-white disabled:bg-slate-50">
-              <option value="">{cls && !subjects.length ? 'ما لقينا مواد لهذا الصف بالمنهاج' : 'اختر المادة…'}</option>
-              {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-            <button onClick={assign} disabled={saving || !cls || !subject} className="w-full bg-[#1E3A5F] text-white py-2 rounded-lg font-bold disabled:opacity-50">
-              {saving ? 'جاري الإسناد…' : 'أسند'}
+            <button onClick={assign} disabled={saving || !picked.length || !subjectName} className="w-full bg-[#1E3A5F] text-white py-2 rounded-lg font-bold disabled:opacity-50">
+              {saving ? 'جاري الإسناد…' : picked.length > 1 ? `أسند ${picked.length} صفوف` : 'أسند'}
             </button>
-            <p className="text-[11px] text-slate-500 leading-relaxed">بننشئ «الصف – المادة» ونضيف له طلاب الصف نفسهم وبنفس رموزهم، وأي طالب تضيفه للصف بعدين بينضاف له تلقائياً.</p>
+            <p className="text-[11px] text-slate-500 leading-relaxed">بننشئ «الصف – المادة» لكل صف مختار ونضيف له طلاب الصف نفسهم وبنفس رموزهم، وأي طالب تضيفه للصف بعدين بينضاف له تلقائياً.</p>
           </div>
         )}
 
