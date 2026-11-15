@@ -71,6 +71,15 @@ const chunks = <T,>(list: T[], size = 100): T[][] => {
 
 const one = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? v[0] ?? null : v ?? null);
 
+// Total marks and question count of an exam, from its questions' max scores.
+// (The database view assessment_totals can't be embedded through the API, so the
+// questions are read directly under the same name.)
+type QuestionMax = { max_score: number | string | null };
+const qTotals = (qs: QuestionMax[] | QuestionMax | null | undefined) => {
+  const list = Array.isArray(qs) ? qs : qs ? [qs] : [];
+  return { total_score: list.reduce((n, q) => n + Number(q.max_score ?? 0), 0), questions_count: list.length };
+};
+
 type CurriculumRow = {
   id: string; name: string; country: string | null; currency_code: string | null; is_available: boolean;
   grades: {
@@ -166,7 +175,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
   async function scoresByStudent(): Promise<Map<string, { pct: number; trend: 'up' | 'down' | 'steady' }>> {
     const { data, error } = await db
       .from('submissions')
-      .select('id, student_id, submitted_at, status, assessments!inner(organization_id, assessment_totals(total_score))')
+      .select('id, student_id, submitted_at, status, assessments!inner(organization_id, assessment_totals:questions(max_score))')
       .eq('organization_id', orgId)
       .eq('status', 'approved')
       .order('submitted_at', { ascending: false });
@@ -176,9 +185,9 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     const { data: scores } = await db.from('submission_scores').select('submission_id, total_score').in('submission_id', ids);
     const scoreOf = new Map((scores ?? []).map((s) => [s.submission_id as string, Number(s.total_score)]));
     const perStudent = new Map<string, number[]>();
-    for (const r of data as unknown as { id: string; student_id: string | null; assessments: { assessment_totals: { total_score: number } | { total_score: number }[] } }[]) {
+    for (const r of data as unknown as { id: string; student_id: string | null; assessments: { assessment_totals: QuestionMax[] | null } }[]) {
       if (!r.student_id) continue;
-      const total = Number(one(r.assessments.assessment_totals)?.total_score ?? 0);
+      const total = Number(qTotals(r.assessments.assessment_totals)?.total_score ?? 0);
       if (!total) continue;
       const pct = Math.round(((scoreOf.get(r.id) ?? 0) / total) * 100);
       const list = perStudent.get(r.student_id) ?? [];
@@ -262,14 +271,14 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     auto_send_reports: boolean; group_id: string; subject_id: string | null; created_at: string;
     groups: { name: string; group_students: { left_at: string | null }[] } | null;
     subjects: { name: string } | null;
-    assessment_totals: { total_score: number; questions_count: number } | { total_score: number; questions_count: number }[] | null;
+    assessment_totals: QuestionMax[] | null;
     submissions: { id: string }[];
   };
   const ASSESSMENT_COLUMNS =
-    'id, title, kind, scheduled_on, status, submission_mode, submission_code, submission_open, auto_send_reports, group_id, subject_id, created_at, groups(name, group_students(left_at)), subjects(name), assessment_totals(total_score, questions_count), submissions(id)';
+    'id, title, kind, scheduled_on, status, submission_mode, submission_code, submission_open, auto_send_reports, group_id, subject_id, created_at, groups(name, group_students(left_at)), subjects(name), assessment_totals:questions(max_score), submissions(id)';
 
   function toAssessment(a: AssessmentDb): AssessmentRow {
-    const totals = one(a.assessment_totals);
+    const totals = qTotals(a.assessment_totals);
     const group = one(a.groups);
     return {
       id: a.id,
@@ -387,7 +396,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
         db.from('submissions').select('id').eq('organization_id', orgId).eq('status', 'needs_review'),
         db
           .from('submissions')
-          .select('id, approved_at, assessments(assessment_totals(total_score))')
+          .select('id, approved_at, assessments(assessment_totals:questions(max_score))')
           .eq('organization_id', orgId)
           .eq('status', 'approved')
           .gte('approved_at', twoMonthsAgo),
@@ -403,7 +412,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
 
       const reviewIds = (review.data ?? []).map((r) => r.id as string);
       let answersAwaitingReview = 0;
-      const recentRows = (recent.data ?? []) as unknown as { id: string; approved_at: string; assessments: { assessment_totals: { total_score: number } | { total_score: number }[] | null } | null }[];
+      const recentRows = (recent.data ?? []) as unknown as { id: string; approved_at: string; assessments: { assessment_totals: QuestionMax[] | null } | null }[];
       const scoreIds = [...reviewIds, ...recentRows.map((r) => r.id)];
       const { data: scores } = scoreIds.length
         ? await db.from('submission_scores').select('submission_id, total_score, low_confidence_unreviewed').in('submission_id', scoreIds)
@@ -414,7 +423,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
         recentRows
           .filter((r) => r.approved_at >= from && r.approved_at < to)
           .map((r) => {
-            const total = Number(one(one(r.assessments)?.assessment_totals)?.total_score ?? 0);
+            const total = Number(qTotals(one(r.assessments)?.assessment_totals)?.total_score ?? 0);
             return total ? (Number(scoreOf.get(r.id)?.total_score ?? 0) / total) * 100 : null;
           })
           .filter((x): x is number => x !== null);
@@ -715,20 +724,20 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     async getStudentHistory(id) {
       const { data, error } = await db
         .from('submissions')
-        .select('id, assessment_id, submitted_at, approved_at, assessments(title, scheduled_on, assessment_totals(total_score, questions_count)), question_grades(final_score, questions(max_score, lessons(id, title)))')
+        .select('id, assessment_id, submitted_at, approved_at, assessments(title, scheduled_on, assessment_totals:questions(max_score)), question_grades(final_score, questions(max_score, lessons(id, title)))')
         .eq('student_id', id)
         .eq('status', 'approved')
         .order('submitted_at', { ascending: false });
       if (error) fail(error, 'تعذّر تحميل سجل الطالب.');
       type Row = {
         id: string; assessment_id: string; submitted_at: string; approved_at: string | null;
-        assessments: { title: string; scheduled_on: string | null; assessment_totals: { total_score: number; questions_count: number } | { total_score: number; questions_count: number }[] | null } | null;
+        assessments: { title: string; scheduled_on: string | null; assessment_totals: QuestionMax[] | null } | null;
         question_grades: { final_score: number | null; questions: { max_score: number; lessons: { id: string; title: string } | null } | null }[];
       };
       const lessonTotals = new Map<string, { id: string; got: number; max: number }>();
       const papers = ((data ?? []) as unknown as Row[]).map((r) => {
         const a = one(r.assessments);
-        const totals = one(a?.assessment_totals);
+        const totals = qTotals(a?.assessment_totals);
         let score = 0;
         for (const g of r.question_grades ?? []) {
           score += Number(g.final_score ?? 0);
