@@ -23,6 +23,7 @@ import { GroupsStudentsPage } from './components/groupB/GroupsStudentsPage';
 import { getSelected, setSelected } from './data/selection';
 import { StudentProfilePage } from './components/groupB/StudentProfilePage';
 import { ExamsListPage } from './components/groupB/ExamsListPage';
+import { ExamQuestionsPage } from './components/groupB/ExamQuestionsPage';
 import { CreateExamPage } from './components/groupB/CreateExamPage';
 import { PrintAnswerSheetsPage } from './components/groupB/PrintAnswerSheetsPage';
 import { UploadPapersPage } from './components/groupB/UploadPapersPage';
@@ -310,6 +311,8 @@ export default function App() {
         return <ParentReportPage onNavigate={handleNavigate} />;
       case 'B11':
         return <SubscriptionPage onNavigate={handleNavigate} activeEntity={viewEntity} />;
+      case 'B13':
+        return <ExamQuestionsPage onNavigate={handleNavigate} />;
       case 'B12':
         return <CorrectedPaperViewPage onNavigate={handleNavigate} />;
       case 'B14':

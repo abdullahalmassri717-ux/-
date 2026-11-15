@@ -14,7 +14,8 @@ import {
   Calendar,
   Users,
   ChevronDown,
-  Camera
+  Camera,
+  ChevronLeft
 } from 'lucide-react';
 
 interface ExamsListPageProps {
@@ -167,7 +168,19 @@ export const ExamsListPage: React.FC<ExamsListPageProps> = ({ onNavigate }) => {
             key={exam.id}
             className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4 hover:border-blue-300 transition-colors flex flex-col justify-between"
           >
-            <div className="space-y-2">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => open(exam.id, 'B13')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  open(exam.id, 'B13');
+                }
+              }}
+              className="space-y-2 cursor-pointer"
+              title="عرض أسئلة الامتحان"
+            >
               <div className="flex items-center justify-between">
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                   exam.type === 'exam' ? 'bg-blue-100 text-[#1E3A5F]' : 'bg-purple-100 text-purple-800'
@@ -201,7 +214,13 @@ export const ExamsListPage: React.FC<ExamsListPageProps> = ({ onNavigate }) => {
                 )}
               </div>
 
-              <h3 className="font-extrabold text-slate-900 text-base">{exam.title}</h3>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-extrabold text-slate-900 text-base min-w-0 break-words">{exam.title}</h3>
+                <span className="text-[11px] text-[#1E3A5F] font-bold flex items-center gap-0.5 shrink-0">
+                  الأسئلة ({exam.questionsCount})
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </span>
+              </div>
 
               <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 pt-1">
                 <div className="flex items-center gap-1.5">

@@ -920,6 +920,48 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       if (error) fail(error, 'تعذّر حفظ التغييرات.');
     },
 
+    async saveAssessmentQuestions(id, input) {
+      const { data: existing, error: eError } = await db.from('questions').select('id').eq('assessment_id', id);
+      if (eError) fail(eError, 'تعذّر تحميل الأسئلة.');
+      const known = new Set((existing ?? []).map((r) => r.id as string));
+      const rows = input.map((q, idx) => ({
+        id: q.id && known.has(q.id) ? q.id : crypto.randomUUID(),
+        assessment_id: id,
+        number: idx + 1,
+        text: q.text.trim() || `السؤال ${idx + 1}`,
+        type: q.type,
+        max_score: q.maxScore,
+        model_answer: q.modelAnswer.trim() || null,
+        lesson_id: q.lessonId,
+      }));
+      const kept = new Set(rows.map((r) => r.id));
+      const removed = [...known].filter((x) => !kept.has(x));
+      if (removed.length) {
+        const { error } = await db.from('questions').delete().in('id', removed);
+        if (error) fail(error, 'تعذّر حذف الأسئلة المحذوفة.');
+      }
+      if (rows.length) {
+        // Question numbers are unique per exam: park them out of the way first so
+        // re-ordering never clashes, then write the final numbers.
+        const parked = await db.from('questions').upsert(rows.map((r) => ({ ...r, number: r.number + 10000 })));
+        if (parked.error) fail(parked.error, 'تعذّر حفظ الأسئلة.');
+        const { error } = await db.from('questions').upsert(rows);
+        if (error) fail(error, 'تعذّر حفظ الأسئلة.');
+        const ids = rows.map((r) => r.id);
+        const { error: dError } = await db.from('rubric_criteria').delete().in('question_id', ids);
+        if (dError) fail(dError, 'تعذّر حفظ معايير التصحيح.');
+        const criteria = input.flatMap((q, idx) =>
+          q.criteria
+            .filter((c) => c.description.trim())
+            .map((c, order) => ({ question_id: rows[idx].id, description: c.description.trim(), points: c.points, sort_order: order })),
+        );
+        if (criteria.length) {
+          const { error: cError } = await db.from('rubric_criteria').insert(criteria);
+          if (cError) fail(cError, 'تعذّر حفظ معايير التصحيح.');
+        }
+      }
+    },
+
     async deleteAssessment(id) {
       const { error } = await db.from('assessments').delete().eq('id', id);
       if (error) fail(error, 'تعذّر حذف الامتحان.');

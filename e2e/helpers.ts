@@ -4,7 +4,7 @@ import { expect, Page } from '@playwright/test';
 export const VISITOR_PATHS = ['/', '/pricing', '/register', '/login', '/s/demo'];
 export const TEACHER_PATHS = [
   '/app', '/app/groups', '/app/student', '/app/assignments', '/app/assignments/new', '/app/answer-sheets',
-  '/app/upload', '/app/review', '/app/results', '/app/reports', '/app/billing', '/app/corrected-paper',
+  '/app/upload', '/app/review', '/app/results', '/app/reports', '/app/billing', '/app/corrected-paper', '/app/assignments/questions',
   '/app/progress', '/app/diagnostics', '/app/support', '/app/ai-tools', '/app/ai-tools/generate-exam',
   '/app/ai-tools/remedial', '/app/ai-tools/question-bank', '/app/ai-tools/convert-exam',
   '/app/ai-tools/group-answers', '/app/ai-tools/study-plan', '/app/ai-tools/at-risk',
