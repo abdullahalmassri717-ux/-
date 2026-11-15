@@ -36,7 +36,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(req)
         .then((res) => {
-          if (res.ok) {
+          if (res.ok && (res.headers.get('content-type') || '').includes('text/html')) {
             const copy = res.clone();
             caches.open(VERSION).then((c) => c.put('/', copy)).catch(() => {});
           }
