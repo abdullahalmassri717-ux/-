@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 // Remembers which exam / paper / group / student the teacher opened, so the
 // next screen knows what to show (and a page reload keeps it).
 
-export type SelectionKey = 'exam' | 'submission' | 'group' | 'student';
+// 'openGroup': the class whose students the students page opens on (used once).
+export type SelectionKey = 'exam' | 'submission' | 'group' | 'student' | 'openGroup';
 
 const PREFIX = 'daqa.selected.';
 const listeners = new Set<() => void>();

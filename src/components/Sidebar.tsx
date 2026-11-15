@@ -88,6 +88,7 @@ export const getRoleNavItems = (currentRole: UserRole, activeEntity?: Entity, ad
     return [
       { id: 'D1' as ScreenId, label: 'لوحة إدارة المدرسة', icon: Building2 },
       { id: 'D2' as ScreenId, label: 'المعلمون والصفوف', icon: GraduationCap },
+      { id: 'B2' as ScreenId, label: 'الطلاب والصفوف', icon: Users },
       { id: 'D3' as ScreenId, label: 'تقرير المدرسة', icon: BarChart3 },
       { id: 'D4' as ScreenId, label: 'مقارنة المعلمين والصفوف', icon: Users },
       { id: 'B8' as ScreenId, label: 'مراقبة جودة التصحيح', icon: CheckSquare },

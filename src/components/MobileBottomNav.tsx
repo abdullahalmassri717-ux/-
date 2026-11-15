@@ -57,6 +57,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       return [
         { id: 'D1' as ScreenId, label: 'لوحة المدرسة', icon: Building2 },
         { id: 'D2' as ScreenId, label: 'المعلمون', icon: GraduationCap },
+        { id: 'B2' as ScreenId, label: 'الطلاب', icon: Users },
         { id: 'D3' as ScreenId, label: 'التقرير', icon: CheckSquare },
         { label: 'القائمة', icon: Menu, isMenuToggle: true },
       ];
