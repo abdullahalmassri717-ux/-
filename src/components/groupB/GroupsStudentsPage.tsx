@@ -20,7 +20,10 @@ import {
   Trash2,
   Ban,
   RotateCcw,
-  PauseCircle
+  PauseCircle,
+  CheckSquare,
+  Settings2,
+  X
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
 import { setSelected } from '../../data/selection';
@@ -95,10 +98,18 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   const [editParentPhone, setEditParentPhone] = useState('');
   const [editStudentPhone, setEditStudentPhone] = useState('');
   const [editApproval, setEditApproval] = useState(false);
-  const [confirming, setConfirming] = useState<{ kind: 'disable' | 'delete'; student: StudentRow } | null>(null);
+  const [confirming, setConfirming] = useState<{ kind: 'disable' | 'delete'; students: StudentRow[] } | null>(null);
   const [showArchived, setShowArchived] = useState(false);
-  // Pause / resume a whole group
-  const [pausingGroup, setPausingGroup] = useState<{ id: string; name: string } | null>(null);
+  // Pick many students at once, then disable or delete them together.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [archivedSelectedIds, setArchivedSelectedIds] = useState<string[]>([]);
+  // Pause / delete / resume groups (one or many)
+  const [showGroupsManager, setShowGroupsManager] = useState(false);
+  const [groupSelectedIds, setGroupSelectedIds] = useState<string[]>([]);
+  const [archivedGroupSelectedIds, setArchivedGroupSelectedIds] = useState<string[]>([]);
+  const [groupConfirm, setGroupConfirm] = useState<{ kind: 'pause' | 'delete'; groups: { id: string; name: string }[] } | null>(null);
+  const [deleteGroupStudents, setDeleteGroupStudents] = useState(false);
 
   const groupsQ = useLoad((st) => st.listGroups());
   const studentsQ = useLoad((st) => st.listStudents());
@@ -133,6 +144,22 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
 
   const groupName = (id: string) => groups.find((g) => g.id === id)?.name.split('(')[0].trim() ?? '';
   const groupsLabel = (st: StudentRow) => st.groupIds.map(groupName).filter(Boolean).join('، ') || st.group.split('(')[0];
+
+  // Deleting is for the organization's owner (an individual teacher owns their own account).
+  const canDelete = org.role === 'owner';
+  const groupWord = isSchool ? 'الصفوف' : 'المجموعات';
+  const toggleIn = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
+  const allFilteredSelected = filteredStudents.length > 0 && filteredStudents.every((st) => selectedIds.includes(st.id));
+  const toggleAllFiltered = () =>
+    setSelectedIds(allFilteredSelected ? selectedIds.filter((id) => !filteredStudents.some((st) => st.id === id)) : [...new Set([...selectedIds, ...filteredStudents.map((st) => st.id)])]);
+  const selectedStudents = students.filter((st) => selectedIds.includes(st.id));
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds([]);
+  };
+  // Students that are only in the groups being deleted (they would be left in no group).
+  const onlyInGroups = (ids: string[]) =>
+    students.filter((st) => st.groupIds.length > 0 && st.groupIds.every((g) => ids.includes(g)));
 
   const openAddStudent = () => {
     setNewStudentGroupId(defaultGroupId);
@@ -258,29 +285,47 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
     archivedGroupsQ.reload();
   };
 
-  const handlePauseGroup = async () => {
-    if (!pausingGroup) return;
+  const handleGroupConfirm = async () => {
+    if (!groupConfirm) return;
+    const { kind, groups: list } = groupConfirm;
+    const ids = list.map((g) => g.id);
+    const label = list.length === 1 ? list[0].name : `${list.length} من ${groupWord}`;
     setSaving(true);
     try {
-      await store.archiveGroup(pausingGroup.id);
-      notify(`تم إيقاف ${pausingGroup.name}. تجدها في «المجموعات الموقوفة».`, 'success');
-      setPausingGroup(null);
-      setSelectedGroup('all');
+      if (kind === 'pause') {
+        await store.archiveGroups(ids);
+        notify(`تم إيقاف ${label}. تجدها في «${groupWord} الموقوفة».`, 'success');
+      } else {
+        const alsoStudents = deleteGroupStudents ? onlyInGroups(ids).map((st) => st.id) : [];
+        await store.deleteGroups(ids);
+        if (alsoStudents.length) await store.deleteStudents(alsoStudents);
+        notify(`تم حذف ${label} نهائياً${alsoStudents.length ? ` مع ${alsoStudents.length} طالب` : ''}`, 'success');
+      }
+      setGroupConfirm(null);
+      setGroupSelectedIds([]);
+      setArchivedGroupSelectedIds([]);
+      setShowGroupsManager(false);
+      if (ids.includes(selectedGroup)) setSelectedGroup('all');
       reloadAll();
     } catch (e) {
       notify(errorMessage(e));
+      reloadAll();
     } finally {
       setSaving(false);
     }
   };
 
-  const handleRestoreGroup = async (g: { id: string; name: string }) => {
+  const handleRestoreGroups = async (list: { id: string; name: string }[]) => {
+    setSaving(true);
     try {
-      await store.restoreGroup(g.id);
-      notify(`رجعت ${g.name} تعمل من جديد`, 'success');
+      await store.restoreGroups(list.map((g) => g.id));
+      notify(list.length === 1 ? `رجعت ${list[0].name} تعمل من جديد` : `رجع ${list.length} من ${groupWord} تعمل من جديد`, 'success');
+      setArchivedGroupSelectedIds([]);
       reloadAll();
     } catch (e) {
       notify(errorMessage(e));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -313,17 +358,22 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
 
   const handleConfirm = async () => {
     if (!confirming) return;
-    const { kind, student } = confirming;
+    const { kind, students: list } = confirming;
+    const ids = list.map((st) => st.id);
+    const label = list.length === 1 ? list[0].name : `${list.length} طالب`;
     setSaving(true);
     try {
       if (kind === 'disable') {
-        await store.archiveStudent(student.id);
-        notify(`تم تعطيل ${student.name}. تجده في «الطلاب المعطّلون» ويمكنك تفعيله متى شئت.`, 'success');
+        await store.archiveStudents(ids);
+        notify(`تم تعطيل ${label}. تجدهم في «الطلاب المعطّلون» ويمكنك تفعيلهم متى شئت.`, 'success');
       } else {
-        await store.deleteStudent(student.id);
-        notify(`تم حذف ${student.name} نهائياً`, 'success');
+        await store.deleteStudents(ids);
+        notify(`تم حذف ${label} نهائياً`, 'success');
       }
       setConfirming(null);
+      setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
+      setArchivedSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
+      if (kind === 'delete' || list.length > 1) setSelectMode(false);
       reloadAll();
     } catch (e) {
       notify(errorMessage(e));
@@ -332,13 +382,17 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
     }
   };
 
-  const handleRestore = async (st: StudentRow) => {
+  const handleRestore = async (list: StudentRow[]) => {
+    setSaving(true);
     try {
-      await store.restoreStudent(st.id);
-      notify(`تم تفعيل ${st.name} من جديد`, 'success');
+      await store.restoreStudents(list.map((st) => st.id));
+      notify(list.length === 1 ? `تم تفعيل ${list[0].name} من جديد` : `تم تفعيل ${list.length} طالب من جديد`, 'success');
+      setArchivedSelectedIds([]);
       reloadAll();
     } catch (e) {
       notify(errorMessage(e));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -553,6 +607,19 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
           <Plus className="w-3.5 h-3.5" />
           <span>مجموعة جديدة</span>
         </button>}
+
+        {groups.length + archivedGroups.length > 0 && (
+          <button
+            onClick={() => {
+              setGroupSelectedIds([]);
+              setShowGroupsManager(true);
+            }}
+            className="text-xs text-slate-700 hover:bg-slate-50 px-2.5 py-1.5 rounded-lg font-bold border border-slate-300 bg-white whitespace-nowrap cursor-pointer flex items-center gap-1"
+          >
+            <Settings2 className="w-3.5 h-3.5" />
+            <span>إدارة {groupWord}</span>
+          </button>
+        )}
       </div>
 
       {/* Group Curriculum & Progress Banner (Shown when a specific group is selected) */}
@@ -571,12 +638,25 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
             <p className="text-xs text-slate-500">
               {currentGroupObj.schedule && <>المواعيد: {currentGroupObj.schedule} · </>}عدد الطلاب: {currentGroupObj.studentCount}
             </p>
-            <button
-              onClick={() => setPausingGroup({ id: currentGroupObj.id, name: currentGroupObj.name.split('(')[0].trim() })}
-              className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 hover:underline cursor-pointer"
-            >
-              <PauseCircle className="w-3.5 h-3.5" /> إيقاف المجموعة
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setGroupConfirm({ kind: 'pause', groups: [{ id: currentGroupObj.id, name: currentGroupObj.name.split('(')[0].trim() }] })}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 hover:underline cursor-pointer"
+              >
+                <PauseCircle className="w-3.5 h-3.5" /> إيقاف
+              </button>
+              {canDelete && (
+                <button
+                  onClick={() => {
+                    setDeleteGroupStudents(false);
+                    setGroupConfirm({ kind: 'delete', groups: [{ id: currentGroupObj.id, name: currentGroupObj.name.split('(')[0].trim() }] });
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 hover:underline cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> حذف
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-xl border border-slate-200/70">
@@ -619,11 +699,41 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
         />
       </div>
 
+      {/* Pick many students */}
+      {filteredStudents.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          {selectMode ? (
+            <>
+              <label className="inline-flex items-center gap-2 font-bold text-slate-700 cursor-pointer bg-white border border-slate-200 rounded-lg px-3 py-2">
+                <input type="checkbox" className="w-4 h-4 accent-[#1E3A5F]" checked={allFilteredSelected} onChange={toggleAllFiltered} />
+                تحديد الكل ({filteredStudents.length})
+              </label>
+              <span className="text-slate-600 font-semibold">تم تحديد {selectedIds.length}</span>
+              <button onClick={exitSelectMode} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold cursor-pointer">
+                <X className="w-3.5 h-3.5" /> إلغاء التحديد
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setSelectMode(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold cursor-pointer"
+            >
+              <CheckSquare className="w-4 h-4 text-[#1E3A5F]" /> تحديد عدة طلاب
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Desktop Table View */}
       <div className="hidden md:block bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
         <table className="w-full text-right text-xs">
           <thead className="bg-[#F7F8FA] text-slate-700 font-bold border-b border-slate-200">
             <tr>
+              {selectMode && (
+                <th className="p-3.5 w-10">
+                  <input type="checkbox" aria-label="تحديد الكل" className="w-4 h-4 accent-[#1E3A5F] cursor-pointer" checked={allFilteredSelected} onChange={toggleAllFiltered} />
+                </th>
+              )}
               <th className="p-3.5">الاسم والرمز</th>
               <th className="p-3.5">المجموعة</th>
               <th className="p-3.5">هاتف ولي الأمر (واتساب)</th>
@@ -635,7 +745,18 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filteredStudents.map((st) => (
-              <tr key={st.id} className="hover:bg-slate-50/70 transition-colors">
+              <tr key={st.id} className={`transition-colors ${selectedIds.includes(st.id) ? 'bg-blue-50/70' : 'hover:bg-slate-50/70'}`}>
+                {selectMode && (
+                  <td className="p-3.5">
+                    <input
+                      type="checkbox"
+                      aria-label={`تحديد ${st.name}`}
+                      className="w-4 h-4 accent-[#1E3A5F] cursor-pointer"
+                      checked={selectedIds.includes(st.id)}
+                      onChange={() => setSelectedIds((prev) => toggleIn(prev, st.id))}
+                    />
+                  </td>
+                )}
                 <td className="p-3.5">
                   <div
                     onClick={() => {
@@ -715,12 +836,14 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                     <button onClick={() => openEdit(st)} title="تعديل" aria-label={`تعديل ${st.name}`} className="p-1.5 rounded text-slate-600 hover:bg-slate-100 cursor-pointer">
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
-                    <button onClick={() => setConfirming({ kind: 'disable', student: st })} title="تعطيل" aria-label={`تعطيل ${st.name}`} className="p-1.5 rounded text-amber-700 hover:bg-amber-50 cursor-pointer">
+                    <button onClick={() => setConfirming({ kind: 'disable', students: [st] })} title="تعطيل" aria-label={`تعطيل ${st.name}`} className="p-1.5 rounded text-amber-700 hover:bg-amber-50 cursor-pointer">
                       <Ban className="w-3.5 h-3.5" />
                     </button>
-                    <button onClick={() => setConfirming({ kind: 'delete', student: st })} title="حذف" aria-label={`حذف ${st.name}`} className="p-1.5 rounded text-red-600 hover:bg-red-50 cursor-pointer">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {canDelete && (
+                      <button onClick={() => setConfirming({ kind: 'delete', students: [st] })} title="حذف" aria-label={`حذف ${st.name}`} className="p-1.5 rounded text-red-600 hover:bg-red-50 cursor-pointer">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -735,13 +858,28 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
           <div
             key={st.id}
             onClick={() => {
+              if (selectMode) {
+                setSelectedIds((prev) => toggleIn(prev, st.id));
+                return;
+              }
               onSelectStudent(st.id);
               onNavigate('B3');
             }}
-            className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 shadow-2xs active:bg-slate-50 cursor-pointer"
+            className={`border rounded-xl p-4 space-y-3 shadow-2xs cursor-pointer ${
+              selectedIds.includes(st.id) ? 'bg-blue-50 border-[#1E3A5F]' : 'bg-white border-slate-200 active:bg-slate-50'
+            }`}
           >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <div>
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+              {selectMode && (
+                <input
+                  type="checkbox"
+                  aria-label={`تحديد ${st.name}`}
+                  className="w-5 h-5 shrink-0 accent-[#1E3A5F] pointer-events-none"
+                  checked={selectedIds.includes(st.id)}
+                  readOnly
+                />
+              )}
+              <div className="min-w-0 flex-1">
                 <h3 className="font-bold text-slate-900 text-sm">{st.name}</h3>
                 <span className="text-[10px] text-slate-400 font-mono">رمز: {st.studentCode} · {groupsLabel(st)}</span>
               </div>
@@ -767,24 +905,52 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                 {st.hasScore !== false && st.trend === 'up' && <span className="text-emerald-700 text-xs font-bold">↑ تحسن</span>}
                 {st.hasScore !== false && st.trend === 'down' && <span className="text-red-700 text-xs font-bold">↓ تراجع</span>}
                 {st.hasScore !== false && st.trend === 'steady' && <span className="text-slate-500 text-xs">− ثابت</span>}
-                <span className="text-blue-700 font-bold text-xs">عرض الملف ←</span>
+                {!selectMode && <span className="text-blue-700 font-bold text-xs">عرض الملف ←</span>}
               </div>
             </div>
 
+            {!selectMode && (
             <div className="flex items-center gap-2 pt-2 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
               <button onClick={() => openEdit(st)} className="flex-1 inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold cursor-pointer">
                 <Pencil className="w-3.5 h-3.5" /> تعديل
               </button>
-              <button onClick={() => setConfirming({ kind: 'disable', student: st })} className="flex-1 inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold cursor-pointer">
+              <button onClick={() => setConfirming({ kind: 'disable', students: [st] })} className="flex-1 inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold cursor-pointer">
                 <Ban className="w-3.5 h-3.5" /> تعطيل
               </button>
-              <button onClick={() => setConfirming({ kind: 'delete', student: st })} className="flex-1 inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-bold cursor-pointer">
-                <Trash2 className="w-3.5 h-3.5" /> حذف
-              </button>
+              {canDelete && (
+                <button onClick={() => setConfirming({ kind: 'delete', students: [st] })} className="flex-1 inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-bold cursor-pointer">
+                  <Trash2 className="w-3.5 h-3.5" /> حذف
+                </button>
+              )}
             </div>
+            )}
           </div>
         ))}
       </div>
+
+      {/* Actions for the picked students (stays above the phone's bottom menu) */}
+      {selectMode && selectedIds.length > 0 && (
+        <>
+          <div className="h-16" aria-hidden />
+          <div className="fixed inset-x-3 bottom-[4.5rem] lg:bottom-6 lg:inset-x-auto lg:left-1/2 lg:-translate-x-1/2 lg:w-[30rem] z-50 bg-[#1E3A5F] text-white rounded-2xl shadow-2xl p-2.5 flex items-center gap-2 text-xs">
+            <span className="font-bold px-1.5 whitespace-nowrap">{selectedIds.length} محدد</span>
+            <button
+              onClick={() => setConfirming({ kind: 'disable', students: selectedStudents })}
+              className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 font-bold cursor-pointer"
+            >
+              <Ban className="w-4 h-4" /> تعطيل
+            </button>
+            {canDelete && (
+              <button
+                onClick={() => setConfirming({ kind: 'delete', students: selectedStudents })}
+                className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 font-bold cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" /> حذف
+              </button>
+            )}
+          </div>
+        </>
+      )}
 
       {/* Empty / loading states */}
       {(studentsQ.loading || groupsQ.loading) && !students.length && (
@@ -817,15 +983,57 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
       {/* Paused groups */}
       {archivedGroups.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-          <p className="p-3.5 text-xs font-bold text-slate-700 flex items-center gap-1.5 border-b border-slate-100">
-            <PauseCircle className="w-4 h-4 text-amber-600" />
-            المجموعات الموقوفة ({archivedGroups.length})
-          </p>
+          <div className="p-3.5 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 text-xs">
+            <p className="font-bold text-slate-700 flex items-center gap-1.5">
+              <PauseCircle className="w-4 h-4 text-amber-600" />
+              {groupWord} الموقوفة ({archivedGroups.length})
+            </p>
+            <label className="inline-flex items-center gap-1.5 font-semibold text-slate-600 cursor-pointer">
+              <input
+                type="checkbox"
+                className="w-4 h-4 accent-[#1E3A5F]"
+                checked={archivedGroups.every((g) => archivedGroupSelectedIds.includes(g.id))}
+                onChange={(e) => setArchivedGroupSelectedIds(e.target.checked ? archivedGroups.map((g) => g.id) : [])}
+              />
+              تحديد الكل
+            </label>
+          </div>
+          {archivedGroupSelectedIds.length > 0 && (
+            <div className="p-2.5 bg-slate-50 border-b border-slate-100 flex flex-wrap items-center gap-2 text-xs">
+              <span className="font-bold text-slate-700">{archivedGroupSelectedIds.length} محدد</span>
+              <button
+                disabled={saving}
+                onClick={() => handleRestoreGroups(archivedGroups.filter((g) => archivedGroupSelectedIds.includes(g.id)))}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold cursor-pointer disabled:opacity-60"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> تفعيل المحدد
+              </button>
+              {canDelete && (
+                <button
+                  onClick={() => {
+                    setDeleteGroupStudents(false);
+                    setGroupConfirm({ kind: 'delete', groups: archivedGroups.filter((g) => archivedGroupSelectedIds.includes(g.id)) });
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 font-bold cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> حذف المحدد
+                </button>
+              )}
+            </div>
+          )}
           <div className="divide-y divide-slate-100">
             {archivedGroups.map((g) => (
-              <div key={g.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-                <span className="font-bold text-slate-700 min-w-0">{g.name}</span>
-                <button onClick={() => handleRestoreGroup(g)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold cursor-pointer">
+              <div key={g.id} className="p-3 flex items-center justify-between gap-2 text-xs">
+                <label className="flex items-center gap-2 min-w-0 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 shrink-0 accent-[#1E3A5F]"
+                    checked={archivedGroupSelectedIds.includes(g.id)}
+                    onChange={() => setArchivedGroupSelectedIds((prev) => toggleIn(prev, g.id))}
+                  />
+                  <span className="font-bold text-slate-700 truncate">{g.name}</span>
+                </label>
+                <button onClick={() => handleRestoreGroups([g])} disabled={saving} className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold cursor-pointer disabled:opacity-60">
                   <RotateCcw className="w-3.5 h-3.5" /> تفعيل
                 </button>
               </div>
@@ -853,19 +1061,61 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
               <p className="p-3 text-[11px] text-slate-500 leading-relaxed">
                 الطالب المعطّل لا يظهر في القوائم، ولا يُحسب في الاشتراك، ولا يستطيع التسليم من رابط الامتحان. درجاته السابقة محفوظة.
               </p>
+              <div className="p-2.5 bg-slate-50 flex flex-wrap items-center gap-2 text-xs">
+                <label className="inline-flex items-center gap-1.5 font-bold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 accent-[#1E3A5F]"
+                    checked={archived.every((st) => archivedSelectedIds.includes(st.id))}
+                    onChange={(e) => setArchivedSelectedIds(e.target.checked ? archived.map((st) => st.id) : [])}
+                  />
+                  تحديد الكل ({archived.length})
+                </label>
+                {archivedSelectedIds.length > 0 && (
+                  <>
+                    <span className="text-slate-500">· {archivedSelectedIds.length} محدد</span>
+                    <button
+                      disabled={saving}
+                      onClick={() => handleRestore(archived.filter((st) => archivedSelectedIds.includes(st.id)))}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold cursor-pointer disabled:opacity-60"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> تفعيل المحدد
+                    </button>
+                    {canDelete && (
+                      <button
+                        onClick={() => setConfirming({ kind: 'delete', students: archived.filter((st) => archivedSelectedIds.includes(st.id)) })}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 font-bold cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> حذف المحدد
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
               {archived.map((st) => (
-                <div key={st.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <div className="min-w-0">
-                    <span className="font-bold text-slate-700 block">{st.name}</span>
-                    <span className="text-[10px] text-slate-400 font-mono">رمز: {st.studentCode}{st.group ? ` · ${st.group.split('(')[0]}` : ''}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => handleRestore(st)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold cursor-pointer">
+                <div key={st.id} className="p-3 flex items-center justify-between gap-2 text-xs">
+                  <label className="flex items-center gap-2 min-w-0 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      aria-label={`تحديد ${st.name}`}
+                      className="w-4 h-4 shrink-0 accent-[#1E3A5F]"
+                      checked={archivedSelectedIds.includes(st.id)}
+                      onChange={() => setArchivedSelectedIds((prev) => toggleIn(prev, st.id))}
+                    />
+                    <span className="min-w-0">
+                      <span className="font-bold text-slate-700 block truncate">{st.name}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">رمز: {st.studentCode}{st.group ? ` · ${st.group.split('(')[0]}` : ''}</span>
+                    </span>
+                  </label>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => handleRestore([st])} disabled={saving} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold cursor-pointer disabled:opacity-60">
                       <RotateCcw className="w-3.5 h-3.5" /> تفعيل
                     </button>
-                    <button onClick={() => setConfirming({ kind: 'delete', student: st })} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 font-bold cursor-pointer">
-                      <Trash2 className="w-3.5 h-3.5" /> حذف
-                    </button>
+                    {canDelete && (
+                      <button onClick={() => setConfirming({ kind: 'delete', students: [st] })} aria-label={`حذف ${st.name}`} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 font-bold cursor-pointer">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -930,41 +1180,131 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
         </div>
       )}
 
-      {/* Confirm pausing a group */}
-      {pausingGroup && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-right space-y-4 shadow-2xl">
-            <h3 className="font-bold text-base text-amber-800">إيقاف {pausingGroup.name}؟</h3>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              تختفي المجموعة من القوائم، وطلابها لا يُحسبون في الاشتراك (إلا إذا كانوا في مجموعة ثانية شغّالة). الطلاب والدرجات والامتحانات محفوظة، وترجعها متى بدك من «المجموعات الموقوفة».
-            </p>
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                disabled={saving}
-                onClick={handlePauseGroup}
-                className="flex-1 text-white py-2 rounded-lg font-bold text-xs cursor-pointer disabled:opacity-60 bg-amber-600 hover:bg-amber-700"
-              >
-                {saving ? 'لحظة...' : 'نعم، أوقف المجموعة'}
-              </button>
-              <button onClick={() => setPausingGroup(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-4 rounded-lg font-medium text-xs cursor-pointer">
-                إلغاء
+      {/* Manage groups: pick several, then pause or delete them */}
+      {showGroupsManager && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 sm:p-4">
+          <div role="dialog" aria-modal="true" aria-label={`إدارة ${groupWord}`} className="bg-white rounded-t-2xl sm:rounded-2xl max-w-md w-full p-5 text-right space-y-3 shadow-2xl max-h-[88vh] flex flex-col">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-base text-[#1E3A5F]">إدارة {groupWord}</h3>
+              <button onClick={() => setShowGroupsManager(false)} aria-label="إغلاق" className="p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer">
+                <X className="w-4 h-4" />
               </button>
             </div>
+            <p className="text-[11px] text-slate-500">حدّد {groupWord} ثم اختر «إيقاف» أو «حذف». {groupWord} الموقوفة تجدها أسفل صفحة الطلاب وترجعها متى بدك.</p>
+            {groups.length === 0 ? (
+              <p className="text-xs text-slate-500 py-6 text-center">لا يوجد {groupWord} شغّالة. {groupWord} الموقوفة تجدها أسفل الصفحة.</p>
+            ) : (
+              <>
+                <label className="flex items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 accent-[#1E3A5F]"
+                    checked={groups.every((g) => groupSelectedIds.includes(g.id))}
+                    onChange={(e) => setGroupSelectedIds(e.target.checked ? groups.map((g) => g.id) : [])}
+                  />
+                  تحديد الكل ({groups.length})
+                </label>
+                <div className="space-y-1.5 overflow-y-auto min-h-0 flex-1">
+                  {groups.map((g) => (
+                    <label
+                      key={g.id}
+                      className={`flex items-center gap-2 p-2.5 border rounded-lg text-xs cursor-pointer ${
+                        groupSelectedIds.includes(g.id) ? 'bg-blue-50 border-[#1E3A5F]' : 'bg-white border-slate-200'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 shrink-0 accent-[#1E3A5F]"
+                        checked={groupSelectedIds.includes(g.id)}
+                        onChange={() => setGroupSelectedIds((prev) => toggleIn(prev, g.id))}
+                      />
+                      <span className="font-bold text-slate-800 min-w-0 truncate flex-1">{g.name}</span>
+                      <span className="text-slate-500 whitespace-nowrap">{g.studentCount} طالب</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    disabled={!groupSelectedIds.length}
+                    onClick={() => setGroupConfirm({ kind: 'pause', groups: groups.filter((g) => groupSelectedIds.includes(g.id)).map((g) => ({ id: g.id, name: g.name })) })}
+                    className="flex-1 inline-flex items-center justify-center gap-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <PauseCircle className="w-4 h-4" /> إيقاف{groupSelectedIds.length ? ` (${groupSelectedIds.length})` : ''}
+                  </button>
+                  {canDelete && (
+                    <button
+                      disabled={!groupSelectedIds.length}
+                      onClick={() => {
+                        setDeleteGroupStudents(false);
+                        setGroupConfirm({ kind: 'delete', groups: groups.filter((g) => groupSelectedIds.includes(g.id)).map((g) => ({ id: g.id, name: g.name })) });
+                      }}
+                      className="flex-1 inline-flex items-center justify-center gap-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Trash2 className="w-4 h-4" /> حذف{groupSelectedIds.length ? ` (${groupSelectedIds.length})` : ''}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
 
+      {/* Confirm pausing / deleting groups */}
+      {groupConfirm && (() => {
+        const many = groupConfirm.groups.length > 1;
+        const label = many ? `${groupConfirm.groups.length} من ${groupWord}` : groupConfirm.groups[0].name;
+        const orphans = groupConfirm.kind === 'delete' ? onlyInGroups(groupConfirm.groups.map((g) => g.id)) : [];
+        return (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-[60] p-4">
+            <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-right space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+              <h3 className={`font-bold text-base ${groupConfirm.kind === 'delete' ? 'text-red-700' : 'text-amber-800'}`}>
+                {groupConfirm.kind === 'delete' ? `حذف ${label} نهائياً؟` : `إيقاف ${label}؟`}
+              </h3>
+              {many && (
+                <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg p-2 leading-relaxed">{groupConfirm.groups.map((g) => g.name).join('، ')}</p>
+              )}
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {groupConfirm.kind === 'delete'
+                  ? 'ستُحذف مع كل امتحاناتها وأوراقها ودرجاتها، ولا يمكن التراجع. الطلاب أنفسهم يبقون محفوظين. إذا بدك ترجعها لاحقاً فالأفضل «إيقافها» بدل الحذف.'
+                  : 'تختفي من القوائم، وطلابها لا يُحسبون في الاشتراك (إلا إذا كانوا في صف أو مجموعة ثانية شغّالة). الطلاب والدرجات والامتحانات محفوظة، وترجعها متى بدك من القائمة الموقوفة.'}
+              </p>
+              {groupConfirm.kind === 'delete' && orphans.length > 0 && (
+                <label className="flex items-start gap-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 cursor-pointer">
+                  <input type="checkbox" className="w-4 h-4 mt-0.5 shrink-0 accent-red-600" checked={deleteGroupStudents} onChange={(e) => setDeleteGroupStudents(e.target.checked)} />
+                  <span>واحذف كمان طلابها ({orphans.length} طالب) نهائياً. فقط الطلاب اللي مش موجودين بأي صف أو مجموعة ثانية.</span>
+                </label>
+              )}
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  disabled={saving}
+                  onClick={handleGroupConfirm}
+                  className={`flex-1 text-white py-2 rounded-lg font-bold text-xs cursor-pointer disabled:opacity-60 ${groupConfirm.kind === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'}`}
+                >
+                  {saving ? 'لحظة...' : groupConfirm.kind === 'delete' ? 'نعم، احذف نهائياً' : 'نعم، أوقف'}
+                </button>
+                <button onClick={() => setGroupConfirm(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-4 rounded-lg font-medium text-xs cursor-pointer">
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Confirm disable / delete */}
       {confirming && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-right space-y-4 shadow-2xl">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-right space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <h3 className={`font-bold text-base ${confirming.kind === 'delete' ? 'text-red-700' : 'text-amber-800'}`}>
-              {confirming.kind === 'delete' ? `حذف ${confirming.student.name} نهائياً؟` : `تعطيل ${confirming.student.name}؟`}
+              {confirming.students.length === 1
+                ? confirming.kind === 'delete' ? `حذف ${confirming.students[0].name} نهائياً؟` : `تعطيل ${confirming.students[0].name}؟`
+                : confirming.kind === 'delete' ? `حذف ${confirming.students.length} طالب نهائياً؟` : `تعطيل ${confirming.students.length} طالب؟`}
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed">
               {confirming.kind === 'delete'
-                ? 'سيُحذف الطالب وكل أوراقه ودرجاته ورسومه، ولا يمكن التراجع. إن كان الطالب ترك مؤقتاً فالأفضل «تعطيله» بدل الحذف.'
-                : 'سيختفي من القوائم ولن يُحسب في الاشتراك، ولن يقبل رابط التسليم رمزه. درجاته محفوظة، ويمكنك تفعيله لاحقاً من «الطلاب المعطّلون».'}
+                ? 'سيُحذف الطلاب المحددون مع كل أوراقهم ودرجاتهم ورسومهم، ولا يمكن التراجع. إن كانوا تاركين مؤقتاً فالأفضل «تعطيلهم» بدل الحذف.'
+                : 'سيختفون من القوائم ولن يُحسبوا في الاشتراك، ولن يقبل رابط التسليم رموزهم. درجاتهم محفوظة، ويمكنك تفعيلهم لاحقاً من «الطلاب المعطّلون».'}
             </p>
             <div className="flex items-center gap-2 pt-1">
               <button
@@ -972,7 +1312,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                 onClick={handleConfirm}
                 className={`flex-1 text-white py-2 rounded-lg font-bold text-xs cursor-pointer disabled:opacity-60 ${confirming.kind === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'}`}
               >
-                {saving ? 'لحظة...' : confirming.kind === 'delete' ? 'نعم، احذف نهائياً' : 'نعم، عطّل الطالب'}
+                {saving ? 'لحظة...' : confirming.kind === 'delete' ? 'نعم، احذف نهائياً' : 'نعم، عطّل'}
               </button>
               <button onClick={() => setConfirming(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-4 rounded-lg font-medium text-xs cursor-pointer">
                 إلغاء

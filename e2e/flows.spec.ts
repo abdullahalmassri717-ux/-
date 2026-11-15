@@ -41,12 +41,63 @@ test.describe('teacher', () => {
     const errors = watchErrors(page);
     await open(page, '/app/groups');
     await page.getByRole('button', { name: /^كل الطلاب/ }).locator('xpath=following-sibling::button[1]').click();
-    await page.getByRole('button', { name: 'إيقاف المجموعة' }).click();
-    await page.getByRole('button', { name: 'نعم، أوقف المجموعة' }).click();
+    await page.getByRole('button', { name: 'إيقاف', exact: true }).click();
+    await page.getByRole('button', { name: 'نعم، أوقف' }).click();
     await expect(toast(page, /تم إيقاف/)).toBeVisible();
     await expect(page.getByText(/المجموعات الموقوفة \(1\)/)).toBeVisible();
     await page.getByRole('button', { name: 'تفعيل' }).first().click();
     await expect(toast(page, /تعمل من جديد/)).toBeVisible();
+    await expect(page.getByText(/المجموعات الموقوفة/)).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+
+  test('picks several students, disables them, turns them back on, then deletes them', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/app/groups');
+    const before = Number((await page.getByRole('button', { name: /^كل الطلاب/ }).innerText()).match(/\d+/)![0]);
+    await page.getByRole('button', { name: 'تحديد عدة طلاب' }).click();
+    await page.getByLabel('تحديد الكل').filter({ visible: true }).first().check();
+    await expect(page.getByText(`${before} محدد`)).toBeVisible();
+    await page.getByRole('button', { name: 'تعطيل', exact: true }).last().click();
+    await page.getByRole('button', { name: 'نعم، عطّل' }).click();
+    await expect(toast(page, /تم تعطيل/)).toBeVisible();
+    await expect(page.getByText(`الطلاب المعطّلون (${before})`)).toBeVisible();
+
+    await page.getByRole('button', { name: /الطلاب المعطّلون/ }).click();
+    await page.getByText(`تحديد الكل (${before})`).click();
+    await page.getByRole('button', { name: 'تفعيل المحدد' }).click();
+    await expect(toast(page, /تم تفعيل/)).toBeVisible();
+    await expect(page.getByRole('button', { name: `كل الطلاب (${before})` })).toBeVisible();
+
+    await page.getByRole('button', { name: 'تحديد عدة طلاب' }).click();
+    // On phones a tap on the student's card picks it; on computers the row's box.
+    const pick = page.getByRole('checkbox', { name: /^تحديد (?!الكل)/ }).filter({ visible: true });
+    await pick.nth(1).click({ force: true });
+    await pick.nth(2).click({ force: true });
+    await expect(page.getByText('2 محدد')).toBeVisible();
+    await page.getByRole('button', { name: 'حذف', exact: true }).last().click();
+    await page.getByRole('button', { name: 'نعم، احذف نهائياً' }).click();
+    await expect(toast(page, /تم حذف 2 طالب/)).toBeVisible();
+    await expect(page.getByRole('button', { name: `كل الطلاب (${before - 2})` })).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
+  test('pauses and deletes several groups at once', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/app/groups');
+    await page.getByRole('button', { name: 'إدارة المجموعات' }).click();
+    const boxes = page.getByRole('dialog').getByRole('checkbox');
+    await boxes.nth(1).check();
+    await boxes.nth(2).check();
+    await page.getByRole('button', { name: 'إيقاف (2)' }).click();
+    await page.getByRole('button', { name: 'نعم، أوقف' }).click();
+    await expect(toast(page, /تم إيقاف 2/)).toBeVisible();
+    await expect(page.getByText(/المجموعات الموقوفة \(2\)/)).toBeVisible();
+
+    await page.getByText('تحديد الكل', { exact: true }).click();
+    await page.getByRole('button', { name: 'حذف المحدد' }).click();
+    await page.getByRole('button', { name: 'نعم، احذف نهائياً' }).click();
+    await expect(toast(page, /تم حذف 2/)).toBeVisible();
     await expect(page.getByText(/المجموعات الموقوفة/)).toHaveCount(0);
     expect(errors).toEqual([]);
   });
