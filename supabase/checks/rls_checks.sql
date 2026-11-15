@@ -113,10 +113,17 @@ select tests.throws($$insert into public.memberships (organization_id, user_id, 
   select id, auth.uid(), 'owner' from public.organizations where kind = 'school'
   on conflict (organization_id, user_id) do update set role = 'owner'$$, 'محمد: لا يرقّي نفسه لمالك المدرسة');
 
--- إنشاء مجموعة جديدة كمعلم في المدرسة: يراها فوراً
-insert into public.groups (organization_id, name)
-  select id, 'مجموعة تجريبية' from public.organizations where kind = 'school' returning name;
-select tests.eq((select count(*) from public.groups where name = 'مجموعة تجريبية'), 1::bigint, 'محمد: يرى المجموعة التي أنشأها');
+-- في المدرسة: الإدارة وحدها تنشئ المجموعات وتحدّد صفها ومادتها
+select tests.throws($$insert into public.groups (organization_id, name)
+  select id, 'مجموعة تجريبية' from public.organizations where kind = 'school'$$,
+  'محمد: المعلم في المدرسة لا ينشئ مجموعة بنفسه');
+select tests.eq((select count(*) from public.groups where grade_id is not null
+  and organization_id = (select id from public.organizations where kind = 'school')) > 0, true, 'محمد: عنده صف مسند في المدرسة');
+select tests.throws($$update public.groups set grade_id = null
+  where grade_id is not null and organization_id = (select id from public.organizations where kind = 'school')$$,
+  'محمد: المعلم لا يغيّر صف أو مادة مجموعة أسندتها له المدرسة');
+update public.groups set schedule = 'الأحد' where organization_id = (select id from public.organizations where kind = 'school');
+select tests.eq((select count(*) from public.groups where schedule = 'الأحد') > 0, true, 'محمد: يعدّل مواعيد مجموعته');
 
 -- التخزين
 select tests.eq(private.can_access_submission_file(tests.page_path()), true, 'محمد: يصل لصورة ورقة طالبه');

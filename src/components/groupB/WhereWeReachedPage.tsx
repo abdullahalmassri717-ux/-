@@ -44,10 +44,19 @@ export default function WhereWeReachedPage({
       if (sb.id === activeGroup.subjectId) { curriculum = c; grade = g; subject = sb; }
   }
 
-  const taughtQ = useLoad((st) => (selectedGroupId ? st.getTaughtLessons(selectedGroupId) : Promise.resolve({} as Record<string, string>)), [selectedGroupId]);
-  const examinedQ = useLoad((st) => (selectedGroupId ? st.getExaminedLessons(selectedGroupId) : Promise.resolve({} as Record<string, number | null>)), [selectedGroupId]);
-  const taught = taughtQ.data ?? {};
-  const examined = examinedQ.data ?? {};
+  // Each answer is tagged with the group it belongs to, so after switching groups the
+  // previous group's lessons are never shown (or saved over) while the new ones load.
+  const taughtQ = useLoad(
+    async (st) => ({ groupId: selectedGroupId, lessons: selectedGroupId ? await st.getTaughtLessons(selectedGroupId) : ({} as Record<string, string>) }),
+    [selectedGroupId],
+  );
+  const examinedQ = useLoad(
+    async (st) => ({ groupId: selectedGroupId, lessons: selectedGroupId ? await st.getExaminedLessons(selectedGroupId) : ({} as Record<string, number | null>) }),
+    [selectedGroupId],
+  );
+  const taughtReady = taughtQ.data?.groupId === selectedGroupId;
+  const taught = taughtReady ? taughtQ.data!.lessons : {};
+  const examined = examinedQ.data?.groupId === selectedGroupId ? examinedQ.data.lessons : {};
   const lessonStatuses: Record<string, LessonProgressStatus> = {};
   for (const id of Object.keys(taught)) lessonStatuses[id] = 'taught';
   for (const id of Object.keys(examined)) lessonStatuses[id] = 'examined';
@@ -70,20 +79,26 @@ export default function WhereWeReachedPage({
   /** Marks lessons taught (`teach`) and not taught (`unteach`) in one go: shown at once, then saved. */
   const saveTaught = async (teach: string[], unteach: string[] = []): Promise<boolean> => {
     if (!selectedGroupId || (!teach.length && !unteach.length)) return true;
-    const before = taughtQ.data ?? {};
+    if (!taughtReady) {
+      notify('لحظة، جاري تحميل دروس هذه المجموعة...', 'info');
+      return false;
+    }
+    const groupId = selectedGroupId;
+    const before = taughtQ.data!;
     const now = new Date().toISOString();
-    taughtQ.setData(() => {
-      const next = { ...before };
+    taughtQ.setData((prev) => {
+      if (!prev || prev.groupId !== groupId) return prev;
+      const next = { ...prev.lessons };
       for (const id of teach) next[id] = next[id] ?? now;
       for (const id of unteach) delete next[id];
-      return next;
+      return { groupId, lessons: next };
     });
     try {
-      if (teach.length) await store.setLessonsTaught(selectedGroupId, teach, true);
-      if (unteach.length) await store.setLessonsTaught(selectedGroupId, unteach, false);
+      if (teach.length) await store.setLessonsTaught(groupId, teach, true);
+      if (unteach.length) await store.setLessonsTaught(groupId, unteach, false);
       return true;
     } catch (e) {
-      taughtQ.setData(before);
+      taughtQ.setData((prev) => (prev?.groupId === groupId ? before : prev));
       notify(errorMessage(e));
       return false;
     }
@@ -177,7 +192,10 @@ export default function WhereWeReachedPage({
               className="min-w-0 flex-1 max-w-full truncate bg-white text-sm font-bold text-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]/20"
             >
               {groups.map(g => (
-                <option key={g.id} value={g.id}>{g.name} ({g.gradeName})</option>
+                <option key={g.id} value={g.id}>
+                  {/* The subject too: two groups of the same class must never look alike. */}
+                  {g.name} ({[g.gradeName, g.subjectName && !g.name.includes(g.subjectName) ? g.subjectName : ''].filter(Boolean).join(' · ')})
+                </option>
               ))}
             </select>
           </div>
