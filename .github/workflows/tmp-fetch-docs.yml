@@ -1,0 +1,15 @@
+name: Temp fetch SMS docs
+on:
+  push:
+    branches: [claude/project-thread-xkt2ah]
+    paths: [.github/workflows/tmp-fetch-docs.yml]
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for id in TzzGJE52 TzzGJE9N; do
+            echo "===== $id"
+            curl -sS "https://documenter.gw.postman.com/api/collections/1142337/$id?segregateAuth=true&versionTag=latest" | jq '[.. | objects | select(has("request")) | {name, request, response: [.response[]? | {name, body: (.body|tostring|.[0:600])}]}]' || true
+            curl -sS "https://documenter.gw.postman.com/api/collections/1142337/$id?segregateAuth=true&versionTag=latest" | jq '.info' || true
+          done
