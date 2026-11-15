@@ -9,6 +9,7 @@ import {
   assistantChat,
   extractExam,
   generateQuestions,
+  mapStudentColumns,
   parentReply,
   studyPlan,
   suggestRubric,
@@ -200,6 +201,17 @@ Deno.serve(async (req) => {
           studentFirstName: str(body.studentFirstName, 40).split(' ')[0] || 'الطالب',
           facts: Array.isArray(body.facts) ? body.facts.map((f) => str(f, 300)).filter(Boolean).slice(0, 10) : [],
         });
+        await log(result.usage);
+        return json(result.data);
+      }
+
+      case 'map_student_columns': {
+        // Rows arrive with names and phone numbers already hidden by the browser.
+        const rows = (Array.isArray(body.rows) ? body.rows : [])
+          .slice(0, 10)
+          .map((r) => (Array.isArray(r) ? r.slice(0, 15).map((c) => str(c, 60)) : []));
+        if (!rows.some((r) => r.some(Boolean))) return json({ error: 'الملف فارغ.' }, 400);
+        const result = await mapStudentColumns(model, config, { rows });
         await log(result.usage);
         return json(result.data);
       }

@@ -366,3 +366,45 @@ export async function suggestRubric(
   );
   return { data: { modelAnswer: q?.modelAnswer ?? '', criteria: q?.criteria ?? [] }, usage: [res.usage] };
 }
+
+const ROLES = ['name', 'parentPhone', 'studentPhone', 'grade', 'section', 'class', 'ignore'] as const;
+const ColumnMapSchema = z.object({
+  header_row: z.number().int(),
+  roles: z.array(z.enum(ROLES)),
+});
+
+/**
+ * Says what each column of a teacher's student list holds. The browser hides
+ * names ("•" per word) and phone numbers ("059#######") before sending, so the
+ * model sees only headers, grades, sections and the shape of each cell.
+ * Uses the cheap fast model: a few hundred tokens, a fraction of a cent.
+ */
+export async function mapStudentColumns(
+  model: ToolModel,
+  config: ToolModelConfig,
+  o: { rows: string[][] },
+): Promise<ToolResult<{ headerRow: number; roles: (typeof ROLES)[number][] }>> {
+  const width = Math.max(0, ...o.rows.map((r) => r.length));
+  const table = o.rows.map((r, i) => `صف ${i}: ${Array.from({ length: width }, (_, c) => `[${c}] ${r[c] ?? ''}`).join(' | ')}`).join('\n');
+  const res = await model.json({
+    model: config.fastModel,
+    effort: 'low',
+    system: `أنت تقرأ أول صفوف ملف Excel فيه قائمة طلاب مدرسة، وتحدد ماذا يحتوي كل عمود.
+الأسماء مخفية: كل كلمة من الاسم مكتوبة «•». أرقام الجوال والهوية مخفية: تظهر أول 3 أرقام ثم # بعدد الأرقام الباقية.
+الأدوار الممكنة لكل عمود:
+- name: اسم الطالب (قد يكون الاسم موزعاً على أكثر من عمود: الاسم الأول، اسم الأب، العائلة؛ أعطها كلها name)
+- parentPhone: جوال ولي الأمر (إذا كان هناك رقم جوال واحد فقط فهو لولي الأمر)
+- studentPhone: جوال الطالب نفسه
+- grade: الصف (رقم مثل 9 أو كلمة مثل التاسع)
+- section: الشعبة (مثل 1 2 3 4 أو أ ب ج)
+- class: معلومة صف أخرى، مثل المرحلة، أو عمود فيه الصف والشعبة معاً مثل 9/أ
+- ignore: رقم تسلسلي (م، 1 2 3 ...)، رقم هوية، تاريخ ميلاد، ملاحظات، أو عمود فارغ
+header_row: رقم الصف الذي فيه عناوين الأعمدة (0 أو 1 أو 2)، أو -1 إذا لا يوجد صف عناوين.
+roles: مصفوفة بطول عدد الأعمدة (${width})، دور لكل عمود بالترتيب.`,
+    content: [{ type: 'text', text: table }],
+    schema: ColumnMapSchema,
+  });
+  const roles = Array.from({ length: width }, (_, i) => res.data.roles[i] ?? 'ignore');
+  const headerRow = res.data.header_row >= 0 && res.data.header_row <= 2 ? res.data.header_row : -1;
+  return { data: { headerRow, roles }, usage: [res.usage] };
+}
