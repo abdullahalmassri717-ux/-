@@ -26,6 +26,7 @@ import {
   X
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
+import { setSelected } from '../../data/selection';
 import { rowsFromFile } from '../../data/curriculumImport';
 import { classesIn, gradeNumber, parseStudentTable, textToRows } from '../../lib/studentImport';
 
@@ -52,6 +53,10 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   const org = useActiveOrg();
   // A school adds students by class first, then gives each teacher a class and subject.
   const isSchool = org.type === 'school' || org.type === 'learning_center';
+  // In a school only the administration creates groups and assigns them to teachers.
+  const canCreateGroups = !isSchool || org.role === 'owner';
+  const NO_GROUP_MSG = 'المجموعات في المدرسة تنشئها الإدارة وتسندها للمعلمين. اطلب من إدارة المدرسة إضافة المجموعة لك.';
+  const openNewGroup = () => (canCreateGroups ? setShowAddGroupModal(true) : notify(NO_GROUP_MSG, 'info'));
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -447,6 +452,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   const bulkBlocked = !isSchool && bulkSubjects.length > 0 && !chosenSubjects.length;
   const handleBulkImport = async () => {
     if (bulkBlocked) return notify('اختر مادة واحدة على الأقل');
+    if (!canCreateGroups && bulkPlan.some((p) => p.targets.some((t) => !t.existing))) return notify(NO_GROUP_MSG, 'info');
     setSaving(true);
     let made = 0;
     let added = 0;
@@ -594,13 +600,13 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
           </button>
         ))}
 
-        <button
+        {canCreateGroups && <button
           onClick={() => setShowAddGroupModal(true)}
           className="text-xs text-blue-700 hover:bg-blue-50 px-2.5 py-1.5 rounded-lg font-bold border border-dashed border-blue-300 whitespace-nowrap cursor-pointer flex items-center gap-1"
         >
           <Plus className="w-3.5 h-3.5" />
           <span>مجموعة جديدة</span>
-        </button>
+        </button>}
 
         {groups.length + archivedGroups.length > 0 && (
           <button
@@ -667,7 +673,11 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
             </div>
 
             <button
-              onClick={() => onNavigate('B14')}
+              onClick={() => {
+                // Open «وين وصلنا» on this very group, not on the last one opened there.
+                setSelected('group', currentGroupObj.id);
+                onNavigate('B14');
+              }}
               className="bg-[#1E3A5F] hover:bg-[#152a45] text-white text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs"
             >
               <span>وين وصلنا؟</span>
@@ -956,13 +966,13 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
         <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-8 text-center space-y-2">
           <Users className="w-8 h-8 text-slate-300 mx-auto" />
           <p className="text-sm font-bold text-slate-700">
-            {groups.length === 0 ? 'ابدأ بإنشاء أول مجموعة' : searchQuery ? 'لا يوجد طالب بهذا البحث' : 'لا يوجد طلاب في هذه المجموعة بعد'}
+            {groups.length === 0 ? (canCreateGroups ? 'ابدأ بإنشاء أول مجموعة' : 'لم تُسند لك أي مجموعة بعد') : searchQuery ? 'لا يوجد طالب بهذا البحث' : 'لا يوجد طلاب في هذه المجموعة بعد'}
           </p>
           <p className="text-xs text-slate-500">
-            {groups.length === 0 ? 'كل مجموعة مرتبطة بصف ومادة من المنهج.' : 'أضف الطلاب واحداً واحداً أو الصق القائمة من Excel.'}
+            {groups.length === 0 ? (canCreateGroups ? 'كل مجموعة مرتبطة بصف ومادة من المنهج.' : 'إدارة المدرسة تنشئ المجموعات وتسندها لك.') : 'أضف الطلاب واحداً واحداً أو الصق القائمة من Excel.'}
           </p>
           <button
-            onClick={groups.length === 0 ? () => setShowAddGroupModal(true) : openAddStudent}
+            onClick={groups.length === 0 ? openNewGroup : openAddStudent}
             className="mt-2 bg-[#1E3A5F] text-white px-4 py-2 rounded-lg text-xs font-bold cursor-pointer"
           >
             {groups.length === 0 ? 'مجموعة جديدة' : 'إضافة طالب'}
@@ -1577,10 +1587,10 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
               </p>
               {groups.length === 0 ? (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 space-y-2">
-                  <p className="text-amber-900 font-bold">ما عندك أي مجموعة بعد. أنشئ مجموعة أولاً، ثم نكمل الاستيراد من هنا.</p>
-                  <button type="button" onClick={() => setShowAddGroupModal(true)} className="w-full bg-[#1E3A5F] text-white py-2 rounded-lg font-bold cursor-pointer">
+                  <p className="text-amber-900 font-bold">ما عندك أي مجموعة بعد. {canCreateGroups ? 'أنشئ مجموعة أولاً، ثم نكمل الاستيراد من هنا.' : 'اطلب من إدارة المدرسة إسناد مجموعة لك.'}</p>
+                  {canCreateGroups && <button type="button" onClick={() => setShowAddGroupModal(true)} className="w-full bg-[#1E3A5F] text-white py-2 rounded-lg font-bold cursor-pointer">
                     أنشئ مجموعة الآن
-                  </button>
+                  </button>}
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
@@ -1588,9 +1598,9 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
                     <option value="">اختر المجموعة…</option>
                     {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                   </select>
-                  <button type="button" onClick={() => setShowAddGroupModal(true)} className="shrink-0 border border-slate-300 px-2.5 py-2 rounded-lg font-bold text-slate-700 cursor-pointer">
+                  {canCreateGroups && <button type="button" onClick={() => setShowAddGroupModal(true)} className="shrink-0 border border-slate-300 px-2.5 py-2 rounded-lg font-bold text-slate-700 cursor-pointer">
                     + مجموعة جديدة
-                  </button>
+                  </button>}
                 </div>
               )}
             </div>
@@ -1638,7 +1648,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
       )}
 
       {/* Add Group Modal Bound to Curriculum (Requirement: إلزامية تحديد المنهج والصف والمادة) */}
-      {showAddGroupModal && (
+      {showAddGroupModal && canCreateGroups && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 text-right space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">

@@ -156,11 +156,11 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       for (const g of c.grades) {
         if (g.id !== gradeId && !g.subjects.some((s) => s.id === subjectId)) continue;
         const s = g.subjects.find((x) => x.id === subjectId);
-        const lessons = s ? s.units.reduce((n, u) => n + u.lessons.length, 0) : 0;
-        return { curriculumId: c.id, curriculumName: c.name, gradeId: g.id, gradeName: g.name, subjectName: s?.name ?? '', totalLessons: lessons };
+        const lessonIds = new Set(s ? s.units.flatMap((u) => u.lessons.map((l) => l.id)) : []);
+        return { curriculumId: c.id, curriculumName: c.name, gradeId: g.id, gradeName: g.name, subjectName: s?.name ?? '', totalLessons: lessonIds.size, lessonIds };
       }
     }
-    return { curriculumId: '', curriculumName: '', gradeId: gradeId ?? '', gradeName: '', subjectName: '', totalLessons: 0 };
+    return { curriculumId: '', curriculumName: '', gradeId: gradeId ?? '', gradeName: '', subjectName: '', totalLessons: 0, lessonIds: new Set<string>() };
   }
 
   async function scoresByStudent(): Promise<Map<string, { pct: number; trend: 'up' | 'down' | 'steady' }>> {
@@ -500,7 +500,8 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
           avgScore: 0,
           schedule: g.schedule ?? '',
           totalLessonsCount: names.totalLessons,
-          taughtLessonsCount: (g.group_lesson_progress ?? []).length,
+          // Only this group's own subject: lessons saved under an old subject don't count.
+          taughtLessonsCount: (g.group_lesson_progress ?? []).filter((p) => names.lessonIds.has(p.lesson_id)).length,
         });
       }
       return out;
