@@ -36,15 +36,25 @@ Deno.serve(async (req) => {
 
   const findAssessment = async (code: string) => {
     if (!/^[a-z0-9]{6,20}$/i.test(code)) return null;
-    const { data } = await admin
+    // assessments.organization_id has no direct foreign key to organizations
+    // (it is tied through groups), so the organization is read in a second
+    // query. Embedding organizations(...) here made every link fail.
+    const { data, error } = await admin
       .from('assessments')
-      .select('id, organization_id, group_id, title, kind, submission_open, submission_mode, organizations(name, status)')
+      .select('id, organization_id, group_id, title, kind, submission_open, submission_mode')
       .eq('submission_code', code.toLowerCase())
       .maybeSingle();
+    if (error) console.error('student-submit: assessment lookup failed', error.message);
+    if (!data) return null;
+    const { data: org, error: orgError } = await admin
+      .from('organizations')
+      .select('name, status')
+      .eq('id', data.organization_id)
+      .maybeSingle();
+    if (orgError) console.error('student-submit: organization lookup failed', orgError.message);
     // A disabled (or not yet approved) organization's links stop working.
-    const org = data && (Array.isArray(data.organizations) ? data.organizations[0] : data.organizations);
-    if (data && org?.status && org.status !== 'active') return null;
-    return data;
+    if (!org || org.status !== 'active') return null;
+    return { ...data, organizations: org };
   };
 
   if (req.method === 'GET') {
