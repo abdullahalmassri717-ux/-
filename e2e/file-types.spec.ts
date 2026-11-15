@@ -46,7 +46,23 @@ test('an Excel file with stage and grade columns makes one group per class in on
   await expect(page.getByText('ملفك مقسّم على 2 صفوف')).toBeVisible();
   await page.getByRole('button', { name: 'أنشئ المجموعات واستورد 3 طالب' }).click();
   await expect(toast(page, /أنشأنا 2 مجموعة وأضفنا 3 طالباً/)).toBeVisible();
-  await expect(page.getByRole('button', { name: /المرحلة الرابعة – الصف 7/ }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /المرحلة الرابعة – الصف السابع/ }).first()).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('a grade written as a number (9) and sections 1–4 make one class per section, after a preview', async ({ page }) => {
+  const errors = watchErrors(page);
+  await open(page, '/school/classes');
+  await page.getByRole('button', { name: 'استيراد من Excel' }).click();
+  await page.locator('input[type=file][accept*=".xlsx"]').setInputFiles(fixture('students-grade-number.xlsx'));
+  // The preview shows each column and the first students as they will be saved.
+  await expect(page.getByLabel('محتوى العمود 2')).toHaveValue('grade');
+  await expect(page.getByLabel('محتوى العمود 3')).toHaveValue('section');
+  await expect(page.getByText('الصف التاسع – شعبة 1').first()).toBeVisible();
+  await expect(page.getByText('0599100201')).toBeVisible();
+  await expect(page.getByText('ملفك مقسّم على 3 صفوف')).toBeVisible();
+  await page.getByRole('button', { name: 'أنشئ المجموعات واستورد 4 طالب' }).click();
+  await expect(toast(page, /أنشأنا 3 مجموعة وأضفنا 4 طالباً/)).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -57,7 +73,7 @@ test('a file split by class can still go into existing groups one class at a tim
   await page.locator('input[type=file][accept*=".xlsx"]').setInputFiles(fixture('students-by-class.xlsx'));
   await page.getByRole('button', { name: 'أو اختر بنفسك مجموعة موجودة لكل صف' }).click();
   await expect(page.getByText('ملفك فيه 2 صفوف')).toBeVisible();
-  await expect(page.locator('li', { hasText: 'طارق نبيل عاشور' })).toBeVisible();
+  await expect(page.getByText('جاهز لاستيراد 2 طالباً')).toBeVisible();
   await page.locator('select').filter({ hasText: 'اختر المجموعة' }).selectOption({ index: 1 });
   await page.getByRole('button', { name: 'بدء الاستيراد' }).click();
   await expect(toast(page, /تم استيراد 2 طالباً/)).toBeVisible();
@@ -81,10 +97,10 @@ test('a school imports students by class, then gives a teacher a class and subje
     dispatchEvent(new PopStateEvent('popstate'));
   });
   await page.getByRole('button', { name: 'الصفوف', exact: true }).first().click();
-  await page.locator('select').filter({ hasText: 'اختر الصف' }).selectOption({ label: 'المرحلة الثالثة – الصف 6 (1 طالب)' });
+  await page.locator('select').filter({ hasText: 'اختر الصف' }).selectOption({ label: 'المرحلة الثالثة – الصف السادس (1 طالب)' });
   await page.locator('select').filter({ hasText: 'اختر المادة' }).selectOption({ index: 1 });
   await page.getByRole('button', { name: 'أسند', exact: true }).click();
-  await expect(toast(page, /أسندنا «المرحلة الثالثة – الصف 6 – /)).toBeVisible();
-  await expect(page.locator('label', { hasText: 'المرحلة الثالثة – الصف 6 – ' }).locator('input')).toBeChecked();
+  await expect(toast(page, /أسندنا «المرحلة الثالثة – الصف السادس – /)).toBeVisible();
+  await expect(page.locator('label', { hasText: 'المرحلة الثالثة – الصف السادس – ' }).locator('input')).toBeChecked();
   expect(errors).toEqual([]);
 });

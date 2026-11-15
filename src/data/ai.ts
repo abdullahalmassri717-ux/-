@@ -63,6 +63,8 @@ export interface AiStore {
   aiStudyPlan(subjectId: string, lessons: { id: string; mastery: number | null }[], days: number): Promise<StudyPlan>;
   aiParentReply(input: { message: string; studentFirstName: string; facts: string[] }): Promise<{ reply: string; needsTeacher: boolean }>;
   aiAssistant(turns: { role: 'user' | 'assistant'; text: string }[]): Promise<string>;
+  /** What each column of a student list holds. Rows must already be masked (sampleForAi). */
+  aiMapStudentColumns(rows: string[][]): Promise<{ headerRow: number; roles: string[] }>;
   listBank(subjectId: string | null): Promise<BankQuestion[]>;
   addBankQuestions(items: NewBankQuestion[]): Promise<number>;
   deleteBankQuestion(id: string): Promise<void>;
@@ -98,6 +100,7 @@ export function createSupabaseAi(db: SupabaseClient, orgId: string): AiStore {
     aiSuggestRubric: (input) => call('suggest_rubric', { ...input }),
     aiStudyPlan: (subjectId, lessons, days) => call('study_plan', { subjectId, lessons, days }),
     aiParentReply: (input) => call('parent_reply', { ...input }),
+    aiMapStudentColumns: (rows) => call('map_student_columns', { rows }),
     async aiAssistant(turns) {
       const r = await call<{ reply: string }>('assistant', { turns });
       return r.reply;
@@ -289,6 +292,8 @@ export function createDemoAi(): AiStore {
         needsTeacher: false,
       });
     },
+    // Demo: no AI. An empty answer makes the screen keep its own reading of the columns.
+    aiMapStudentColumns: () => wait({ headerRow: -1, roles: [] }, 400),
     async aiAssistant(turns) {
       const last = turns[turns.length - 1]?.text ?? '';
       return wait(

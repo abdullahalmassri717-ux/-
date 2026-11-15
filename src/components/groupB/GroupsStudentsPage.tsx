@@ -28,7 +28,8 @@ import {
 import { notify } from '../../lib/notify';
 import { getSelected, setSelected } from '../../data/selection';
 import { rowsFromFile } from '../../data/curriculumImport';
-import { classesIn, gradeNumber, parseStudentTable, textToRows } from '../../lib/studentImport';
+import { applyColumns, classesIn, gradeNumber, guessColumns, sampleForAi, textToRows, validColumnMap, type ColumnMap } from '../../lib/studentImport';
+import StudentImportPreview, { type AiReadState } from './StudentImportPreview';
 
 interface GroupsStudentsPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -89,6 +90,11 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   const [importedClasses, setImportedClasses] = useState<string[]>([]);
   // A file split by class: by default make one group per class and import everything at once.
   const [importManual, setImportManual] = useState(false);
+  // Rows straight from an uploaded file (a paste is split from the text box instead).
+  const [importFileRows, setImportFileRows] = useState<string[][] | null>(null);
+  // The column map from the AI or from the teacher's own changes, over our own guess.
+  const [importMap, setImportMap] = useState<ColumnMap | null>(null);
+  const [aiRead, setAiRead] = useState<AiReadState>('idle');
   const [bulkCurriculumId, setBulkCurriculumId] = useState('');
   // null = the default pick (the subject most of the file's grades have).
   const [bulkPicked, setBulkPicked] = useState<string[] | null>(null);
@@ -201,6 +207,9 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   const openImport = () => {
     setImportGroupId(defaultGroupId);
     setImportText('');
+    setImportFileRows(null);
+    setImportMap(null);
+    setAiRead('idle');
     setImportClass('');
     setImportedClasses([]);
     setImportManual(false);
@@ -400,7 +409,30 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
     }
   };
 
-  const parsedImport = useMemo(() => parseStudentTable(textToRows(importText)), [importText]);
+  const importTable = useMemo(() => importFileRows ?? textToRows(importText), [importFileRows, importText]);
+  const importGuess = useMemo(() => guessColumns(importTable), [importTable]);
+  const columnMap = importMap ?? importGuess.map;
+  const parsedImport = useMemo(() => applyColumns(importTable, columnMap), [importTable, columnMap]);
+  // When our own reading is not sure (no header, unclear columns), the AI reads the
+  // first rows (names and numbers hidden) and says what each column is.
+  const askAiForColumns = async (table = importTable) => {
+    setAiRead('reading');
+    try {
+      const answer = await store.aiMapStudentColumns(sampleForAi(table));
+      const width = Math.max(0, ...table.map((r) => r.length));
+      const map = validColumnMap(answer, width);
+      if (map) setImportMap(map);
+      setAiRead(map ? 'done' : 'idle');
+    } catch {
+      setAiRead('failed');
+    }
+  };
+  useEffect(() => {
+    setImportMap(null);
+    setAiRead('idle');
+    const width = Math.max(0, ...importTable.map((r) => r.length));
+    if (showExcelModal && width > 1 && importTable.length > 1 && !importGuess.confident) void askAiForColumns(importTable);
+  }, [importTable]);
   const importClasses = useMemo(() => classesIn(parsedImport), [parsedImport]);
   const multiClass = importClasses.length > 1;
   // A new file picks its first class not imported yet.
@@ -542,8 +574,9 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
     if (!file) return;
     try {
       // Excel (.xlsx) or CSV: turn the rows back into the same tab-separated text as a paste.
-      const rows = await rowsFromFile(file);
+      const rows = (await rowsFromFile(file)).filter((r) => r.some((c) => c.trim()));
       setImportText(rows.map((r) => r.join('\t')).join('\n'));
+      setImportFileRows(rows);
     } catch (e) {
       notify(errorMessage(e, 'تعذّرت قراءة الملف. احفظه بصيغة ‎.xlsx‎ أو CSV وجرّب مرة ثانية.'));
     }
@@ -1472,13 +1505,30 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
             </label>
             <textarea
               value={importText}
-              onChange={(e) => setImportText(e.target.value)}
+              onChange={(e) => {
+                setImportText(e.target.value);
+                setImportFileRows(null);
+              }}
               rows={4}
               placeholder={'أو الصق هنا، مثلاً:\nأحمد محمود المصري\t0599112233\nسارة خالد النجار\t0598223344'}
               className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono"
             />
 
-            {importClasses.length > 0 && !importManual ? (
+            {importTable.length > 0 && (
+              <StudentImportPreview
+                rows={importTable}
+                map={columnMap}
+                students={parsedImport}
+                aiState={aiRead}
+                onChange={(m) => {
+                  setImportMap(m);
+                  if (aiRead === 'failed') setAiRead('idle');
+                }}
+                onAskAi={() => void askAiForColumns()}
+              />
+            )}
+
+            {aiRead === 'reading' ? null : importClasses.length > 0 && !importManual ? (
               <div className="text-xs space-y-3">
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 space-y-1">
                   <p className="font-bold text-emerald-900">

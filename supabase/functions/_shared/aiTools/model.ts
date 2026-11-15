@@ -51,12 +51,15 @@ export interface ToolModelConfig {
   mainModel: string;
   /** Second, independent check that every generated question is inside the taught lessons. */
   checkModel: string;
+  /** Small, quick jobs such as reading the columns of a student list. */
+  fastModel: string;
 }
 
 export function toolConfigFromEnv(env: Record<string, string | undefined>): ToolModelConfig {
   return {
     mainModel: env.AI_TOOLS_MODEL?.trim() || 'claude-opus-5-5',
     checkModel: env.AI_TOOLS_CHECK_MODEL?.trim() || 'claude-sonnet-5-5',
+    fastModel: env.AI_TOOLS_FAST_MODEL?.trim() || 'claude-haiku-5-5',
   };
 }
 
