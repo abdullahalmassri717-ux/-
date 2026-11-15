@@ -193,11 +193,13 @@ export interface DataStore extends BillingStore, SchoolStore, AiStore {
   listGroups(): Promise<Group[]>;
   createGroup(input: NewGroupInput): Promise<Group>;
   updateGroup(id: string, input: Partial<NewGroupInput>): Promise<void>;
-  /** «إيقاف»: the group's students stop being billed (unless in another group); its data stays. */
-  archiveGroup(id: string): Promise<void>;
+  /** «إيقاف»: the groups' students stop being billed (unless in another group); their data stays. */
+  archiveGroups(ids: string[]): Promise<void>;
   /** Paused groups, so the teacher can turn them back on. */
   listArchivedGroups(): Promise<{ id: string; name: string }[]>;
-  restoreGroup(id: string): Promise<void>;
+  restoreGroups(ids: string[]): Promise<void>;
+  /** Deletes groups for good with their exams and papers (owners only). Students stay saved. */
+  deleteGroups(ids: string[]): Promise<void>;
   // Students
   listStudents(): Promise<StudentRow[]>;
   getStudent(id: string): Promise<StudentRow | null>;
@@ -208,13 +210,13 @@ export interface DataStore extends BillingStore, SchoolStore, AiStore {
   addStudentsToGroup(groupId: string, studentIds: string[]): Promise<number>;
   /** Sets exactly which groups the student is in (of the groups this user can see). */
   setStudentGroups(studentId: string, groupIds: string[]): Promise<void>;
-  /** «تعطيل»: the student stays saved but leaves lists, billing and the submission link. */
-  archiveStudent(id: string): Promise<void>;
+  /** «تعطيل»: the students stay saved but leave lists, billing and the submission link. */
+  archiveStudents(ids: string[]): Promise<void>;
   /** Disabled students, so the teacher can turn them back on. */
   listArchivedStudents(): Promise<StudentRow[]>;
-  restoreStudent(id: string): Promise<void>;
-  /** Deletes the student and their papers for good (owners only). */
-  deleteStudent(id: string): Promise<void>;
+  restoreStudents(ids: string[]): Promise<void>;
+  /** Deletes students and their papers for good (owners only). */
+  deleteStudents(ids: string[]): Promise<void>;
   getStudentHistory(id: string): Promise<StudentHistory>;
   // «وين وصلنا»
   getTaughtLessons(groupId: string): Promise<TaughtLessons>;

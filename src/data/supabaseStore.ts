@@ -62,6 +62,13 @@ function formatDate(iso: string | null): string {
   }
 }
 
+/** Splits long id lists so each request's address stays short (a class import can be hundreds of students). */
+const chunks = <T,>(list: T[], size = 100): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+  return out;
+};
+
 const one = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? v[0] ?? null : v ?? null);
 
 type CurriculumRow = {
@@ -543,9 +550,12 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       if (error) fail(error, 'تعذّر حفظ المجموعة.');
     },
 
-    async archiveGroup(id) {
-      const { error } = await db.from('groups').update({ archived_at: new Date().toISOString() }).eq('id', id);
-      if (error) fail(error, 'تعذّر إيقاف المجموعة.');
+    async archiveGroups(ids) {
+      const now = new Date().toISOString();
+      for (const part of chunks(ids)) {
+        const { error } = await db.from('groups').update({ archived_at: now }).in('id', part);
+        if (error) fail(error, 'تعذّر إيقاف المجموعات.');
+      }
     },
 
     async listArchivedGroups() {
@@ -559,9 +569,22 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       return (data ?? []) as { id: string; name: string }[];
     },
 
-    async restoreGroup(id) {
-      const { error } = await db.from('groups').update({ archived_at: null }).eq('id', id);
-      if (error) fail(error, 'تعذّر تفعيل المجموعة.');
+    async restoreGroups(ids) {
+      for (const part of chunks(ids)) {
+        const { error } = await db.from('groups').update({ archived_at: null }).in('id', part);
+        if (error) fail(error, 'تعذّر تفعيل المجموعات.');
+      }
+    },
+
+    async deleteGroups(ids) {
+      // RLS lets only the organization's owner delete; a teacher gets 0 rows back.
+      let deleted = 0;
+      for (const part of chunks(ids)) {
+        const { data, error } = await db.from('groups').delete().in('id', part).select('id');
+        if (error) fail(error, 'تعذّر حذف المجموعات.');
+        deleted += data?.length ?? 0;
+      }
+      if (ids.length && !deleted) throw new Error('حذف المجموعات متاح لمالك الجهة فقط. يمكنك إيقافها بدلاً من ذلك.');
     },
 
     async listStudents() {
@@ -652,9 +675,11 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       }
     },
 
-    async archiveStudent(id) {
-      const { error } = await db.from('students').update({ status: 'archived' }).eq('id', id);
-      if (error) fail(error, 'تعذّر تعطيل الطالب.');
+    async archiveStudents(ids) {
+      for (const part of chunks(ids)) {
+        const { error } = await db.from('students').update({ status: 'archived' }).in('id', part);
+        if (error) fail(error, 'تعذّر تعطيل الطلاب.');
+      }
     },
 
     async listArchivedStudents() {
@@ -668,16 +693,22 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       return ((data ?? []) as unknown as StudentDb[]).map((s) => toStudent(s, new Map()));
     },
 
-    async restoreStudent(id) {
-      const { error } = await db.from('students').update({ status: 'active' }).eq('id', id);
-      if (error) fail(error, 'تعذّر تفعيل الطالب.');
+    async restoreStudents(ids) {
+      for (const part of chunks(ids)) {
+        const { error } = await db.from('students').update({ status: 'active' }).in('id', part);
+        if (error) fail(error, 'تعذّر تفعيل الطلاب.');
+      }
     },
 
-    async deleteStudent(id) {
+    async deleteStudents(ids) {
       // RLS lets only the organization's owner delete; a teacher gets 0 rows back.
-      const { data, error } = await db.from('students').delete().eq('id', id).select('id');
-      if (error) fail(error, 'تعذّر حذف الطالب.');
-      if (!data?.length) throw new Error('حذف الطالب متاح لمالك الجهة فقط. يمكنك تعطيله بدلاً من ذلك.');
+      let deleted = 0;
+      for (const part of chunks(ids)) {
+        const { data, error } = await db.from('students').delete().in('id', part).select('id');
+        if (error) fail(error, 'تعذّر حذف الطلاب.');
+        deleted += data?.length ?? 0;
+      }
+      if (ids.length && !deleted) throw new Error('حذف الطلاب متاح لمالك الجهة فقط. يمكنك تعطيلهم بدلاً من ذلك.');
     },
 
     async getStudentHistory(id) {

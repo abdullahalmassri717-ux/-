@@ -228,17 +228,23 @@ export function createDemoStore(): DataStore {
       }
       return wait(undefined);
     },
-    async archiveGroup(id) {
-      const g = s().groups.find((x) => x.id === id);
-      if (g) archivedGroups.push(g);
-      s().groups = s().groups.filter((g) => g.id !== id);
+    async archiveGroups(ids) {
+      archivedGroups.push(...s().groups.filter((g) => ids.includes(g.id)));
+      s().groups = s().groups.filter((g) => !ids.includes(g.id));
       return wait(undefined);
     },
     listArchivedGroups: () => wait(archivedGroups.map((g) => ({ id: g.id, name: g.name }))),
-    async restoreGroup(id) {
-      const g = archivedGroups.find((x) => x.id === id);
-      if (g) s().groups.push(g);
-      archivedGroups = archivedGroups.filter((x) => x.id !== id);
+    async restoreGroups(ids) {
+      s().groups.push(...archivedGroups.filter((g) => ids.includes(g.id)));
+      archivedGroups = archivedGroups.filter((x) => !ids.includes(x.id));
+      return wait(undefined);
+    },
+    async deleteGroups(ids) {
+      s().groups = s().groups.filter((g) => !ids.includes(g.id));
+      archivedGroups = archivedGroups.filter((x) => !ids.includes(x.id));
+      const drop = (st: StudentRow) => ({ ...st, groupIds: st.groupIds.filter((g) => !ids.includes(g)) });
+      s().students = s().students.map(drop);
+      s().archivedStudents = s().archivedStudents.map(drop);
       return wait(undefined);
     },
 
@@ -312,26 +318,29 @@ export function createDemoStore(): DataStore {
       st.group = s().groups.find((g) => g.id === st.groupId)?.name ?? '';
       return wait(undefined);
     },
-    async archiveStudent(id) {
-      const st = s().students.find((x) => x.id === id);
-      if (st) s().archivedStudents.push(st);
-      for (const g of s().groups) if (st?.groupIds.includes(g.id)) g.studentCount = Math.max(0, g.studentCount - 1);
-      s().students = s().students.filter((x) => x.id !== id);
+    async archiveStudents(ids) {
+      for (const st of s().students.filter((x) => ids.includes(x.id))) {
+        s().archivedStudents.push(st);
+        for (const g of s().groups) if (st.groupIds.includes(g.id)) g.studentCount = Math.max(0, g.studentCount - 1);
+      }
+      s().students = s().students.filter((x) => !ids.includes(x.id));
       return wait(undefined);
     },
     listArchivedStudents: () => wait(s().archivedStudents.map((x) => ({ ...x }))),
-    async restoreStudent(id) {
-      const st = s().archivedStudents.find((x) => x.id === id);
-      if (st) s().students.push(st);
-      for (const g of s().groups) if (st?.groupIds.includes(g.id)) g.studentCount += 1;
-      s().archivedStudents = s().archivedStudents.filter((x) => x.id !== id);
+    async restoreStudents(ids) {
+      for (const st of s().archivedStudents.filter((x) => ids.includes(x.id))) {
+        s().students.push(st);
+        for (const g of s().groups) if (st.groupIds.includes(g.id)) g.studentCount += 1;
+      }
+      s().archivedStudents = s().archivedStudents.filter((x) => !ids.includes(x.id));
       return wait(undefined);
     },
-    async deleteStudent(id) {
-      const gone = s().students.find((st) => st.id === id);
-      for (const g of s().groups) if (gone?.groupIds.includes(g.id)) g.studentCount = Math.max(0, g.studentCount - 1);
-      s().students = s().students.filter((x) => x.id !== id);
-      s().archivedStudents = s().archivedStudents.filter((x) => x.id !== id);
+    async deleteStudents(ids) {
+      for (const st of s().students.filter((x) => ids.includes(x.id))) {
+        for (const g of s().groups) if (st.groupIds.includes(g.id)) g.studentCount = Math.max(0, g.studentCount - 1);
+      }
+      s().students = s().students.filter((x) => !ids.includes(x.id));
+      s().archivedStudents = s().archivedStudents.filter((x) => !ids.includes(x.id));
       return wait(undefined);
     },
 
