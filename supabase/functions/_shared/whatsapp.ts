@@ -41,17 +41,28 @@ export function messagingReady(): boolean {
   return whatsappReady() || smsReady();
 }
 
+/** One Arabic SMS part holds 70 characters; longer texts cost two messages. */
+const SMS_ONE_PART = 70;
+
 /**
- * The short SMS: the student's first and family name, their 4-digit code, the school (or teacher)
- * name and the report link. Usually two Arabic SMS parts (70 characters each).
+ * The parent SMS, kept to ONE message (owner's rule): student's first + family
+ * name, their 4-digit code, the school/teacher name when it still fits, and the
+ * report link. The report page itself always shows the school name.
  */
 export function reportSmsText(fullName: string, studentCode: string, orgName: string, shareCode: string): string {
   const parts = String(fullName ?? '').trim().split(/\s+/).filter(Boolean);
   const name = parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1]}` : (parts[0] ?? '');
-  const code = /^\d{4}$/.test(String(studentCode ?? '').trim()) ? ` (رمز ${String(studentCode).trim()})` : '';
-  const org = String(orgName ?? '').trim().slice(0, 30);
+  const code = /^\d{4}$/.test(String(studentCode ?? '').trim()) ? ` (${String(studentCode).trim()})` : '';
+  const org = String(orgName ?? '').trim();
   const link = `${SITE_URL}/r/${shareCode}`;
-  return [name ? `التقرير الأسبوعي للطالب ${name}${code}` : 'التقرير الأسبوعي', org, link].filter(Boolean).join('\n');
+  const who = `${name}${code}`.trim();
+  const options = [
+    `تقرير ${who} - ${org}\n${link}`,
+    `${who} - ${org}\n${link}`,
+    `تقرير ${who}\n${link}`,
+    `${who}\n${link}`,
+  ].filter((t) => org || !t.includes(' - '));
+  return options.find((t) => t.length <= SMS_ONE_PART) ?? options[options.length - 1];
 }
 
 function waNumber(phone: string): string {
