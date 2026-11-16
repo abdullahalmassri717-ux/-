@@ -14,6 +14,35 @@ interface SharedReport {
   created_at: string;
 }
 
+// dequa.study/r/demo: a made-up example, so anyone can see what a parent receives.
+const SAMPLE: SharedReport = {
+  org_name: 'مدرسة المستقبل (مثال توضيحي)',
+  period_start: '2026-11-08',
+  period_end: '2026-11-14',
+  created_at: '2026-11-14T16:00:00Z',
+  body: [
+    '📋 التقرير الأسبوعي',
+    '🏫 المدرسة: مدرسة المستقبل',
+    '👤 الطالب: أحمد محمود | الصف: التاسع – شعبة أ',
+    '🗓️ من 08/11 إلى 14/11',
+    '',
+    '📘 الرياضيات',
+    '• اختبار المعادلات: 17 من 20 (85%)',
+    '• واجب الكسور الجبرية: 8 من 10 (80%)',
+    '📊 المعدل هذا الأسبوع: 83% (⬆️ 6% عن قبل)',
+    '💪 نقاط القوة: حل المعادلات الخطية',
+    '🎯 نقاط تحتاج تقوية: تبسيط الكسور الجبرية',
+    '📝 ملاحظات المعلم: ينتبه لإشارة السالب عند فك الأقواس',
+    '💡 نصيحة للبيت: راجعوا مع الطالب «تبسيط الكسور الجبرية»، وخلّوه يحلّ تمرينين إضافيين على كل درس.',
+    '📚 شُرح هذا الأسبوع: المعادلات الخطية، الكسور الجبرية',
+    '',
+    '📘 العلوم',
+    '• اختبار الخلية: 9 من 10 (90%)',
+    '💪 نقاط القوة: تركيب الخلية',
+    '💡 نصيحة للبيت: أداء ممتاز، شجّعوه واستمروا على نفس المراجعة.',
+  ].join('\n'),
+};
+
 const dateText = (d: string | null) =>
   d ? new Date(d).toLocaleDateString('ar-PS-u-nu-latn', { day: 'numeric', month: 'long' }) : '';
 
@@ -22,6 +51,11 @@ export default function SharedReportPage({ code }: { code: string }) {
   const [state, setState] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
 
   useEffect(() => {
+    if (code === 'demo') {
+      setReport(SAMPLE);
+      setState('ready');
+      return;
+    }
     if (!supabase || !/^[0-9a-f]{16}$/.test(code)) {
       setState('missing');
       return;
