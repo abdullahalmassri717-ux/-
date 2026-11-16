@@ -56,7 +56,7 @@ export default function SharedReportPage({ code }: { code: string }) {
       setState('ready');
       return;
     }
-    if (!supabase || !/^[0-9a-f]{16}$/.test(code)) {
+    if (!supabase || !/^[0-9a-f]{12}([0-9a-f]{4})?$/.test(code)) {
       setState('missing');
       return;
     }

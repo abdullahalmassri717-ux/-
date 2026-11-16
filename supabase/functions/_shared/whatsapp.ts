@@ -41,16 +41,28 @@ export function messagingReady(): boolean {
   return whatsappReady() || smsReady();
 }
 
+/** One Arabic SMS part holds 70 characters; longer texts cost two messages. */
+const SMS_ONE_PART = 70;
+
 /**
- * The short SMS: the student's first and family name, the school (or teacher)
- * name and the report link. Usually two Arabic SMS parts (70 characters each).
+ * The parent SMS, kept to ONE message (owner's rule): student's first + family
+ * name, their 4-digit code, the school/teacher name when it still fits, and the
+ * report link. The report page itself always shows the school name.
  */
-export function reportSmsText(fullName: string, orgName: string, shareCode: string): string {
+export function reportSmsText(fullName: string, studentCode: string, orgName: string, shareCode: string): string {
   const parts = String(fullName ?? '').trim().split(/\s+/).filter(Boolean);
   const name = parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1]}` : (parts[0] ?? '');
-  const org = String(orgName ?? '').trim().slice(0, 40);
+  const code = /^\d{4}$/.test(String(studentCode ?? '').trim()) ? ` (${String(studentCode).trim()})` : '';
+  const org = String(orgName ?? '').trim();
   const link = `${SITE_URL}/r/${shareCode}`;
-  return [name ? `التقرير الأسبوعي للطالب ${name}` : 'التقرير الأسبوعي', org, link].filter(Boolean).join('\n');
+  const who = `${name}${code}`.trim();
+  const options = [
+    `تقرير ${who} - ${org}\n${link}`,
+    `${who} - ${org}\n${link}`,
+    `تقرير ${who}\n${link}`,
+    `${who}\n${link}`,
+  ].filter((t) => org || !t.includes(' - '));
+  return options.find((t) => t.length <= SMS_ONE_PART) ?? options[options.length - 1];
 }
 
 function waNumber(phone: string): string {
@@ -122,13 +134,17 @@ export async function sendQueuedReports(admin: SupabaseClient, ids: string[]): P
       .in('id', ids.slice(i, i + 200))
       .eq('status', 'queued');
     const names = new Map<string, string>();
+    const codes = new Map<string, string>();
     const orgNames = new Map<string, string>();
     if (bySms && reports?.length) {
       const { data: students } = await admin
         .from('students')
-        .select('id, full_name')
+        .select('id, full_name, student_code')
         .in('id', [...new Set(reports.map((r) => String(r.student_id)))]);
-      for (const st of students ?? []) names.set(String(st.id), String(st.full_name ?? ''));
+      for (const st of students ?? []) {
+        names.set(String(st.id), String(st.full_name ?? ''));
+        codes.set(String(st.id), String(st.student_code ?? ''));
+      }
       const { data: orgs } = await admin
         .from('organizations')
         .select('id, name')
@@ -140,6 +156,7 @@ export async function sendQueuedReports(admin: SupabaseClient, ids: string[]): P
       const error = bySms
         ? await sendSms(String(r.recipient_phone), reportSmsText(
             names.get(String(r.student_id)) ?? '',
+            codes.get(String(r.student_id)) ?? '',
             orgNames.get(String(r.organization_id)) ?? '',
             String(r.share_code),
           ))
