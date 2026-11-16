@@ -41,11 +41,16 @@ export function messagingReady(): boolean {
   return whatsappReady() || smsReady();
 }
 
-/** The short SMS: the student's first name and the report link (fits one Arabic SMS). */
-export function reportSmsText(fullName: string, shareCode: string): string {
-  const first = String(fullName ?? '').trim().split(/\s+/)[0] ?? '';
+/**
+ * The short SMS: the student's first and family name, the school (or teacher)
+ * name and the report link. Usually two Arabic SMS parts (70 characters each).
+ */
+export function reportSmsText(fullName: string, orgName: string, shareCode: string): string {
+  const parts = String(fullName ?? '').trim().split(/\s+/).filter(Boolean);
+  const name = parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1]}` : (parts[0] ?? '');
+  const org = String(orgName ?? '').trim().slice(0, 40);
   const link = `${SITE_URL}/r/${shareCode}`;
-  return first ? `تقرير ${first} الأسبوعي من دقة:\n${link}` : `تقرير دقة الأسبوعي:\n${link}`;
+  return [name ? `التقرير الأسبوعي للطالب ${name}` : 'التقرير الأسبوعي', org, link].filter(Boolean).join('\n');
 }
 
 function waNumber(phone: string): string {
@@ -113,21 +118,31 @@ export async function sendQueuedReports(admin: SupabaseClient, ids: string[]): P
   for (let i = 0; i < ids.length; i += 200) {
     const { data: reports } = await admin
       .from('reports')
-      .select('id, recipient_phone, body, status, share_code, student_id')
+      .select('id, recipient_phone, body, status, share_code, student_id, organization_id')
       .in('id', ids.slice(i, i + 200))
       .eq('status', 'queued');
     const names = new Map<string, string>();
+    const orgNames = new Map<string, string>();
     if (bySms && reports?.length) {
       const { data: students } = await admin
         .from('students')
         .select('id, full_name')
         .in('id', [...new Set(reports.map((r) => String(r.student_id)))]);
       for (const st of students ?? []) names.set(String(st.id), String(st.full_name ?? ''));
+      const { data: orgs } = await admin
+        .from('organizations')
+        .select('id, name')
+        .in('id', [...new Set(reports.map((r) => String(r.organization_id)))]);
+      for (const o of orgs ?? []) orgNames.set(String(o.id), String(o.name ?? ''));
     }
     for (const r of reports ?? []) {
       if (!r.recipient_phone) continue;
       const error = bySms
-        ? await sendSms(String(r.recipient_phone), reportSmsText(names.get(String(r.student_id)) ?? '', String(r.share_code)))
+        ? await sendSms(String(r.recipient_phone), reportSmsText(
+            names.get(String(r.student_id)) ?? '',
+            orgNames.get(String(r.organization_id)) ?? '',
+            String(r.share_code),
+          ))
         : await send(String(r.recipient_phone), templateText(String(r.body ?? '')));
       if (!error) {
         sent++;
