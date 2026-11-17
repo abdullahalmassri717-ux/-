@@ -19,6 +19,7 @@ import { setExamDraft } from '../../data/examDraft';
 import type { ExamScope } from '../../data/examScope';
 import type { TaughtLessons } from '../../data/types';
 import { notify } from '../../lib/notify';
+import { applyNumerals } from '../../../supabase/functions/_shared/numerals.ts';
 
 interface GenerateExamToolProps {
   onNavigate: (screen: ScreenId) => void;
@@ -54,7 +55,7 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
     for (const c of curriculaQ.data ?? [])
       for (const g of c.grades)
         for (const s of g.subjects)
-          if (s.id === subjectId) return { curriculum: c.name, grade: g.name, subject: s.name, units: s.units };
+          if (s.id === subjectId) return { curriculum: c.name, grade: g.name, subject: s.name, units: s.units, numerals: s.numerals ?? 'arabic' };
     return null;
   }, [curriculaQ.data, subjectId]);
   const allLessons = useMemo(
@@ -127,6 +128,17 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
         fromBank = bank
           .filter((q) => q.lessonId && selectedLessons.includes(q.lessonId) && !existing.has(q.text))
           .slice(0, wanted)
+          // Questions the AI wrote earlier follow the subject's digits too (they may predate that rule).
+          .map((q) => {
+            if (q.source !== 'ai_generated' || !subject) return q;
+            const n = subject.numerals;
+            return {
+              ...q,
+              text: applyNumerals(q.text, n),
+              modelAnswer: applyNumerals(q.modelAnswer, n),
+              criteria: q.criteria.map((c) => ({ ...c, description: applyNumerals(c.description, n) })),
+            };
+          })
           .map((q) => ({ ...q, key: `b_${q.id}`, origin: 'bank' as const, sourceLabel: `${SOURCE_LABEL[q.source]}${q.sourceNote ? ` (${q.sourceNote})` : ''}`, saved: true }));
       }
       const remaining = qCount - fromBank.length;

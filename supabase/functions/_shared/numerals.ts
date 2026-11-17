@@ -18,12 +18,13 @@ export function asNumerals(v: unknown): Numerals {
 
 const AR = '٠١٢٣٤٥٦٧٨٩';
 const FA = '۰۱۲۳۴۵۶۷۸۹';
+const VARS: Record<string, string> = { x: 'س', y: 'ص', z: 'ع', a: 'أ', b: 'ب', c: 'ج' };
 
 /** One instruction for the model, in Arabic, matching the subject's textbook. */
 export function numeralsInstruction(n: Numerals): string {
   return n === 'latin'
     ? 'الأرقام والرموز: اكتب كل الأرقام بالأرقام الإنجليزية (0 1 2 3 4 5 6 7 8 9) والرموز والوحدات والمعادلات بالحروف اللاتينية (مثل x وm/s وH2O)، كما في كتاب هذه المادة، مع بقاء الكلام بالعربية.'
-    : 'الأرقام والرموز: اكتب كل الأرقام بالأرقام العربية (٠ ١ ٢ ٣ ٤ ٥ ٦ ٧ ٨ ٩) لا الإنجليزية، والرموز والمتغيرات بالحروف العربية كما في كتاب هذه المادة (مثل س، ص، ق(س)). الصيغ الكيميائية مثل H2O تبقى كما هي.';
+    : 'الأرقام والرموز: اكتب كل الأرقام بالأرقام العربية (٠ ١ ٢ ٣ ٤ ٥ ٦ ٧ ٨ ٩) لا الإنجليزية، والرموز والمتغيرات بالحروف العربية كما في كتاب هذه المادة (س، ص، ع، أ/ب، ق(س)، جا، جتا، لو)، ولا تستخدم x أو y أو a/b أبداً. الصيغ الكيميائية مثل H2O تبقى كما هي.';
 }
 
 /**
@@ -44,8 +45,13 @@ export function applyNumerals(text: string, n: Numerals): string {
     .map((part, i) =>
       i % 2 === 1
         ? part
-        : // A number inside a Latin word or formula (H2O, CO2, 5kg) is left alone.
-          part.replace(/(?<![A-Za-z\d.])\d+(?:\.\d+)?(?![A-Za-z\d])/g, (run) =>
+        : // Single lowercase Latin variables (x, y, a/b) become the Arabic ones the book uses.
+          // A number inside a Latin word or formula (H2O, CO2, 5kg) is left alone.
+          part
+            .replace(/(?<![A-Za-z])f\(/g, 'ق(')
+            .replace(/(?<![A-Za-z])g\(/g, 'هـ(')
+            .replace(/(?<![A-Za-z])[xyzabc](?![A-Za-z])/g, (v) => VARS[v])
+            .replace(/(?<![A-Za-z\d.])\d+(?:\.\d+)?(?![A-Za-z\d])/g, (run) =>
             run.replace(/\d/g, (d) => AR[Number(d)]).replace('.', '٫'),
           ),
     )

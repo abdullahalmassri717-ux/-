@@ -85,7 +85,7 @@ type CurriculumRow = {
   grades: {
     id: string; name: string; stage: string | null; sort_order: number;
     subjects: {
-      id: string; name: string; code: string | null; status: string; sort_order: number;
+      id: string; name: string; code: string | null; status: string; numerals: string | null; sort_order: number;
       units: {
         id: string; title: string; sort_order: number;
         lessons: {
@@ -112,7 +112,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       const { data, error } = await db
         .from('curricula')
         .select(
-          'id, name, country, currency_code, is_available, sort_order, grades(id, name, stage, sort_order, subjects(id, name, code, status, sort_order, units(id, title, sort_order, lessons(id, title, sort_order, learning_outcomes(text, sort_order), lesson_terms(kind, text, sort_order)))))',
+          'id, name, country, currency_code, is_available, sort_order, grades(id, name, stage, sort_order, subjects(id, name, code, status, numerals, sort_order, units(id, title, sort_order, lessons(id, title, sort_order, learning_outcomes(text, sort_order), lesson_terms(kind, text, sort_order)))))',
         )
         .order('sort_order');
       if (error) {
@@ -135,6 +135,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
             name: s.name,
             code: s.code ?? '',
             status: s.status === 'published' ? 'published' : 'draft',
+            numerals: s.numerals === 'latin' ? 'latin' : 'arabic',
             units: [...(s.units ?? [])].sort(bySort).map((u) => ({
               id: u.id,
               title: u.title,
