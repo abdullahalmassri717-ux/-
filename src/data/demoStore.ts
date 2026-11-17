@@ -84,6 +84,8 @@ function initialState(): DemoState {
       subjectId: group?.subjectId ?? null,
       submissionCode: `demo${e.id}`,
       submissionOpen: e.submissionMode === 'link',
+      submissionOpensAt: null,
+      submissionClosesAt: null,
       createdAt: new Date(Date.now() - i * 86400000).toISOString(),
       questions: e.id === 'ex1' ? MOCK_RUBRICS.map((q) => ({ ...q, lessonId: null })) : [],
     };
@@ -424,6 +426,8 @@ export function createDemoStore(): DataStore {
         questionsCount: input.questions.length,
         submissionCode: id.slice(-10),
         submissionOpen: input.submissionMode === 'link',
+        submissionOpensAt: input.submissionMode === 'link' ? input.submissionOpensAt ?? null : null,
+        submissionClosesAt: input.submissionMode === 'link' ? input.submissionClosesAt ?? null : null,
         createdAt: new Date().toISOString(),
         questions: input.questions.map((q, i) => ({
           id: newId('q'),
@@ -445,6 +449,8 @@ export function createDemoStore(): DataStore {
         if (patch.title !== undefined) a.title = patch.title;
         if (patch.status !== undefined) a.status = patch.status;
         if (patch.submissionOpen !== undefined) a.submissionOpen = patch.submissionOpen;
+        if (patch.submissionOpensAt !== undefined) a.submissionOpensAt = patch.submissionOpensAt;
+        if (patch.submissionClosesAt !== undefined) a.submissionClosesAt = patch.submissionClosesAt;
         if (patch.autoSendReports !== undefined) a.autoSendReports = patch.autoSendReports;
       }
       return wait(undefined);

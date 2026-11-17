@@ -6,6 +6,7 @@ import { takeExamDraft } from '../../data/examDraft';
 import type { DraftQuestion as AiDraft } from '../../data/ai';
 import { prepareImageForGrading, type PreparedImage } from '../../lib/imageResize';
 import { filesToPageImages, pdfErrorText, PAGE_FILE_ACCEPT } from '../../lib/pdfPages';
+import { ClosePicker, defaultClosePreset, fromLocalInput, resolveClose, toLocalInput, type ClosePreset } from './SubmissionTime';
 
 type DraftQuestion = QuestionRubric & { lessonId: string | null };
 
@@ -81,6 +82,12 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
   }, [curriculaQ.data, group?.subjectId]);
   const [submissionMode, setSubmissionMode] = useState<'link' | 'teacher_scan'>('teacher_scan');
   const [autoSendReports, setAutoSendReports] = useState<'after_review' | 'auto'>('after_review');
+  // Student link time: opens now (or at a set time) and closes after a while.
+  const [closePreset, setClosePreset] = useState<ClosePreset | null>(null);
+  const [closeCustom, setCloseCustom] = useState('');
+  const [opensLater, setOpensLater] = useState(false);
+  const [opensAtInput, setOpensAtInput] = useState('');
+  const effectiveClosePreset = closePreset ?? defaultClosePreset(examType);
   const [questions, setQuestions] = useState<DraftQuestion[]>(() => [blankQuestion(1)]);
   const totalScore = questions.reduce((n, q) => n + (Number(q.maxScore) || 0), 0);
   const updateQ = (id: string, patch: Partial<DraftQuestion>) =>
@@ -156,6 +163,19 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
       return used.length > 0 && used.reduce((n, c) => n + (Number(c.points) || 0), 0) !== Number(q.maxScore);
     });
     if (mismatch !== -1) return notify(`مجموع نقاط معايير السؤال ${mismatch + 1} لا يساوي درجته`, 'warning');
+    let submissionOpensAt: string | null = null;
+    let submissionClosesAt: string | null = null;
+    if (submissionMode === 'link') {
+      if (opensLater) {
+        submissionOpensAt = fromLocalInput(opensAtInput);
+        if (!submissionOpensAt) return notify('اختر وقت فتح رابط التسليم', 'warning');
+      }
+      try {
+        submissionClosesAt = resolveClose(effectiveClosePreset, closeCustom, submissionOpensAt ? new Date(submissionOpensAt) : new Date());
+      } catch (e) {
+        return notify(e instanceof Error ? e.message : String(e), 'warning');
+      }
+    }
     setSaving(true);
     try {
       const targets = [selectedGroup, ...alsoGroupIds.filter((g) => sameSubjectGroups.some((x) => x.id === g))];
@@ -168,6 +188,8 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
         subjectId: group?.subjectId || null,
         scheduledOn: examDate || null,
         submissionMode,
+        submissionOpensAt,
+        submissionClosesAt,
         autoSendReports: autoSendReports === 'auto',
         questions: questions.map((q) => ({
           text: q.text,
@@ -435,6 +457,49 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
             <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-2 text-xs text-blue-900">
               <Share2 className="w-4 h-4 shrink-0" />
               <span>بعد الحفظ يتولّد رابط تسليم خاص بهذا الامتحان، تنسخه من قائمة الامتحانات وترسله للطلاب. كل طالب يدخل رمزه الخاص (4 أرقام).</span>
+            </div>
+          )}
+
+          {submissionMode === 'link' && (
+            <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-3 text-xs">
+              <div className="space-y-2">
+                <span className="block font-bold text-slate-700">يفتح رابط التسليم:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[false, true].map((later) => (
+                    <button
+                      key={String(later)}
+                      type="button"
+                      onClick={() => {
+                        setOpensLater(later);
+                        if (later && !opensAtInput) setOpensAtInput(toLocalInput(new Date(Date.now() + 3600_000)));
+                      }}
+                      className={`px-3 py-1.5 rounded-lg font-bold border cursor-pointer ${
+                        opensLater === later ? 'bg-[#1E3A5F] text-white border-[#1E3A5F]' : 'bg-slate-50 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {later ? 'في وقت محدد' : 'فور الحفظ'}
+                    </button>
+                  ))}
+                </div>
+                {opensLater && (
+                  <input
+                    type="datetime-local"
+                    value={opensAtInput}
+                    onChange={(e) => setOpensAtInput(e.target.value)}
+                    className="w-full p-2 bg-[#F7F8FA] border border-slate-300 rounded-lg"
+                  />
+                )}
+              </div>
+              <ClosePicker
+                preset={effectiveClosePreset}
+                custom={closeCustom}
+                onChange={(p, c) => {
+                  setClosePreset(p);
+                  setCloseCustom(c);
+                }}
+                label={opensLater ? 'يُغلق بعد (من وقت الفتح):' : 'يُغلق رابط التسليم بعد:'}
+              />
+              <p className="text-[11px] text-slate-500">بعد انتهاء الوقت يرى الطالب «انتهى وقت التسليم». تستطيع التمديد أو إعادة الفتح من قائمة الامتحانات.</p>
             </div>
           )}
         </div>

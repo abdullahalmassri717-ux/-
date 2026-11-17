@@ -2,12 +2,19 @@
 // Function. Students have no account; the server checks their 4-digit code.
 import { isSupabaseConfigured } from './supabase';
 import { MOCK_EXAMS, MOCK_STUDENTS, MOCK_ENTITIES } from '../mockData';
+import type { LinkState } from '../../supabase/functions/_shared/submissionWindow.ts';
 
 export interface LinkInfo {
   title: string;
   kind: 'exam' | 'homework';
   organizationName: string;
   open: boolean;
+  /** Why the link is closed, if it is. */
+  state: LinkState;
+  opensAt: string | null;
+  closesAt: string | null;
+  /** Ready-to-show Arabic message when the link is closed. */
+  closedMessage: string | null;
   maxPages: number;
 }
 
@@ -22,7 +29,8 @@ const endpoint = () => `${url}/functions/v1/student-submit`;
 const headers = () => ({ apikey: anonKey ?? '', Authorization: `Bearer ${anonKey ?? ''}`, 'Content-Type': 'application/json' });
 
 export class LinkError extends Error {
-  constructor(message: string, readonly offline = false) {
+  /** closed: the link's time is over (or not started); the page should show the closed screen. */
+  constructor(message: string, readonly offline = false, readonly closed = false) {
     super(message);
   }
 }
@@ -35,7 +43,7 @@ async function call<T>(input: string, init?: RequestInit): Promise<T> {
     throw new LinkError('لا يوجد اتصال بالإنترنت.', true);
   }
   const body = await res.json().catch(() => null);
-  if (!res.ok) throw new LinkError(body?.error ?? 'حدث خطأ. حاول مرة أخرى.');
+  if (!res.ok) throw new LinkError(body?.error ?? 'حدث خطأ. حاول مرة أخرى.', false, body?.closed === true);
   return body as T;
 }
 
@@ -43,12 +51,13 @@ export async function getLinkInfo(code: string): Promise<LinkInfo> {
   if (!isSupabaseConfigured) {
     // Demo mode: any link shows the first demo homework.
     const exam = MOCK_EXAMS.find((e) => e.submissionMode === 'link') ?? MOCK_EXAMS[0];
-    return { title: exam.title, kind: exam.type, organizationName: MOCK_ENTITIES[0].name, open: true, maxPages: 6 };
+    return { title: exam.title, kind: exam.type, organizationName: MOCK_ENTITIES[0].name, open: true, state: 'open', opensAt: null, closesAt: null, closedMessage: null, maxPages: 6 };
   }
   return call<LinkInfo>(`${endpoint()}?code=${encodeURIComponent(code)}`, { headers: headers() });
 }
 
-export async function submitPaper(code: string, studentCode: string, pages: LinkPage[]): Promise<{ firstName: string }> {
+/** savedAt: when the student pressed send while offline (the paper waited on the phone). */
+export async function submitPaper(code: string, studentCode: string, pages: LinkPage[], savedAt?: string): Promise<{ firstName: string }> {
   if (!isSupabaseConfigured) {
     await new Promise((r) => setTimeout(r, 800));
     const st = MOCK_STUDENTS.find((s) => s.studentCode === studentCode);
@@ -59,7 +68,7 @@ export async function submitPaper(code: string, studentCode: string, pages: Link
     method: 'POST',
     headers: headers(),
     // The server reads each page as { data, mediaType }.
-    body: JSON.stringify({ code, studentCode, pages: pages.map((p) => ({ data: p.base64, mediaType: p.mediaType })) }),
+    body: JSON.stringify({ code, studentCode, savedAt, pages: pages.map((p) => ({ data: p.base64, mediaType: p.mediaType })) }),
   });
 }
 

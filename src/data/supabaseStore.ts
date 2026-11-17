@@ -269,6 +269,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
   type AssessmentDb = {
     id: string; title: string; kind: 'exam' | 'homework'; scheduled_on: string | null; status: string;
     submission_mode: 'link' | 'teacher_scan'; submission_code: string; submission_open: boolean;
+    submission_opens_at: string | null; submission_closes_at: string | null;
     auto_send_reports: boolean; group_id: string; subject_id: string | null; created_at: string;
     groups: { name: string; group_students: { left_at: string | null }[] } | null;
     subjects: { name: string } | null;
@@ -276,7 +277,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     submissions: { id: string }[];
   };
   const ASSESSMENT_COLUMNS =
-    'id, title, kind, scheduled_on, status, submission_mode, submission_code, submission_open, auto_send_reports, group_id, subject_id, created_at, groups(name, group_students(left_at)), subjects(name), assessment_totals:questions(max_score), submissions(id)';
+    'id, title, kind, scheduled_on, status, submission_mode, submission_code, submission_open, submission_opens_at, submission_closes_at, auto_send_reports, group_id, subject_id, created_at, groups(name, group_students(left_at)), subjects(name), assessment_totals:questions(max_score), submissions(id)';
 
   function toAssessment(a: AssessmentDb): AssessmentRow {
     const totals = qTotals(a.assessment_totals);
@@ -299,6 +300,8 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       questionsCount: Number(totals?.questions_count ?? 0),
       submissionCode: a.submission_code,
       submissionOpen: a.submission_open,
+      submissionOpensAt: a.submission_opens_at,
+      submissionClosesAt: a.submission_closes_at,
       createdAt: a.created_at,
     };
   }
@@ -876,6 +879,8 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
         status: 'awaiting_papers',
         submission_mode: input.submissionMode,
         submission_open: input.submissionMode === 'link',
+        submission_opens_at: input.submissionMode === 'link' ? input.submissionOpensAt ?? null : null,
+        submission_closes_at: input.submissionMode === 'link' ? input.submissionClosesAt ?? null : null,
         auto_send_reports: input.autoSendReports,
       });
       if (error) fail(error, 'تعذّر حفظ الامتحان.');
@@ -916,6 +921,8 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
       if (patch.title !== undefined) row.title = patch.title;
       if (patch.status !== undefined) row.status = patch.status;
       if (patch.submissionOpen !== undefined) row.submission_open = patch.submissionOpen;
+      if (patch.submissionOpensAt !== undefined) row.submission_opens_at = patch.submissionOpensAt;
+      if (patch.submissionClosesAt !== undefined) row.submission_closes_at = patch.submissionClosesAt;
       if (patch.autoSendReports !== undefined) row.auto_send_reports = patch.autoSendReports;
       const { error } = await db.from('assessments').update(row).eq('id', id);
       if (error) fail(error, 'تعذّر حفظ التغييرات.');
