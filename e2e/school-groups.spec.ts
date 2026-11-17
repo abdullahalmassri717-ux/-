@@ -40,6 +40,27 @@ test('exam generator can pick a whole unit', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test('exam generator asks for the exam mark first and fits questions to it', async ({ page }) => {
+  const errors = watchErrors(page);
+  await open(page, '/app/ai-tools/generate-exam');
+  const generate = page.getByRole('button', { name: /ولّد الأسئلة/ });
+  await page.getByRole('button', { name: 'أظهر كل دروس المادة' }).click();
+  await page.getByText('اختر الوحدة كاملة').first().click();
+  await expect(generate).toBeDisabled();
+  await page.getByPlaceholder('مثلاً 20').fill('25');
+  await page.getByRole('button', { name: 'توليد جديد' }).click();
+  await generate.click();
+  await expect(page.getByText(/المجموع 25 من 25 درجة/)).toBeVisible({ timeout: 15_000 });
+  // Deleting a question shares the mark among the rest.
+  await page.getByRole('button', { name: 'حذف' }).first().click();
+  await expect(page.getByText(/الأسئلة \(4\) • المجموع 25 من 25 درجة/)).toBeVisible();
+  // Changing the mark refits the questions on screen.
+  await page.getByPlaceholder('مثلاً 20').fill('40');
+  await expect(page.getByText(/المجموع 40 من 40 درجة/)).toBeVisible();
+  await expectNoHorizontalScroll(page);
+  expect(errors).toEqual([]);
+});
+
 test('one exam can be saved for several sections of the same subject', async ({ page }) => {
   const errors = watchErrors(page);
   await open(page, '/app/assignments/new');

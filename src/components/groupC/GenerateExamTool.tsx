@@ -20,6 +20,7 @@ import type { ExamScope } from '../../data/examScope';
 import type { TaughtLessons } from '../../data/types';
 import { notify } from '../../lib/notify';
 import { applyNumerals } from '../../../supabase/functions/_shared/numerals.ts';
+import { fitToTotal, sumScores } from '../../../supabase/functions/_shared/aiTools/scores.ts';
 
 interface GenerateExamToolProps {
   onNavigate: (screen: ScreenId) => void;
@@ -85,6 +86,10 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
 
   const [sourceMode, setSourceMode] = useState<'bank_first' | 'new_ai' | 'mixed'>('mixed');
   const [qCount, setQCount] = useState(5);
+  // The exam's total mark, chosen before generating: question marks and grading criteria are built on it.
+  const [examTotal, setExamTotal] = useState('');
+  const totalMark = Math.round(Number(examTotal) * 2) / 2;
+  const totalOk = totalMark > 0 && totalMark <= 1000;
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [note, setNote] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -117,6 +122,8 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
   const handleGenerate = async () => {
     if (!group || !subjectId) return notify('اختر مجموعة مرتبطة بمادة أولاً');
     if (!selectedLessons.length) return notify('اختر درساً واحداً على الأقل');
+    if (!totalOk) return notify('اكتب علامة الامتحان أولاً (مثلاً 20)');
+    if (totalMark * 2 < items.length + qCount) return notify(`علامة ${totalMark} قليلة على ${items.length + qCount} سؤال. زِد العلامة أو قلّل الأسئلة.`);
     setIsGenerating(true);
     setRejected([]);
     try {
@@ -153,11 +160,13 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
           purpose: 'exam',
           note,
           avoid: [...existing, ...fromBank.map((q) => q.text)],
+          // Their share of the exam mark; the whole list is fitted to the exact total below.
+          totalScore: Math.max(remaining / 2, Math.round(((totalMark * remaining) / (items.length + qCount)) * 2) / 2),
         });
         generated = r.questions.map((q, i) => ({ ...q, key: `g_${Date.now()}_${i}`, origin: 'ai' as const, sourceLabel: 'توليد جديد' }));
         setRejected(r.rejected);
       }
-      setItems((prev) => [...fromBank, ...generated, ...prev]);
+      setItems((prev) => fitToTotal([...fromBank, ...generated, ...prev], totalMark));
       if (!fromBank.length && !generated.length) notify('لم تُنتج أسئلة. جرّب دروساً أخرى أو عدداً أقل.', 'warning');
     } catch (e) {
       notify(errorMessage(e));
@@ -192,7 +201,7 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
     onNavigate('B5');
   };
 
-  const total = items.reduce((n, q) => n + q.maxScore, 0);
+  const total = sumScores(items);
 
   return (
     <div className="space-y-6 text-right max-w-5xl mx-auto pb-12">
@@ -297,7 +306,26 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <label className="space-y-1">
+              <span className="font-bold text-slate-700 block">علامة الامتحان</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={1}
+                max={1000}
+                step={0.5}
+                value={examTotal}
+                onChange={(e) => {
+                  setExamTotal(e.target.value);
+                  const t = Math.round(Number(e.target.value) * 2) / 2;
+                  // Questions already on the screen follow the new total right away.
+                  if (t > 0 && t <= 1000 && t * 2 >= items.length) setItems((prev) => fitToTotal(prev, t));
+                }}
+                placeholder="مثلاً 20"
+                className={`w-full p-2 border rounded-lg ${examTotal && !totalOk ? 'border-red-400' : 'border-slate-300'}`}
+              />
+            </label>
             <label className="space-y-1">
               <span className="font-bold text-slate-700 block">عدد الأسئلة</span>
               <input
@@ -435,9 +463,14 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
             )}
           </div>
 
+          {!totalOk && (
+            <p className="text-[11px] text-slate-500 text-center -mb-2">
+              اكتب علامة الامتحان أولاً، وعليها يوزّع الذكاء الاصطناعي درجات الأسئلة ومعايير التصحيح.
+            </p>
+          )}
           <button
             type="button"
-            disabled={isGenerating || !selectedLessons.length || selectedLessons.length > 40}
+            disabled={isGenerating || !selectedLessons.length || selectedLessons.length > 40 || !totalOk}
             onClick={handleGenerate}
             className="w-full bg-[#1E3A5F] hover:bg-[#152a45] text-white py-3 rounded-xl font-bold text-xs transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
@@ -476,7 +509,7 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
             <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
               <FileCheck2 className="w-5 h-5 text-emerald-600" />
               <span>
-                الأسئلة ({items.length}) • المجموع {total} درجة
+                الأسئلة ({items.length}) • المجموع {total} من {totalMark || total} درجة
               </span>
             </h2>
             <div className="flex flex-wrap gap-2">
@@ -530,7 +563,8 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
                   )}
                   <button
                     type="button"
-                    onClick={() => setItems((prev) => prev.filter((x) => x.key !== q.key))}
+                    // The rest of the questions share the exam mark again.
+                    onClick={() => setItems((prev) => fitToTotal(prev.filter((x) => x.key !== q.key), totalMark))}
                     title="احذف هذا السؤال من القائمة"
                     className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
                   >
@@ -568,7 +602,9 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
               </div>
             </div>
           ))}
-          <p className="text-[11px] text-slate-500 text-center">يمكنك تعديل أي سؤال أو درجة في الخطوة التالية قبل الحفظ.</p>
+          <p className="text-[11px] text-slate-500 text-center">
+            إذا حذفت سؤالاً أو غيّرت علامة الامتحان، تتوزع العلامة على الأسئلة الباقية تلقائياً. يمكنك تعديل أي سؤال أو درجة في الخطوة التالية قبل الحفظ.
+          </p>
         </div>
       )}
     </div>
