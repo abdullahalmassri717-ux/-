@@ -146,6 +146,7 @@ Deno.serve(async (req) => {
             purpose: body.purpose === 'remedial' ? 'remedial' : 'exam',
             note: str(body.note, 1000),
             avoid: Array.isArray(body.avoid) ? body.avoid.map((x) => str(x, 500)).filter(Boolean) : [],
+            totalScore: Number(body.totalScore) > 0 ? Math.min(Math.round(Number(body.totalScore) * 2) / 2, 1000) : undefined,
             ...info,
           });
           await log(result.usage);

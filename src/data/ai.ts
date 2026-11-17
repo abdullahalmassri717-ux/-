@@ -5,6 +5,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { CURRICULA_DATA } from '../mockData';
 import type { PaperPage } from './types';
+import { fitToTotal } from '../../supabase/functions/_shared/aiTools/scores.ts';
 
 export type QType = 'multiple_choice' | 'short_answer' | 'problem_solving' | 'essay';
 
@@ -48,6 +49,8 @@ export interface GenerateInput {
   purpose: 'exam' | 'remedial';
   note?: string;
   avoid?: string[];
+  /** The marks the generated questions must add up to. */
+  totalScore?: number;
 }
 
 export interface StudyPlan {
@@ -250,9 +253,10 @@ export function createDemoAi(): AiStore {
     async aiGenerateQuestions(input) {
       const chosen = lessons.filter((l) => input.lessonIds.includes(l.id));
       const list = chosen.length ? chosen : lessons.slice(0, 1);
-      const questions = Array.from({ length: Math.min(Math.max(input.count, 1), 25) }, (_, i) =>
+      const sample = Array.from({ length: Math.min(Math.max(input.count, 1), 25) }, (_, i) =>
         sampleQuestion(list[i % list.length], Math.floor(i / list.length), input.purpose === 'remedial'),
       );
+      const questions = input.totalScore ? fitToTotal(sample, input.totalScore) : sample;
       return wait({ questions, rejected: [] }, 1400);
     },
     async aiExtractExam() {

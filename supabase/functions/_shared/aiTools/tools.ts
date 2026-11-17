@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import type { ChatTurn, ContentPart, ToolModel, ToolModelConfig, Usage } from './model.ts';
 import { applyNumerals, numeralsInstruction, type Numerals } from '../numerals.ts';
+import { fitToTotal } from './scores.ts';
 
 export interface LessonContext {
   id: string;
@@ -134,6 +135,8 @@ export interface GenerateOptions {
   note?: string;
   /** Questions to avoid repeating (e.g. already in the exam). */
   avoid?: string[];
+  /** The marks these questions must add up to, chosen by the teacher before generating. */
+  totalScore?: number;
 }
 
 /**
@@ -158,6 +161,9 @@ export async function generateQuestions(
     `الدروس المسموح بها:\n${renderLessons(o.lessons)}`,
     `المطلوب: ${count} أسئلة ${level}. ${purpose}`,
     numeralsInstruction(o.numerals),
+    o.totalScore
+      ? `علامة الأسئلة كلها معاً: ${o.totalScore} درجة بالضبط. وزّعها على الأسئلة حسب صعوبة كل سؤال وطول حله (الأسئلة القصيرة درجات أقل، والمسائل والأسئلة المقالية درجات أكثر)، واستخدم أعداداً صحيحة أو أنصاف درجات فقط. ثم اكتب معايير تصحيح كل سؤال بحيث يساوي مجموع نقاطها درجة السؤال، وكل معيار جزء واضح من الحل يستحق نقاطه.`
+      : '',
     o.lessons.length > 3 ? 'وزّع الأسئلة على كل الدروس والوحدات المذكورة بشكل متوازن، ولا تركّز على درس واحد.' : '',
     o.note?.trim() ? `ملاحظات المدرّس: ${o.note.trim()}` : '',
     o.avoid?.length ? `لا تكرر هذه الأسئلة:\n${o.avoid.slice(0, 30).map((t) => `- ${t}`).join('\n')}` : '',
@@ -165,14 +171,17 @@ export async function generateQuestions(
     .filter(Boolean)
     .join('\n\n');
 
+  // The checker may drop some questions: the ones left still add up to the teacher's total.
+  const fit = (r: ToolResult<{ questions: DraftQuestion[]; rejected: { text: string; reason: string }[] }>) =>
+    o.totalScore ? { ...r, data: { ...r.data, questions: fitToTotal(r.data.questions, o.totalScore) } } : r;
   const first = await writeAndCheck(model, config, config.mainModel, prompt, o.lessons, lessonIds, o.numerals);
   // Cheap model first. If fewer than half of the requested questions pass the
   // curriculum check, the stronger model writes the set again.
   const strong = config.strongModel;
-  if (first.data.questions.length * 2 >= count || !strong || strong === config.mainModel) return first;
+  if (first.data.questions.length * 2 >= count || !strong || strong === config.mainModel) return fit(first);
   const second = await writeAndCheck(model, config, strong, prompt, o.lessons, lessonIds, o.numerals);
   const usage = [...first.usage, ...second.usage];
-  return second.data.questions.length >= first.data.questions.length ? { ...second, usage } : { ...first, usage };
+  return fit(second.data.questions.length >= first.data.questions.length ? { ...second, usage } : { ...first, usage });
 }
 
 async function writeAndCheck(
