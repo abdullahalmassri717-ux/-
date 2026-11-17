@@ -121,8 +121,19 @@ export function templateText(body: string): string {
 }
 
 /** Sends the given queued reports with the admin client and records the result on each row. */
+/**
+ * Platform switch (platform_settings 'reports_paused' {paused:true}): while the platform is
+ * tested with made-up data, no parent report is sent; reports stay queued.
+ * Turned on/off with the "Set SMS" workflow (ops reports_pause / reports_resume).
+ */
+export async function reportsPaused(admin: SupabaseClient): Promise<boolean> {
+  const { data } = await admin.from('platform_settings').select('value').eq('key', 'reports_paused').maybeSingle();
+  return Boolean((data?.value as { paused?: boolean } | null)?.paused);
+}
+
 export async function sendQueuedReports(admin: SupabaseClient, ids: string[]): Promise<number> {
   if (!messagingReady() || !ids.length) return 0;
+  if (await reportsPaused(admin)) return 0;
   const bySms = !whatsappReady();
   const send = twilioReady() ? sendTwilio : sendMeta;
 

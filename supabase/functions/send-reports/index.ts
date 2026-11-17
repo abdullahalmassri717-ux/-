@@ -3,7 +3,7 @@
 // ../_shared/whatsapp.ts. Without them the reports stay "queued" and the screen
 // says WhatsApp is not connected yet.
 import { adminClient, corsHeaders, json, userClient } from '../_shared/http.ts';
-import { messagingReady, sendQueuedReports } from '../_shared/whatsapp.ts';
+import { messagingReady, reportsPaused, sendQueuedReports } from '../_shared/whatsapp.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -25,5 +25,9 @@ Deno.serve(async (req) => {
   if (!messagingReady()) {
     return json({ sent: 0, error: 'التقارير محفوظة في قائمة الانتظار. الإرسال الآلي (واتساب أو رسائل SMS) لم يُفعَّل بعد على الخادم.' });
   }
-  return json({ sent: await sendQueuedReports(adminClient(), allowed) });
+  const admin = adminClient();
+  if (await reportsPaused(admin)) {
+    return json({ sent: 0, error: 'التقارير محفوظة في قائمة الانتظار. إرسال التقارير متوقف مؤقتاً من إدارة المنصة.' });
+  }
+  return json({ sent: await sendQueuedReports(admin, allowed) });
 });

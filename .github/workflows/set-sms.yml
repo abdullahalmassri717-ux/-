@@ -15,6 +15,8 @@
 #   test            sends one real SMS to test_phone
 #   login_on        login screens say the code comes by SMS (platform_settings.login_sms)
 #   login_off       back to the WhatsApp wording
+#   reports_pause   stops sending parent reports (they stay queued); login codes still work
+#   reports_resume  sends parent reports again
 #   remove          deletes the SMS secrets from Supabase (stops all SMS)
 # API docs: https://documenter.getpostman.com/view/1142337/TzzGJE52
 name: Set SMS
@@ -33,7 +35,7 @@ on:
         description: 'apply only: encrypted "API_KEY" or "SUPABASE_TOKEN|API_KEY" (base64)'
         required: false
       ops:
-        description: 'apply only, comma list: check, request_sender, save, test, login_on, login_off, remove'
+        description: 'apply only, comma list: check, request_sender, save, test, login_on, login_off, reports_pause, reports_resume, remove'
         required: false
         default: check
       sender:
@@ -143,6 +145,14 @@ jobs:
           if has login_off; then
             sql "delete from public.platform_settings where key = 'login_sms';"
             echo "Login screens back to WhatsApp wording."
+          fi
+          if has reports_pause; then
+            sql "insert into public.platform_settings (key, value, is_public) values ('reports_paused', '{\"paused\": true}'::jsonb, false) on conflict (key) do update set value = excluded.value;"
+            echo "Parent reports paused (kept in the queue)."
+          fi
+          if has reports_resume; then
+            sql "delete from public.platform_settings where key = 'reports_paused';"
+            echo "Parent reports will be sent again."
           fi
           if has remove; then
             curl -fsS -X DELETE "https://api.supabase.com/v1/projects/$REF/secrets" -H "Authorization: Bearer $tok" \
