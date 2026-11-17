@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { ScreenId } from '../../types';
 import {
@@ -47,9 +48,10 @@ const AnswerSheet: React.FC<{ exam: AssessmentDetail; student: StudentRow; qr: s
     {exam.questions.map((q, i) => (
       <div key={q.id} className="border border-slate-300 rounded-lg p-3 space-y-2 break-inside-avoid">
         <div className="flex items-center justify-between gap-2 text-xs font-bold text-slate-800 border-b border-slate-200 pb-1.5">
-          <span className="min-w-0 break-words">إجابة السؤال {ORDINALS[i] ?? i + 1}{q.lesson ? ` (${q.lesson})` : ''}</span>
+          <span className="min-w-0 break-words">السؤال {ORDINALS[i] ?? i + 1}{q.lesson ? ` (${q.lesson})` : ''}</span>
           <span className="font-mono text-slate-500 tabular-nums shrink-0">[ {q.maxScore} ]</span>
         </div>
+        {q.text && <p className="text-xs text-slate-900 leading-relaxed whitespace-pre-wrap break-words">{q.text}</p>}
         <div className={`${q.type === 'multiple_choice' ? 'h-14' : q.type === 'short_answer' ? 'h-24' : 'h-44'} border border-dashed border-slate-200 rounded`} />
       </div>
     ))}
@@ -173,14 +175,17 @@ export const PrintAnswerSheetsPage: React.FC<PrintAnswerSheetsPageProps> = ({ on
 
       {exam && selectedStudent && <AnswerSheet exam={exam} student={selectedStudent} qr={qrs[selectedStudent.id] ?? ''} />}
 
-      {/* Every student's sheet, shown only when printing */}
-      {exam && (
-        <div className="print-area print-only">
-          {students.map((st) => (
-            <AnswerSheet key={st.id} exam={exam} student={st} qr={qrs[st.id] ?? ''} className="print-sheet" />
-          ))}
-        </div>
-      )}
+      {/* Every student's sheet, shown only when printing. Rendered at the end of
+          <body> so each student's paper can start on its own page. */}
+      {exam &&
+        createPortal(
+          <div className="print-area print-only print-portal">
+            {students.map((st) => (
+              <AnswerSheet key={st.id} exam={exam} student={st} qr={qrs[st.id] ?? ''} className="print-sheet" />
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };

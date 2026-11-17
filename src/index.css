@@ -34,5 +34,13 @@
   body * { visibility: hidden; }
   .print-area, .print-area * { visibility: visible; }
   .print-area { display: block !important; position: absolute; inset: 0; }
-  .print-sheet { break-after: page; page-break-after: always; box-shadow: none !important; border: none !important; }
+  .print-sheet { box-shadow: none !important; border: none !important; }
+  /* Per-student sheets are moved to the end of <body> (a portal) and everything
+     else is removed from the layout, because browsers ignore page breaks inside
+     absolutely positioned boxes. Each student then starts on a fresh page, so one
+     page never holds the end of one student's paper and the start of the next. */
+  body:has(> .print-portal) > *:not(.print-portal) { display: none !important; }
+  .print-portal.print-area { position: static !important; }
+  .print-portal .print-sheet { max-width: none !important; margin: 0 !important; padding: 0 !important; border-radius: 0 !important; }
+  .print-portal .print-sheet + .print-sheet { break-before: page; page-break-before: always; }
 }
