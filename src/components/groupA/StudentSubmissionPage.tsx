@@ -18,6 +18,7 @@ import { prepareImageForGrading } from '../../lib/imageResize';
 import { getLinkInfo, isTooDark, LinkError, submitPaper, type LinkInfo } from '../../lib/studentLink';
 import { listQueued, queuePaper, removeQueued } from '../../lib/offlineQueue';
 import { notify } from '../../lib/notify';
+import { formatWhen } from '../../../supabase/functions/_shared/submissionWindow.ts';
 
 interface StudentSubmissionPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -62,7 +63,7 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = () =>
     const flush = async () => {
       for (const item of await listQueued('student', linkCode)) {
         try {
-          const r = await submitPaper(item.target, item.studentCode ?? '', item.pages);
+          const r = await submitPaper(item.target, item.studentCode ?? '', item.pages, item.createdAt);
           await removeQueued(item.id);
           setFirstName(r.firstName);
           setSavedOffline(false);
@@ -155,6 +156,9 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = () =>
         } else {
           setError('لا يوجد إنترنت. حاول مرة أخرى عند عودة الاتصال.');
         }
+      } else if (err instanceof LinkError && err.closed) {
+        // The time ran out while the student was preparing the paper.
+        setInfo((prev) => (prev ? { ...prev, open: false, state: 'ended', closedMessage: err.message } : prev));
       } else {
         setError(err instanceof Error ? err.message : 'حدث خطأ. حاول مرة أخرى.');
       }
@@ -179,7 +183,13 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = () =>
       <div className="max-w-md mx-auto px-4 py-16 text-center space-y-3">
         <Clock className="w-10 h-10 text-slate-400 mx-auto" />
         <h1 className="font-extrabold text-base text-[#1E3A5F]">{info.title}</h1>
-        <p className="text-sm text-slate-600">أغلق المدرّس التسليم لهذا {info.kind === 'homework' ? 'الواجب' : 'الامتحان'}.</p>
+        {info.state === 'ended' && <p className="font-extrabold text-sm text-red-700">انتهى وقت التسليم</p>}
+        {info.state === 'not_started' && <p className="font-extrabold text-sm text-amber-700">لم يبدأ وقت التسليم بعد</p>}
+        <p className="text-sm text-slate-600">
+          {info.state === 'not_started' && info.opensAt
+            ? `يفتح رابط ${info.kind === 'homework' ? 'الواجب' : 'الامتحان'} ${formatWhen(info.opensAt)}.`
+            : info.closedMessage ?? `أغلق المدرّس التسليم لهذا ${info.kind === 'homework' ? 'الواجب' : 'الامتحان'}.`}
+        </p>
       </div>
     );
   }
@@ -236,6 +246,12 @@ export const StudentSubmissionPage: React.FC<StudentSubmissionPageProps> = () =>
             </span>
             <h1 className="font-extrabold text-base text-[#1E3A5F] mt-1 break-words">{info.title}</h1>
             <p className="text-xs text-slate-500 font-medium">{info.organizationName}</p>
+            {info.closesAt && (
+              <p className="text-[11px] font-bold text-red-700 mt-1 flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 shrink-0" />
+                <span>آخر موعد للتسليم: {formatWhen(info.closesAt)}</span>
+              </p>
+            )}
           </div>
           <div className="w-10 h-10 rounded-xl bg-[#E8F0F8] text-[#1E3A5F] flex items-center justify-center font-bold shrink-0">
             د✓

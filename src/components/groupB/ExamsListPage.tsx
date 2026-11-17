@@ -3,6 +3,8 @@ import { ScreenId } from '../../types';
 import { useLoad } from '../../data/DataContext';
 import { setSelected } from '../../data/selection';
 import { notify } from '../../lib/notify';
+import { SubmissionTimeModal, WindowBadge } from './SubmissionTime';
+import type { AssessmentRow } from '../../data/types';
 import {
   FileText,
   Plus,
@@ -25,6 +27,7 @@ interface ExamsListPageProps {
 export const ExamsListPage: React.FC<ExamsListPageProps> = ({ onNavigate }) => {
   const [tab, setTab] = useState<'all' | 'exam' | 'homework'>('all');
   const [showNewModal, setShowNewModal] = useState(false);
+  const [timeFor, setTimeFor] = useState<AssessmentRow | null>(null);
 
   const examsQ = useLoad((st) => st.listAssessments());
   const exams = examsQ.data ?? [];
@@ -233,6 +236,12 @@ export const ExamsListPage: React.FC<ExamsListPageProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
+              {exam.submissionMode === 'link' && (
+                <div onClick={(e) => e.stopPropagation()} className="cursor-default">
+                  <WindowBadge exam={exam} />
+                </div>
+              )}
+
               {/* Progress bar of uploaded papers */}
               <div className="pt-2 space-y-1">
                 <div className="flex items-center justify-between text-xs">
@@ -286,6 +295,16 @@ export const ExamsListPage: React.FC<ExamsListPageProps> = ({ onNavigate }) => {
                 </button>
               )}
 
+              {exam.submissionMode === 'link' && (
+                <button
+                  onClick={() => setTimeFor(exam)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-3 rounded-lg font-semibold cursor-pointer"
+                  title="تمديد أو إغلاق أو إعادة فتح رابط التسليم"
+                >
+                  وقت التسليم
+                </button>
+              )}
+
               <button
                 onClick={() => open(exam.id, 'B6')}
                 className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-2 rounded-lg cursor-pointer"
@@ -297,6 +316,7 @@ export const ExamsListPage: React.FC<ExamsListPageProps> = ({ onNavigate }) => {
           </div>
         ))}
       </div>
+      {timeFor && <SubmissionTimeModal exam={timeFor} onClose={() => setTimeFor(null)} onSaved={examsQ.reload} />}
     </div>
   );
 };

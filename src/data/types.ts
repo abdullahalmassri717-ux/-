@@ -56,6 +56,9 @@ export interface AssessmentRow extends Exam {
   subjectId: string | null;
   submissionCode: string;
   submissionOpen: boolean;
+  /** Student link time window (ISO); null = open right away / no end time. */
+  submissionOpensAt: string | null;
+  submissionClosesAt: string | null;
   createdAt: string;
 }
 
@@ -83,6 +86,9 @@ export interface NewAssessmentInput {
   subjectId: string | null;
   scheduledOn: string | null; // YYYY-MM-DD
   submissionMode: 'link' | 'teacher_scan';
+  /** Student link time window (ISO). Only used with submissionMode 'link'. */
+  submissionOpensAt?: string | null;
+  submissionClosesAt?: string | null;
   autoSendReports: boolean;
   questions: QuestionInput[];
 }
@@ -231,7 +237,14 @@ export interface DataStore extends BillingStore, SchoolStore, AiStore {
   createAssessment(input: NewAssessmentInput): Promise<string>;
   updateAssessment(
     id: string,
-    patch: Partial<{ title: string; status: Exam['status']; submissionOpen: boolean; autoSendReports: boolean }>,
+    patch: Partial<{
+      title: string;
+      status: Exam['status'];
+      submissionOpen: boolean;
+      submissionOpensAt: string | null;
+      submissionClosesAt: string | null;
+      autoSendReports: boolean;
+    }>,
   ): Promise<void>;
   deleteAssessment(id: string): Promise<void>;
   /** Replace an exam's questions and rubric (an `id` keeps an existing question and its grades). */

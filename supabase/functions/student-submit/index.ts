@@ -8,11 +8,14 @@
 // Guessing codes is limited: 5 wrong codes from one device in 15 minutes blocks it.
 import { adminClient, corsHeaders, env, json, runInBackground } from '../_shared/http.ts';
 import { gradeSubmission } from '../_shared/gradeSubmission.ts';
+import { closedMessage, linkState, OFFLINE_GRACE_MINUTES, type SubmissionWindow } from '../_shared/submissionWindow.ts';
 
 const MAX_PAGES = 6;
 const MAX_PAGE_BYTES = 4 * 1024 * 1024;
 const WRONG_CODE_LIMIT = 5;
 const WINDOW_MINUTES = 15;
+// Times in server messages are shown in Gaza time.
+const TIME_ZONE = 'Asia/Gaza';
 const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 
 async function clientHash(req: Request, assessmentId: string): Promise<string> {
@@ -41,7 +44,7 @@ Deno.serve(async (req) => {
     // query. Embedding organizations(...) here made every link fail.
     const { data, error } = await admin
       .from('assessments')
-      .select('id, organization_id, group_id, title, kind, submission_open, submission_mode')
+      .select('id, organization_id, group_id, title, kind, submission_open, submission_mode, submission_opens_at, submission_closes_at')
       .eq('submission_code', code.toLowerCase())
       .maybeSingle();
     if (error) console.error('student-submit: assessment lookup failed', error.message);
@@ -57,17 +60,35 @@ Deno.serve(async (req) => {
     return { ...data, organizations: org };
   };
 
+  const windowOf = (a: { submission_open: boolean; submission_opens_at: string | null; submission_closes_at: string | null }): SubmissionWindow => ({
+    open: a.submission_open,
+    opensAt: a.submission_opens_at,
+    closesAt: a.submission_closes_at,
+  });
+
   if (req.method === 'GET') {
     const code = new URL(req.url).searchParams.get('code') ?? '';
     const a = await findAssessment(code);
     if (!a) return json({ error: 'الرابط غير صحيح أو انتهت صلاحيته.' }, 404);
     const org = Array.isArray(a.organizations) ? a.organizations[0] : a.organizations;
-    return json({ title: a.title, kind: a.kind, organizationName: org?.name ?? '', open: a.submission_open, maxPages: MAX_PAGES });
+    const w = windowOf(a);
+    const state = linkState(w);
+    return json({
+      title: a.title,
+      kind: a.kind,
+      organizationName: org?.name ?? '',
+      open: state === 'open',
+      state,
+      opensAt: w.opensAt,
+      closesAt: w.closesAt,
+      closedMessage: state === 'open' ? null : closedMessage(state, w, a.kind, TIME_ZONE),
+      maxPages: MAX_PAGES,
+    });
   }
 
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
-  let body: { code?: string; studentCode?: string; pages?: { data: string; mediaType: string }[] };
+  let body: { code?: string; studentCode?: string; pages?: { data: string; mediaType: string }[]; savedAt?: string };
   try {
     body = await req.json();
   } catch {
@@ -76,7 +97,21 @@ Deno.serve(async (req) => {
 
   const a = await findAssessment(String(body.code ?? ''));
   if (!a) return json({ error: 'الرابط غير صحيح أو انتهت صلاحيته.' }, 404);
-  if (!a.submission_open) return json({ error: 'أغلق المدرّس التسليم لهذا الامتحان.' }, 403);
+  // The time window is checked here on the server, so a closed link cannot be
+  // bypassed. One exception: a paper saved on the phone while offline before the
+  // closing time may still arrive up to OFFLINE_GRACE_MINUTES late.
+  const w = windowOf(a);
+  const state = linkState(w);
+  if (state !== 'open') {
+    const savedAt = body.savedAt ? Date.parse(body.savedAt) : NaN;
+    const closesAt = w.closesAt ? Date.parse(w.closesAt) : NaN;
+    const lateOfflinePaper =
+      state === 'ended' &&
+      !Number.isNaN(savedAt) && savedAt < closesAt &&
+      (!w.opensAt || savedAt >= Date.parse(w.opensAt)) &&
+      Date.now() < closesAt + OFFLINE_GRACE_MINUTES * 60_000;
+    if (!lateOfflinePaper) return json({ error: closedMessage(state, w, a.kind, TIME_ZONE), closed: true }, 403);
+  }
 
   // The teacher paused the subscription (e.g. a vacation month): no new papers.
   const today = new Date().toISOString().slice(0, 10);
