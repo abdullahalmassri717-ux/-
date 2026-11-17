@@ -23,6 +23,8 @@ export interface CSubject {
   id: string;
   name: string;
   status: 'draft' | 'published';
+  /** How the subject's book writes numbers: Arabic-Indic (arabic) or Western (latin). The AI follows it. */
+  numerals: 'arabic' | 'latin';
   units: CUnit[];
 }
 export interface CGrade {
@@ -47,6 +49,7 @@ export interface CurriculumAdminApi {
   rename(level: Level, id: string, name: string): Promise<void>;
   remove(level: Level, id: string): Promise<void>;
   setSubjectStatus(id: string, status: 'draft' | 'published'): Promise<void>;
+  setSubjectNumerals(id: string, numerals: 'arabic' | 'latin'): Promise<void>;
   setCurriculumAvailable(id: string, available: boolean): Promise<void>;
   saveLesson(lesson: CLesson): Promise<void>;
   /** Bulk add for the import: returns the new ids in the same order as `rows`. */
@@ -80,7 +83,7 @@ function realApi(): CurriculumAdminApi {
       const { data, error } = await db
         .from('curricula')
         .select(
-          'id, name, country, is_available, sort_order, grades(id, name, sort_order, subjects(id, name, status, sort_order, units(id, title, sort_order, lessons(id, title, sort_order, learning_outcomes(text, sort_order), lesson_terms(kind, text, sort_order)))))',
+          'id, name, country, is_available, sort_order, grades(id, name, sort_order, subjects(id, name, status, numerals, sort_order, units(id, title, sort_order, lessons(id, title, sort_order, learning_outcomes(text, sort_order), lesson_terms(kind, text, sort_order)))))',
         )
         .order('sort_order');
       if (error) fail(error, 'تعذّر تحميل المناهج.');
@@ -94,7 +97,7 @@ function realApi(): CurriculumAdminApi {
       }
       type L = { id: string; title: string; sort_order: number; learning_outcomes: { text: string; sort_order: number }[]; lesson_terms: { kind: string; text: string; sort_order: number }[] };
       type U = { id: string; title: string; sort_order: number; lessons: L[] };
-      type S = { id: string; name: string; status: 'draft' | 'published'; sort_order: number; units: U[] };
+      type S = { id: string; name: string; status: 'draft' | 'published'; numerals: string | null; sort_order: number; units: U[] };
       type G = { id: string; name: string; sort_order: number; subjects: S[] };
       type C = { id: string; name: string; country: string | null; is_available: boolean; sort_order: number; grades: G[] };
       return ((data ?? []) as unknown as C[]).map((c) => ({
@@ -109,6 +112,7 @@ function realApi(): CurriculumAdminApi {
             id: s.id,
             name: s.name,
             status: s.status,
+            numerals: s.numerals === 'latin' ? 'latin' : 'arabic',
             units: [...s.units].sort(bySort).map((u) => ({
               id: u.id,
               title: u.title,
@@ -150,6 +154,10 @@ function realApi(): CurriculumAdminApi {
     async setSubjectStatus(id, status) {
       const { error } = await db.from('subjects').update({ status }).eq('id', id);
       if (error) fail(error, 'تعذّر تحديث الحالة.');
+    },
+    async setSubjectNumerals(id, numerals) {
+      const { error } = await db.from('subjects').update({ numerals }).eq('id', id);
+      if (error) fail(error, 'تعذّر الحفظ.');
     },
     async setCurriculumAvailable(id, available) {
       const { error } = await db.from('curricula').update({ is_available: available }).eq('id', id);
@@ -230,6 +238,7 @@ function demoApi(): CurriculumAdminApi {
         id: s.id,
         name: s.name,
         status: s.status,
+        numerals: 'arabic',
         units: s.units.map((u) => ({
           id: u.id,
           title: u.title,
@@ -268,7 +277,7 @@ function demoApi(): CurriculumAdminApi {
       const base: Record<Level, object> = {
         curriculum: { id, name, country: '', isAvailable: false, grades: [] },
         grade: { id, name, subjects: [] },
-        subject: { id, name, status: 'draft', units: [] },
+        subject: { id, name, status: 'draft', numerals: 'arabic', units: [] },
         unit: { id, title: name, lessons: [] },
         lesson: { id, title: name, content: '', hasContent: false, outcomes: [], terms: [], symbols: [] },
       };
@@ -289,6 +298,11 @@ function demoApi(): CurriculumAdminApi {
     async setSubjectStatus(id, status) {
       const f = find(id);
       if (f) f.node.status = status;
+      await wait(null);
+    },
+    async setSubjectNumerals(id, numerals) {
+      const f = find(id);
+      if (f) f.node.numerals = numerals;
       await wait(null);
     },
     async setCurriculumAvailable(id, available) {

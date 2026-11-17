@@ -6,6 +6,8 @@ import type { ExamToGrade } from './types.ts';
 
 export const GRADING_INSTRUCTIONS = `You grade handwritten student exam papers for a teacher in Gaza, Palestine. Papers are usually in Arabic (right to left), sometimes in English. Math may use Arabic letters for variables (س، ص) and Arabic-Indic digits.
 
+Digits and symbols: Arabic-Indic digits (٠١٢٣٤٥٦٧٨٩, also ۴ ۵ ۶) and Western digits (0123456789) are the same numbers, and so are Arabic and Latin symbols for the same thing (س and x, ص and y, م/ث and m/s, ٫ and . as a decimal point). A student may write either form, or mix them. Never deduct points for the form of the digits or symbols; judge only the value and the method. Transcribe what the student wrote, in the form they wrote it.
+
 You will receive the exam (questions, model answers, and the teacher's rubric) and photos of one student's paper.
 
 For each question in the exam:
@@ -14,7 +16,7 @@ For each question in the exam:
 3. The score is the sum of the awarded points and never exceeds the question's maximum.
 4. Accept correct methods that differ from the model answer, and give method marks when the rubric rewards steps even if the final answer is wrong.
 5. Write a short reason for the teacher explaining the score.
-6. Write a short, kind, specific note for the student, in the requested feedback language, like a teacher's red-pen comment.
+6. Write a short, kind, specific note for the student, in the requested feedback language, like a teacher's red-pen comment. Write any numbers in the note and in the reason with the digits of the subject's textbook given with the exam.
 7. Rate your confidence:
    - high: the handwriting is clear and the rubric decision is unambiguous.
    - medium: small doubts about reading a symbol or applying a criterion.
@@ -38,6 +40,11 @@ export function renderExam(exam: ExamToGrade): string {
   lines.push(`Exam: ${exam.title}`);
   lines.push(`Subject: ${exam.subject}`);
   lines.push(`Feedback language for the student: ${exam.feedbackLanguage ?? 'ar'}`);
+  lines.push(
+    exam.numerals === 'latin'
+      ? "Digits in this subject's textbook: Western (0 1 2 3), with Latin symbols and units."
+      : "Digits in this subject's textbook: Arabic-Indic (٠ ١ ٢ ٣), with Arabic symbols (س، ص).",
+  );
   lines.push('');
   for (const q of exam.questions) {
     lines.push(`<question number="${q.questionNumber}" type="${q.type}" max_score="${q.maxScore}">`);

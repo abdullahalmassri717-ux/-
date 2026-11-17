@@ -3,6 +3,7 @@
 // and outcomes, never student names or phone numbers.
 import { z } from 'zod';
 import type { ChatTurn, ContentPart, ToolModel, ToolModelConfig, Usage } from './model.ts';
+import { applyNumerals, numeralsInstruction, type Numerals } from '../numerals.ts';
 
 export interface LessonContext {
   id: string;
@@ -110,6 +111,16 @@ function normalizeQuestion(q: z.infer<typeof QuestionSchema>, lessonIds: Set<str
   };
 }
 
+/** Digits in the subject's style, whatever the model wrote. */
+function questionInNumerals(q: DraftQuestion, n: Numerals): DraftQuestion {
+  return {
+    ...q,
+    text: applyNumerals(q.text, n),
+    modelAnswer: applyNumerals(q.modelAnswer, n),
+    criteria: q.criteria.map((c) => ({ ...c, description: applyNumerals(c.description, n) })),
+  };
+}
+
 export interface GenerateOptions {
   lessons: LessonContext[];
   count: number;
@@ -117,6 +128,8 @@ export interface GenerateOptions {
   purpose: 'exam' | 'remedial';
   subjectName: string;
   gradeName: string;
+  /** How the subject's textbook writes numbers and symbols. */
+  numerals: Numerals;
   /** Extra instructions typed by the teacher (style, question types…). */
   note?: string;
   /** Questions to avoid repeating (e.g. already in the exam). */
@@ -144,6 +157,7 @@ export async function generateQuestions(
     `المادة: ${o.subjectName} — الصف: ${o.gradeName}`,
     `الدروس المسموح بها:\n${renderLessons(o.lessons)}`,
     `المطلوب: ${count} أسئلة ${level}. ${purpose}`,
+    numeralsInstruction(o.numerals),
     o.lessons.length > 3 ? 'وزّع الأسئلة على كل الدروس والوحدات المذكورة بشكل متوازن، ولا تركّز على درس واحد.' : '',
     o.note?.trim() ? `ملاحظات المدرّس: ${o.note.trim()}` : '',
     o.avoid?.length ? `لا تكرر هذه الأسئلة:\n${o.avoid.slice(0, 30).map((t) => `- ${t}`).join('\n')}` : '',
@@ -151,12 +165,12 @@ export async function generateQuestions(
     .filter(Boolean)
     .join('\n\n');
 
-  const first = await writeAndCheck(model, config, config.mainModel, prompt, o.lessons, lessonIds);
+  const first = await writeAndCheck(model, config, config.mainModel, prompt, o.lessons, lessonIds, o.numerals);
   // Cheap model first. If fewer than half of the requested questions pass the
   // curriculum check, the stronger model writes the set again.
   const strong = config.strongModel;
   if (first.data.questions.length * 2 >= count || !strong || strong === config.mainModel) return first;
-  const second = await writeAndCheck(model, config, strong, prompt, o.lessons, lessonIds);
+  const second = await writeAndCheck(model, config, strong, prompt, o.lessons, lessonIds, o.numerals);
   const usage = [...first.usage, ...second.usage];
   return second.data.questions.length >= first.data.questions.length ? { ...second, usage } : { ...first, usage };
 }
@@ -168,6 +182,7 @@ async function writeAndCheck(
   prompt: string,
   lessons: LessonContext[],
   lessonIds: Set<string>,
+  numerals: Numerals,
 ): Promise<ToolResult<{ questions: DraftQuestion[]; rejected: { text: string; reason: string }[] }>> {
   const o = { lessons };
   const gen = await model.json({
@@ -177,7 +192,10 @@ async function writeAndCheck(
     content: [{ type: 'text', text: prompt }],
     schema: GenerateSchema,
   });
-  const drafts = gen.data.questions.map((q) => normalizeQuestion(q, lessonIds)).filter((q): q is DraftQuestion => !!q);
+  const drafts = gen.data.questions
+    .map((q) => normalizeQuestion(q, lessonIds))
+    .filter((q): q is DraftQuestion => !!q)
+    .map((q) => questionInNumerals(q, numerals));
   if (!drafts.length) return { data: { questions: [], rejected: [] }, usage: [gen.usage] };
 
   const check = await model.json({
@@ -231,7 +249,7 @@ const ExtractSchema = z.object({
 export async function extractExam(
   model: ToolModel,
   config: ToolModelConfig,
-  o: { pages: Extract<ContentPart, { type: 'image' }>[]; lessons: LessonContext[] },
+  o: { pages: Extract<ContentPart, { type: 'image' }>[]; lessons: LessonContext[]; numerals: Numerals },
 ): Promise<ToolResult<{ questions: DraftQuestion[]; readable: boolean }>> {
   const lessonIds = new Set(o.lessons.map((l) => l.id));
   const list = o.lessons.map((l) => `- ${l.id}: ${l.title}${l.outcomes.length ? ` (${l.outcomes.slice(0, 4).join('؛ ')})` : ''}`).join('\n');
@@ -242,7 +260,8 @@ export async function extractExam(
 انسخ نص كل سؤال كما هو (صحّح الأخطاء الإملائية الواضحة فقط)، واقترح درجة ونموذج إجابة ومعايير تصحيح مجموعها يساوي الدرجة.
 إذا ذُكرت الدرجة على الورقة فاستخدمها.
 اختر lesson_id من قائمة الدروس إن كان السؤال يناسب أحدها، وإلا اكتب "none".
-إذا كانت الصور غير مقروءة اجعل readable = false.`,
+إذا كانت الصور غير مقروءة اجعل readable = false.
+${numeralsInstruction(o.numerals)}`,
     content: [
       ...o.pages,
       { type: 'text', text: `دروس المادة:\n${list || 'لا توجد دروس مدخلة.'}\n\nاستخرج كل أسئلة هذه الورقة بالترتيب.` },
@@ -259,7 +278,8 @@ export async function extractExam(
   const questions = res.data.questions
     .sort((a, b) => a.number - b.number)
     .map((q) => normalizeQuestion({ ...q }, lessonIds))
-    .filter((q): q is DraftQuestion => !!q);
+    .filter((q): q is DraftQuestion => !!q)
+    .map((q) => questionInNumerals(q, o.numerals));
   return { data: { questions, readable: res.data.readable }, usage };
 }
 
@@ -279,7 +299,7 @@ export interface StudyPlan {
 export async function studyPlan(
   model: ToolModel,
   config: ToolModelConfig,
-  o: { lessons: (LessonContext & { mastery: number | null })[]; days: number; subjectName: string; gradeName: string },
+  o: { lessons: (LessonContext & { mastery: number | null })[]; days: number; subjectName: string; gradeName: string; numerals: Numerals },
 ): Promise<ToolResult<StudyPlan>> {
   const days = Math.min(Math.max(Math.round(o.days), 1), 30);
   const ids = new Set(o.lessons.map((l) => l.id));
@@ -288,7 +308,8 @@ export async function studyPlan(
     effort: 'low',
     system: `أنت مرشد دراسي. اكتب خطة مذاكرة قصيرة وواقعية لطالب مدرسة، بالعربية البسيطة وموجّهة للطالب مباشرة.
 ركّز على الدروس الأضعف أولاً (نسبة الإتقان الأقل)، ولا تتجاوز ساعة في اليوم، واجعل آخر يوم مراجعة شاملة.
-بطاقات المراجعة: سؤال قصير في الوجه وجوابه في الخلف، من نواتج ومصطلحات الدروس فقط.`,
+بطاقات المراجعة: سؤال قصير في الوجه وجوابه في الخلف، من نواتج ومصطلحات الدروس فقط.
+${numeralsInstruction(o.numerals)}`,
     content: [
       {
         type: 'text',
@@ -303,9 +324,13 @@ export async function studyPlan(
     data: {
       days: res.data.days
         .filter((d) => d.day >= 1 && d.day <= days)
-        .map((d) => ({ day: d.day, lessonId: ids.has(d.lesson_id) ? d.lesson_id : null, task: d.task, minutes: Math.min(Math.max(d.minutes, 5), 120) })),
-      flashcards: res.data.flashcards.map((f) => ({ lessonId: ids.has(f.lesson_id) ? f.lesson_id : null, front: f.front, back: f.back })),
-      tip: res.data.tip,
+        .map((d) => ({ day: d.day, lessonId: ids.has(d.lesson_id) ? d.lesson_id : null, task: applyNumerals(d.task, o.numerals), minutes: Math.min(Math.max(d.minutes, 5), 120) })),
+      flashcards: res.data.flashcards.map((f) => ({
+        lessonId: ids.has(f.lesson_id) ? f.lesson_id : null,
+        front: applyNumerals(f.front, o.numerals),
+        back: applyNumerals(f.back, o.numerals),
+      })),
+      tip: applyNumerals(res.data.tip, o.numerals),
     },
     usage: [res.usage],
   };
@@ -370,14 +395,15 @@ const RubricSchema = z.object({
 export async function suggestRubric(
   model: ToolModel,
   config: ToolModelConfig,
-  o: { text: string; maxScore: number; lesson: LessonContext | null; subjectName: string; gradeName: string },
+  o: { text: string; maxScore: number; lesson: LessonContext | null; subjectName: string; gradeName: string; numerals: Numerals },
 ): Promise<ToolResult<{ modelAnswer: string; criteria: { description: string; points: number }[] }>> {
   const res = await model.json({
     model: config.mainModel,
     effort: 'low',
     system: `أنت مدرّس خبير. اكتب نموذج إجابة كاملاً ومعايير تصحيح واضحة لسؤال امتحان ورقي.
 كل معيار شيء يمكن رؤيته على ورقة الطالب (خطوة، قانون، ناتج). من 2 إلى 5 معايير، ومجموع نقاطها يساوي درجة السؤال بالضبط.
-استخدم مصطلحات الدرس إن وُجد.`,
+استخدم مصطلحات الدرس إن وُجد.
+${numeralsInstruction(o.numerals)}`,
     content: [
       {
         type: 'text',
@@ -390,7 +416,8 @@ export async function suggestRubric(
     { lesson_id: '', outcome: '', text: o.text, type: 'problem_solving', max_score: o.maxScore, model_answer: res.data.model_answer, criteria: res.data.criteria },
     new Set(),
   );
-  return { data: { modelAnswer: q?.modelAnswer ?? '', criteria: q?.criteria ?? [] }, usage: [res.usage] };
+  const styled = q ? questionInNumerals(q, o.numerals) : null;
+  return { data: { modelAnswer: styled?.modelAnswer ?? '', criteria: styled?.criteria ?? [] }, usage: [res.usage] };
 }
 
 const ROLES = ['name', 'parentPhone', 'studentPhone', 'grade', 'section', 'class', 'ignore'] as const;

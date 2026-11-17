@@ -201,6 +201,16 @@ export const CurriculumManagementPage: React.FC<CurriculumManagementPageProps> =
               المادة: {subject.status === 'published' ? 'منشورة' : 'مسودة'} (تغيير)
             </button>
           )}
+          {subject && (
+            <button
+              disabled={busy}
+              onClick={() => run(() => api.setSubjectNumerals(subject.id, subject.numerals === 'latin' ? 'arabic' : 'latin'))}
+              title="الذكاء الاصطناعي يكتب الأسئلة والملاحظات بهذه الأرقام، كما في كتاب المادة"
+              className="px-3 py-1.5 rounded-lg font-bold border bg-sky-50 text-sky-800 border-sky-200"
+            >
+              أرقام المادة: {subject.numerals === 'latin' ? 'إنجليزية 123' : 'عربية ١٢٣'} (تغيير)
+            </button>
+          )}
         </div>
       )}
 

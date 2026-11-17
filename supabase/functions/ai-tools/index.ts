@@ -5,6 +5,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { adminClient, corsHeaders, env, json, userClient } from '../_shared/http.ts';
 import { ClaudeToolModel, EscalatingToolModel, ToolError, toolConfigFromEnv, type Usage } from '../_shared/aiTools/model.ts';
+import { asNumerals } from '../_shared/numerals.ts';
 import {
   assistantChat,
   extractExam,
@@ -58,11 +59,12 @@ async function loadLessons(db: SupabaseClient, lessonIds: string[], subjectId: s
 }
 
 async function subjectInfo(db: SupabaseClient, subjectId: string) {
-  const { data } = await db.from('subjects').select('name, grades(name)').eq('id', subjectId).maybeSingle();
+  const { data } = await db.from('subjects').select('name, numerals, grades(name)').eq('id', subjectId).maybeSingle();
   if (!data) throw new ToolError('Subject not visible', 'المادة غير متاحة.', 404);
-  const row = data as { name: string; grades: { name: string } | { name: string }[] | null };
+  const row = data as { name: string; numerals: string | null; grades: { name: string } | { name: string }[] | null };
   const grade = Array.isArray(row.grades) ? row.grades[0] : row.grades;
-  return { subjectName: row.name, gradeName: grade?.name ?? '' };
+  // Arabic or Western digits, as in the subject's textbook (set per subject by the platform admin).
+  return { subjectName: row.name, gradeName: grade?.name ?? '', numerals: asNumerals(row.numerals) };
 }
 
 Deno.serve(async (req) => {
@@ -174,7 +176,7 @@ Deno.serve(async (req) => {
           if (!pages.length) return json({ error: 'أرفق صورة واحدة على الأقل للورقة.' }, 400);
           const { data: list } = await db.from('lessons').select('id, units!inner(subject_id)').eq('units.subject_id', subjectId).limit(200);
           const lessons = await loadLessons(db, ((list ?? []) as { id: string }[]).map((l) => l.id), subjectId);
-          const result = await extractExam(model, config, { pages, lessons: lessons.map((l) => ({ ...l, content: '' })) });
+          const result = await extractExam(model, config, { pages, lessons: lessons.map((l) => ({ ...l, content: '' })), numerals: info.numerals });
           await log(result.usage);
           return json(result.data);
         }

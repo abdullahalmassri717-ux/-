@@ -68,16 +68,18 @@ export async function gradeSubmission(
 
   const { data: sub, error: subError } = await admin
     .from('submissions')
-    .select('id, organization_id, assessment_id, student_id, status, assessments(title, group_id, auto_send_reports, status, subjects(name))')
+    .select('id, organization_id, assessment_id, student_id, status, assessments(title, group_id, auto_send_reports, status, subjects(name, numerals))')
     .eq('id', submissionId)
     .maybeSingle();
   if (subError || !sub) return { ok: false, status: 'failed', error: 'لم نجد هذه الورقة.' };
   if (sub.status === 'approved') return { ok: false, status: 'approved', error: 'هذه الورقة معتمدة من قبل.' };
 
   const orgId = sub.organization_id as string;
-  type A = { title: string; group_id: string; auto_send_reports: boolean; status: string; subjects: { name: string } | { name: string }[] | null };
+  type S = { name: string; numerals: string | null };
+  type A = { title: string; group_id: string; auto_send_reports: boolean; status: string; subjects: S | S[] | null };
   const assessment = (Array.isArray(sub.assessments) ? sub.assessments[0] : sub.assessments) as A | null;
-  const subjectName = Array.isArray(assessment?.subjects) ? assessment?.subjects[0]?.name : assessment?.subjects?.name;
+  const subject = Array.isArray(assessment?.subjects) ? assessment?.subjects[0] : assessment?.subjects;
+  const subjectName = subject?.name;
 
   const { data: run } = await admin
     .from('grading_runs')
@@ -137,6 +139,7 @@ export async function gradeSubmission(
       title: assessment?.title ?? '',
       subject: subjectName ?? '',
       feedbackLanguage: 'ar',
+      numerals: subject?.numerals === 'latin' ? 'latin' : 'arabic',
       classRoster: roster.length ? roster.map((r) => r.name) : undefined,
       questions: qs.map((q) => ({
         questionNumber: q.number,
