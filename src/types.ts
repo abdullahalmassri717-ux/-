@@ -105,6 +105,8 @@ export interface Subject {
   name: string;
   code: string;
   status: 'published' | 'draft';
+  /** How the subject's textbook writes digits; the AI follows it. Missing = arabic. */
+  numerals?: 'arabic' | 'latin';
   units: Unit[];
 }
 
