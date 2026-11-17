@@ -30,6 +30,8 @@ export interface ExamToGrade {
   questions: QuestionToGrade[];
   /** Text of the curriculum lessons the questions come from (from the textbook), for background. */
   lessonTexts?: { lesson: string; text: string }[];
+  /** How the subject's textbook writes digits: Arabic-Indic (arabic) or Western (latin). Default arabic. */
+  numerals?: 'arabic' | 'latin';
   /** Names of the students in the exam's class, so the AI can tell whose paper it is from a handwritten name. */
   classRoster?: string[];
 }

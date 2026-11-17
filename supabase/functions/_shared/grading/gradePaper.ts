@@ -1,5 +1,6 @@
 import { estimateCostUsd, type GradingConfig } from './config.ts';
 import { effortForExam } from './prompt.ts';
+import { applyNumerals } from '../numerals.ts';
 import {
   GradingError,
   type GradePaperInput,
@@ -68,6 +69,15 @@ export async function gradePaper(
       // Keep the first answers; the teacher reviews unsure answers anyway.
     }
   }
+
+  // The note and the reason use the digits of the subject's book, whatever the model wrote.
+  // The transcription stays exactly as the student wrote it.
+  const numerals = input.exam.numerals ?? 'arabic';
+  questions = questions.map((q) => ({
+    ...q,
+    reason: applyNumerals(q.reason, numerals),
+    feedbackForStudent: applyNumerals(q.feedbackForStudent, numerals),
+  }));
 
   const totalScore = questions.reduce((s, q) => s + q.score, 0);
   const totalMaxScore = input.exam.questions.reduce((s, q) => s + q.maxScore, 0);
