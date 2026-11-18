@@ -123,6 +123,34 @@ jobs:
         if: inputs.step != 'prepare'
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
 
+      # Login-code protection: limits on how often codes can be requested and
+      # tried. Only ever tightens a value, never loosens it. Prints no secrets.
+      - name: Login code limits
+        if: inputs.step != 'prepare'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          api="https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/config/auth"
+          curl -fsS "$api" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" > /tmp/auth.json
+          fields='{sms_otp_exp, sms_otp_length, sms_max_frequency, rate_limit_sms_sent, rate_limit_otp, rate_limit_verify, rate_limit_token_refresh}'
+          echo "Before:"; jq "$fields" /tmp/auth.json
+          jq '
+            def atleast($k; $v): if (.[$k] // 0) < $v then {($k): $v} else {} end;
+            def atmost($k; $v): if (.[$k] // ($v + 1)) > $v then {($k): $v} else {} end;
+            atleast("sms_max_frequency"; 60) + atmost("sms_otp_exp"; 600)
+              + atmost("rate_limit_verify"; 30) + atmost("rate_limit_otp"; 30)
+              + atmost("rate_limit_sms_sent"; 60)
+          ' /tmp/auth.json > /tmp/patch.json
+          if [ "$(jq length /tmp/patch.json)" -gt 0 ]; then
+            echo "Tightening:"; cat /tmp/patch.json
+            curl -fsS -X PATCH "$api" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              -H 'content-type: application/json' --data @/tmp/patch.json -o /dev/null
+            echo "After:"; curl -fsS "$api" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" | jq "$fields"
+          else
+            echo "Already tight enough."
+          fi
+          rm -f /tmp/auth.json /tmp/patch.json
+
       - name: Apply database migrations
         if: inputs.step != 'prepare'
         # The CLI reads SUPABASE_DB_PASSWORD from the environment. Newer CLI

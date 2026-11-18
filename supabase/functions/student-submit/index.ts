@@ -6,6 +6,10 @@
 //                                      stores the photos privately, starts grading.
 //
 // Guessing codes is limited: 5 wrong codes from one device in 15 minutes blocks it.
+// If many wrong codes reach one exam link from many devices (someone switching
+// networks to keep guessing), any device with a wrong code is paused too.
+// A student's paper can be replaced at most once every 2 minutes, so a known
+// code cannot be used to re-upload (and re-grade with AI) again and again.
 import { adminClient, corsHeaders, env, json, runInBackground } from '../_shared/http.ts';
 import { gradeSubmission } from '../_shared/gradeSubmission.ts';
 import { closedMessage, linkState, OFFLINE_GRACE_MINUTES, type SubmissionWindow } from '../_shared/submissionWindow.ts';
@@ -14,12 +18,20 @@ const MAX_PAGES = 6;
 const MAX_PAGE_BYTES = 4 * 1024 * 1024;
 const WRONG_CODE_LIMIT = 5;
 const WINDOW_MINUTES = 15;
+const LINK_WRONG_CODE_LIMIT = 30;
+const REPLACE_COOLDOWN_MS = 2 * 60_000;
 // Times in server messages are shown in Gaza time.
 const TIME_ZONE = 'Asia/Gaza';
 const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 
 async function clientHash(req: Request, assessmentId: string): Promise<string> {
-  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || 'unknown';
+  // cf-connecting-ip is set by the network edge and cannot be faked by the
+  // browser; x-forwarded-for is only a fallback.
+  const ip =
+    (req.headers.get('cf-connecting-ip') ?? '').trim() ||
+    (req.headers.get('x-real-ip') ?? '').trim() ||
+    (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() ||
+    'unknown';
   const salt = Deno.env.get('LINK_ATTEMPT_SALT') ?? Deno.env.get('SUPABASE_URL') ?? '';
   const bytes = new TextEncoder().encode(`${salt}:${assessmentId}:${ip}`);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -125,15 +137,21 @@ Deno.serve(async (req) => {
 
   const hash = await clientHash(req, a.id);
   const since = new Date(Date.now() - WINDOW_MINUTES * 60_000).toISOString();
-  const { count } = await admin
-    .from('submission_link_attempts')
-    .select('id', { count: 'exact', head: true })
-    .eq('assessment_id', a.id)
-    .eq('client_hash', hash)
-    .eq('succeeded', false)
-    .gte('created_at', since);
-  if ((count ?? 0) >= WRONG_CODE_LIMIT) {
-    return json({ error: `محاولات خاطئة كثيرة. انتظر ${WINDOW_MINUTES} دقيقة ثم حاول مرة أخرى.` }, 429);
+  const attempts = (succeeded: boolean, thisDevice: boolean) => {
+    let q = admin
+      .from('submission_link_attempts')
+      .select('id', { count: 'exact', head: true })
+      .eq('assessment_id', a.id)
+      .eq('succeeded', succeeded)
+      .gte('created_at', since);
+    if (thisDevice) q = q.eq('client_hash', hash);
+    return q.then(({ count }) => count ?? 0);
+  };
+  const [deviceWrong, linkWrong] = await Promise.all([attempts(false, true), attempts(false, false)]);
+  const tooManyWrong =
+    deviceWrong >= WRONG_CODE_LIMIT || (linkWrong >= LINK_WRONG_CODE_LIMIT && deviceWrong > 0);
+  if (tooManyWrong) {
+    return json({ error: `محاولات كثيرة. انتظر ${WINDOW_MINUTES} دقيقة ثم حاول مرة أخرى.` }, 429);
   }
 
   const studentCode = String(body.studentCode ?? '').replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
@@ -168,12 +186,16 @@ Deno.serve(async (req) => {
   // One paper per student per exam: a new upload replaces an earlier one (unless approved).
   const { data: existing } = await admin
     .from('submissions')
-    .select('id, status, submission_pages(storage_path)')
+    .select('id, status, submitted_at, submission_pages(storage_path)')
     .eq('assessment_id', a.id)
     .eq('student_id', student.id)
     .maybeSingle();
   if (existing?.status === 'approved') {
     return json({ error: 'ورقتك صُحّحت واعتمدها المدرّس. تواصل معه إذا أردت تعديلاً.' }, 409);
+  }
+
+  if (existing?.submitted_at && Date.now() - Date.parse(existing.submitted_at) < REPLACE_COOLDOWN_MS) {
+    return json({ error: 'وصلت ورقتك قبل قليل. انتظر دقيقتين إذا أردت إرسالها من جديد.' }, 429);
   }
 
   let submissionId = existing?.id as string | undefined;
