@@ -1,0 +1,88 @@
+# Checks the live platform from the outside, the way a stranger would see it.
+# Changes nothing and needs no secrets. Run it by hand from the Actions tab
+# ("Run workflow"), and after every big change before launch.
+#   1. HTTPS and security headers on dequa.study.
+#   2. No secret keys inside the website files sent to the browser.
+#   3. Without signing in, no private data can be read (database and files).
+name: Security check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      SITE: https://dequa.study
+      SUPA: https://roeweplhofhjtcnbfmvo.supabase.co
+    steps:
+      - name: HTTPS and security headers
+        run: |
+          set -u
+          fail=0
+          code=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' http://dequa.study/)
+          echo "http:// answers: $code"
+          case "$code" in 30[1278]\ https://*) echo "OK  plain http goes to https";; *) echo "FAIL plain http does not go to https"; fail=1;; esac
+          curl -sSI "$SITE/" > /tmp/h.txt
+          for h in strict-transport-security content-security-policy x-content-type-options x-frame-options referrer-policy permissions-policy; do
+            if grep -qi "^$h:" /tmp/h.txt; then echo "OK  $h"; else echo "FAIL missing $h"; fail=1; fi
+          done
+          exit $fail
+
+      - name: No secret keys in the website files
+        run: |
+          set -u
+          mkdir -p /tmp/site && cd /tmp/site
+          curl -fsS "$SITE/" -o index.html
+          for f in $(grep -oE '/assets/[^"]+\.(js|mjs)' index.html | sort -u); do curl -fsS "$SITE$f" -o "$(basename "$f")"; done
+          # Follow lazily loaded files one level down.
+          for f in $(cat *.js | grep -oE 'assets/[A-Za-z0-9._-]+\.(js|mjs)' | sort -u); do
+            [ -f "$(basename "$f")" ] || curl -fsS "$SITE/$f" -o "$(basename "$f")" || true
+          done
+          ls -la
+          fail=0
+          if grep -lE 'sk-ant-[A-Za-z0-9_-]{20,}|sbp_[a-f0-9]{30,}|AIza[0-9A-Za-z_-]{30,}' *; then echo "FAIL a secret key pattern was found"; fail=1; fi
+          # Every key-like token (JWT) in the files must be the public "anon" key.
+          for t in $(cat * | grep -oE 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}' | sort -u); do
+            p=$(echo "$t" | cut -d. -f2 | tr '_-' '/+'); while [ $(( ${#p} % 4 )) -ne 0 ]; do p="$p="; done
+            role=$(echo "$p" | base64 -d 2>/dev/null | jq -r .role)
+            echo "key in site files has role: $role"
+            [ "$role" = anon ] || { echo "FAIL a non-public key is in the site files"; fail=1; }
+          done
+          for t in $(cat * | grep -oE 'sb_secret_[A-Za-z0-9_-]{10,}' | sort -u); do echo "FAIL a Supabase secret key is in the site files"; fail=1; done
+          [ $fail = 0 ] && echo "OK  no secret keys in the website files"
+          exit $fail
+
+      - name: No private data without signing in
+        run: |
+          set -u
+          cd /tmp/site
+          anon=$(cat * | grep -oE 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|sb_publishable_[A-Za-z0-9_-]{10,}' | head -1)
+          [ -n "$anon" ] || { echo "Could not find the public key in the site files"; exit 1; }
+          fail=0
+          for t in students profiles submissions submission_pages question_grades grade_edits reports memberships organizations invitations groups assessments whatsapp_login_codes whatsapp_contacts submission_link_attempts invoices payment_receipts tuition_payments tuition_charges support_messages platform_staff_invites group_students subscriptions subscription_pauses platform_admins support_tickets ai_tool_runs grading_runs; do
+            body=$(curl -s "$SUPA/rest/v1/$t?select=*&limit=1" -H "apikey: $anon" -H "Authorization: Bearer $anon")
+            if [ "$(echo "$body" | jq -r 'if type=="array" then length else 0 end' 2>/dev/null)" = 0 ]; then
+              echo "OK  $t: nothing visible"
+            else
+              echo "FAIL $t: rows visible without signing in"; fail=1
+            fi
+          done
+          for b in submission-pages payment-receipts org-assets; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$SUPA/storage/v1/object/public/$b/x.jpg")
+            pub=$(curl -s "$SUPA/storage/v1/bucket/$b" -H "apikey: $anon" -H "Authorization: Bearer $anon" | jq -r '.public // "hidden"')
+            if [ "$code" = 200 ] || [ "$pub" = true ]; then echo "FAIL files bucket $b is public"; fail=1; else echo "OK  files bucket $b is private ($code, $pub)"; fi
+          done
+          r=$(curl -s "$SUPA/rest/v1/rpc/get_shared_report" -H "apikey: $anon" -H "Authorization: Bearer $anon" \
+                -H 'content-type: application/json' -d '{"p_code":"000000000000"}')
+          [ "$(echo "$r" | jq 'length' 2>/dev/null)" = 0 ] && echo "OK  a guessed report link shows nothing" || { echo "FAIL report link: $r"; fail=1; }
+          for f in grade-submission ai-tools send-reports; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$SUPA/functions/v1/$f" -H 'content-type: application/json' -d '{}')
+            case "$code" in 401|403) echo "OK  $f refuses strangers ($code)";; *) echo "FAIL $f answered $code without signing in"; fail=1;; esac
+          done
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$SUPA/functions/v1/send-sms-hook" -d '{}')
+          [ "$code" = 401 ] && echo "OK  send-sms-hook refuses unsigned calls" || { echo "FAIL send-sms-hook answered $code"; fail=1; }
+          exit $fail
