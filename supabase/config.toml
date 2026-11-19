@@ -28,6 +28,11 @@ import_map = "./functions/deno.json"
 verify_jwt = false
 import_map = "./functions/deno.json"
 
+# يستدعيها النسخ الاحتياطي الليلي برمز داخلي، لا بتسجيل دخول.
+[functions.backup-files]
+verify_jwt = false
+import_map = "./functions/deno.json"
+
 # يشغّلها جدول القاعدة الأسبوعي برمز داخلي، لا بتسجيل دخول.
 [functions.weekly-reports]
 verify_jwt = false
