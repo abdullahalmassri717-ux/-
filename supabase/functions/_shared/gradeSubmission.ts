@@ -15,6 +15,7 @@ import {
   type PaperImage,
   type QuestionResult,
 } from './grading/index.ts';
+import { logFunctionError } from './http.ts';
 
 const CONFIDENCE_VALUE = { high: 0.95, medium: 0.75, low: 0.4 } as const;
 
@@ -258,6 +259,7 @@ export async function gradeSubmission(
     const message = error instanceof GradingError ? error.userMessage : 'حدث خطأ غير متوقع أثناء التصحيح.';
     await admin.from('submissions').update({ status: 'failed' }).eq('id', submissionId);
     await finish('failed', { error: error instanceof Error ? error.message.slice(0, 500) : String(error) });
+    if (!(error instanceof GradingError)) await logFunctionError(admin, 'grade-submission', error);
     return { ok: false, status: 'failed', error: message };
   }
 }

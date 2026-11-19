@@ -4,7 +4,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { MOCK_STUDENTS, PLATFORM_CONFIG } from '../mockData';
 import { toInternationalPhone } from '../lib/phone';
-import { toTiers, unitPriceFor, type PriceTier, type PricingModel } from './admin';
+import { toTiers, type PriceTier, type PricingModel } from './admin';
+import { periodDue } from '../lib/pricing';
+export { periodDue };
 
 export interface PlanInfo {
   name: string;
@@ -127,12 +129,6 @@ export const monthStart = (d = new Date()) => `${d.getFullYear()}-${String(d.get
 const newReceiptNumber = (month: string) =>
   `R${month.slice(2, 4)}${month.slice(5, 7)}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-/** Platform fee for a period from actual usage (no minimum), split into installments for yearly plans. */
-export function periodDue(plan: PlanInfo | null, units: number): number {
-  if (!plan) return 0;
-  const total = units * unitPriceFor(plan.tiers, plan.pricePerStudent, units);
-  return Math.round((total / (plan.cycle === 'yearly' ? Math.max(1, plan.installments) : 1)) * 100) / 100;
-}
 
 function tuitionStatus(due: number, paid: number, hasCharge: boolean): TuitionStatus {
   if (!hasCharge) return 'none';

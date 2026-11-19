@@ -1,0 +1,75 @@
+# Daily encrypted backup of the live database (all tables and data, not the
+# photographed papers in Storage). Runs every night, or by hand from the
+# Actions tab ("Run workflow").
+#
+# The backup is encrypted with the database password (the SUPABASE_DB_PASSWORD
+# secret), so the file in GitHub is useless without it. Kept 14 days as a
+# workflow artifact ("database-backup"). How to restore: docs/backup.md.
+name: Backup database
+
+on:
+  schedule:
+    - cron: '30 0 * * *' # 00:30 UTC = 2:30 / 3:30 AM in Palestine
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-database
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PROJECT_REF: roeweplhofhjtcnbfmvo
+      PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - name: Check the password secret
+        run: |
+          if [ -z "$PGPASSWORD" ]; then echo "::error::SUPABASE_DB_PASSWORD secret is missing."; exit 1; fi
+
+      # GitHub machines have no IPv6, so connect through Supabase's connection
+      # pooler (session mode, port 5432). Its address depends on the project's
+      # region, so try the known regions until one accepts the project.
+      - name: Find the database address
+        run: |
+          for region in eu-central-1 eu-central-2 eu-west-1 eu-west-2 eu-west-3 eu-north-1 us-east-1 us-east-2 us-west-1 us-west-2 \
+                        ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2 ca-central-1 sa-east-1 me-central-1; do
+            for n in 0 1; do
+              host="aws-$n-$region.pooler.supabase.com"
+              if docker run --rm -e PGPASSWORD postgres:17 psql "host=$host port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require connect_timeout=8" -Atc 'select 1' >/dev/null 2>&1; then
+                echo "DB_HOST=$host" >> "$GITHUB_ENV"
+                echo "Found the database."
+                exit 0
+              fi
+            done
+          done
+          echo "::error::Could not connect to the database (wrong password, or a new region)."
+          exit 1
+
+      - name: Dump and encrypt
+        run: |
+          mkdir -p out
+          stamp=$(date -u +%Y-%m-%d)
+          docker run --rm -e PGPASSWORD -v "$PWD/out:/out" postgres:17 \
+            pg_dump "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" \
+              --format=custom --no-owner --no-privileges \
+              --schema=public --schema=private --schema=auth --schema=storage \
+              --file=/out/daqa.dump
+          size=$(stat -c %s out/daqa.dump)
+          if [ "$size" -lt 10000 ]; then echo "::error::Backup looks empty ($size bytes)."; exit 1; fi
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$PGPASSWORD" \
+              --symmetric --cipher-algo AES256 -o "out/daqa-$stamp.dump.gpg" out/daqa.dump
+          rm out/daqa.dump
+          echo "BACKUP_FILE=out/daqa-$stamp.dump.gpg" >> "$GITHUB_ENV"
+          echo "Backup size: $(du -h out/daqa-$stamp.dump.gpg | cut -f1)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: database-backup
+          path: ${{ env.BACKUP_FILE }}
+          retention-days: 14
+          if-no-files-found: error

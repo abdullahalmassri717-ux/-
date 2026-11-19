@@ -39,3 +39,20 @@ export function runInBackground(task: Promise<unknown>) {
   if (runtime) runtime.waitUntil(task);
   else task.catch((e) => console.error(e));
 }
+
+/** Saves an unexpected server error for the platform admin (table app_errors). Never throws. */
+export async function logFunctionError(admin: SupabaseClient, where: string, error: unknown): Promise<void> {
+  try {
+    const message = error instanceof Error ? error.message : String(error);
+    const detail = error instanceof Error ? error.stack ?? null : null;
+    await admin.from('app_errors').insert({
+      source: 'function',
+      message: `${where}: ${message}`.slice(0, 300),
+      detail: detail?.slice(0, 1500) ?? null,
+      page: where,
+      user_id: null,
+    });
+  } catch {
+    // Logging must never break the request.
+  }
+}

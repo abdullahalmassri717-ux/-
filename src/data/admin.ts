@@ -1,6 +1,7 @@
 // Platform admin: organizations, payments to confirm, invoices, plans and
 // grading quality. Every call is checked again by the database (admin only).
 import { supabase } from '../lib/supabase';
+import { toTiers, unitPriceFor, type PriceTier } from '../lib/pricing';
 import { MOCK_PLATFORM_CLIENTS, MOCK_SUBSCRIPTION_PLANS } from '../mockData';
 
 export type OrgStatus = 'pending' | 'active' | 'disabled';
@@ -72,11 +73,7 @@ export interface AdminInvoice {
   createdAt: string;
 }
 
-/** Volume bracket: the whole count is priced at the bracket it falls in. */
-export interface PriceTier {
-  upTo: number | null;
-  price: number;
-}
+export type { PriceTier } from '../lib/pricing';
 
 export interface AdminPlan {
   id: string;
@@ -184,20 +181,21 @@ export interface AdminApi {
   listPlans(): Promise<AdminPlan[]>;
   savePlan(plan: Omit<AdminPlan, 'id'> & { id?: string }): Promise<void>;
   gradingQuality(days: number): Promise<GradingQuality>;
+  /** Errors users hit (or server functions), grouped; general admin only. */
+  appErrors(days: number): Promise<AppErrorRow[]>;
 }
 
-/** Unit price for a count: the matching tier, else the plan's base price. */
-export function unitPriceFor(tiers: PriceTier[], base: number, units: number): number {
-  const sorted = [...tiers].sort((a, b) => (a.upTo ?? Infinity) - (b.upTo ?? Infinity));
-  return sorted.find((t) => t.upTo === null || units <= t.upTo)?.price ?? base;
+export interface AppErrorRow {
+  message: string;
+  source: 'web' | 'function';
+  page: string | null;
+  times: number;
+  users: number;
+  lastAt: string;
+  detail: string | null;
 }
 
-export const toTiers = (raw: unknown): PriceTier[] =>
-  Array.isArray(raw)
-    ? raw
-        .map((t: { up_to?: number | null; price?: number }) => ({ upTo: t?.up_to ?? null, price: Number(t?.price ?? 0) }))
-        .filter((t) => Number.isFinite(t.price))
-    : [];
+export { unitPriceFor, toTiers } from '../lib/pricing';
 
 const toQuote = (d: Record<string, unknown> | null): UsageQuote | null =>
   d
@@ -437,6 +435,20 @@ function realApi(): AdminApi {
       const { error } = p.id ? await db.from('subscription_plans').update(row).eq('id', p.id) : await db.from('subscription_plans').insert(row);
       if (error) fail(error, 'تعذّر حفظ الباقة.');
     },
+    async appErrors(days) {
+      const { data, error } = await db.rpc('admin_app_errors', { p_days: days });
+      if (error) fail(error, 'تعذّر تحميل سجل الأخطاء.');
+      return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+        message: String(r.message ?? ''),
+        source: r.source === 'function' ? 'function' : 'web',
+        page: (r.page as string | null) ?? null,
+        times: Number(r.times ?? 0),
+        users: Number(r.users ?? 0),
+        lastAt: String(r.last_at ?? ''),
+        detail: (r.detail as string | null) ?? null,
+      }));
+    },
+
     async gradingQuality(days) {
       const [{ data, error }, byOrgRes, toolsRes] = await Promise.all([
         db.rpc('admin_grading_quality', { p_days: days }),
@@ -750,6 +762,7 @@ function demoApi(): AdminApi {
       else plans.push({ ...p, id: `plan_${Date.now()}` });
       await wait(null);
     },
+    appErrors: () => wait([]),
     gradingQuality: (days) =>
       wait({
         runs: 412,

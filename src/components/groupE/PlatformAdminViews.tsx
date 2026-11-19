@@ -353,6 +353,48 @@ const QualityTab: React.FC = () => {
       </div>
 
       <OrgCostTable rows={d.byOrg} rate={d.usdToIls} days={days} />
+      <AppErrorsBox days={days} />
+    </div>
+  );
+};
+
+/** Errors that happened to users or in the server, so problems are noticed early (general admin only). */
+const AppErrorsBox: React.FC<{ days: number }> = ({ days }) => {
+  const access = useAdminAccess();
+  const q = useAsync(() => (access?.isSuper ? api.appErrors(days) : Promise.resolve(null)), [days, access?.isSuper]);
+  const [open, setOpen] = useState<string | null>(null);
+  if (!access?.isSuper) return null;
+  if (q.error) return <ErrorBox text={q.error} />;
+  if (!q.data) return null;
+  const rows = q.data;
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-3">
+      <h3 className="font-extrabold text-[#1E3A5F] text-sm">
+        أخطاء المنصة (آخر {days} يوماً){rows.length > 0 && <span className="ms-2 text-rose-700">{fmt(rows.reduce((n, r) => n + r.times, 0))}</span>}
+      </h3>
+      {!rows.length ? (
+        <p className="text-xs text-emerald-700">لم تُسجَّل أخطاء. ممتاز.</p>
+      ) : (
+        <div className="space-y-2 text-xs">
+          {rows.map((r) => {
+            const key = r.source + r.message;
+            return (
+              <div key={key} className="border border-slate-100 rounded-xl p-3 space-y-1">
+                <button onClick={() => setOpen(open === key ? null : key)} className="w-full text-start cursor-pointer space-y-1">
+                  <span className="block font-bold text-slate-800 break-words" dir="auto">{r.message}</span>
+                  <span className="block text-slate-500">
+                    {r.source === 'function' ? 'الخادم' : 'عند المستخدم'} · {fmt(r.times)} مرة · {fmt(r.users)} مستخدم
+                    {r.page ? ` · ${r.page}` : ''} · آخر مرة {new Date(r.lastAt).toLocaleString('ar-EG-u-nu-latn')}
+                  </span>
+                </button>
+                {open === key && r.detail && (
+                  <pre className="text-[10px] bg-slate-50 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap break-all" dir="ltr">{r.detail}</pre>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

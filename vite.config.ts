@@ -10,6 +10,10 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     plugins: [react(), tailwindcss(), devGradingApi(env)],
+    define: {
+      // Which published version an error came from (see src/lib/errorLog.ts).
+      'import.meta.env.VITE_BUILD_ID': JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA ?? 'local').slice(0, 7)),
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

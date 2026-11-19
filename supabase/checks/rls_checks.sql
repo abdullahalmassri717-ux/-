@@ -64,6 +64,7 @@ select tests.eq((select count(*) from public.subscription_plans) > 0, true, 'ano
 select tests.eq((select count(*) from public.platform_settings where key = 'pricing'), 1::bigint, 'anon: يرى الأسعار');
 select tests.eq((select count(*) from public.platform_settings where key = 'grading'), 0::bigint, 'anon: لا يرى الإعدادات الداخلية');
 select tests.throws('select count(*) from public.students', 'anon: لا يصل لجدول الطلاب');
+select tests.throws('select public.dashboard_summary(gen_random_uuid())', 'anon: لا يصل لأرقام لوحة التحكم');
 select tests.throws('select count(*) from public.organizations', 'anon: لا يصل لجدول الجهات');
 rollback;
 
@@ -134,6 +135,8 @@ begin;
 select tests.login('+970590000002');   -- أ. سميرة عكيلة
 set local role authenticated;
 select tests.eq((select count(*) from public.organizations), 1::bigint, 'سميرة: ترى مدرستها فقط');
+select tests.eq((public.dashboard_summary(tests.org('school'))->>'groupsCount')::int, 9, 'سميرة: لوحة التحكم تعدّ كل شعب المدرسة');
+select tests.eq((public.dashboard_summary(tests.org('individual_teacher'))->>'studentsCount')::int, 0, 'سميرة: لوحة جهة أخرى فارغة');
 select tests.eq((select count(*) from public.students), 4::bigint, 'سميرة: ترى كل طلاب المدرسة ولا ترى طلاب محمد الخصوصيين');
 select tests.eq((select count(*) from public.question_grades), 0::bigint, 'سميرة: لا ترى درجات جهة أخرى');
 select tests.eq((select count(*) from public.invoices), 1::bigint, 'سميرة: ترى فاتورة المدرسة');
@@ -159,6 +162,8 @@ select tests.eq((select count(*) from public.students), 2::bigint, 'أحمد ح�
 select tests.eq((select count(*) from public.invoices), 0::bigint, 'أحمد حلس: لا يرى الفواتير');
 select tests.eq((select count(*) from public.subscriptions), 0::bigint, 'أحمد حلس: لا يرى الاشتراك');
 select tests.eq((select count(*) from public.tuition_charges), 0::bigint, 'أحمد حلس: لا يرى الرسوم');
+select tests.eq((public.dashboard_summary(tests.org('school'))->>'groupsCount')::int, 2, 'أحمد حلس: لوحة التحكم تعدّ شعبتيه فقط');
+select tests.eq(public.dashboard_summary(tests.org('school'))->'tuition', 'null'::jsonb, 'أحمد حلس: لوحة التحكم بلا رسوم');
 -- المعلم يضيف طالباً لشعبته: معرّف من المتصفح، ثم التسجيل في الشعبة (بدون returning)
 insert into public.students (id, organization_id, full_name)
   values ('33333333-3333-4333-8333-333333333333', tests.org('school'), 'طالب أضافه المعلم');
@@ -534,6 +539,41 @@ select tests.eq((select count(*) from public.students where id = 'de302000-0000-
 select tests.eq((select count(*) from public.groups where id = 'de301000-0000-4000-8000-000000000009'), 0::bigint, 'التجريبي: المجموعة التجريبية الفارغة حُذفت');
 select tests.eq((select count(*) from public.students where id = 'de399999-0000-4000-8000-000000000029'), 1::bigint, 'التجريبي: طالب المستخدم باقٍ');
 select tests.eq((select count(*) from public.organizations where id = 'de300000-0000-4000-8000-000000000009'), 1::bigint, 'التجريبي: الجهة التجريبية باقية');
+rollback;
+
+-- إعادة التصحيح التلقائية: لا يستدعيها إلا الخادم، وتلتقط العالق فقط، 3 مرات كحد أقصى
+begin;
+set local role authenticated;
+select tests.throws('select public.claim_stuck_submissions(10)', 'العالقة: المستخدم لا يستطيع حجز الأوراق');
+reset role;
+update public.submissions set status = 'approved';
+update public.submissions s set status = 'uploaded', updated_at = now() - interval '1 hour'
+ where s.id = (select id from public.submissions order by id limit 1);
+alter table public.submissions disable trigger submissions_touch;
+update public.submissions set updated_at = now() - interval '1 hour' where status = 'uploaded';
+alter table public.submissions enable trigger submissions_touch;
+select tests.eq((select count(*) from public.claim_stuck_submissions(10)), 1::bigint, 'العالقة: تُلتقط الورقة العالقة');
+select tests.eq((select status::text from public.submissions where auto_grade_attempts = 1), 'grading', 'العالقة: وتُعلَّم قيد التصحيح');
+select tests.eq((select count(*) from public.claim_stuck_submissions(10)), 0::bigint, 'العالقة: لا تُلتقط مرتين فوراً');
+alter table public.submissions disable trigger submissions_touch;
+update public.submissions set status = 'failed', updated_at = now() - interval '1 hour', auto_grade_attempts = 3 where auto_grade_attempts = 1;
+select tests.eq((select count(*) from public.claim_stuck_submissions(10)), 0::bigint, 'العالقة: تتوقف بعد 3 محاولات');
+rollback;
+
+-- سجل الأخطاء: أي زائر يسجّل خطأ (بلا رموز الطلاب)، والمدير العام وحده يقرأ
+begin;
+set local role anon;
+select public.log_app_error('خطأ تجريبي', 'stack', '/s/AB12CD?x=1', 'abc1234');
+select tests.throws('select count(*) from public.app_errors', 'الأخطاء: الزائر لا يقرأ السجل');
+reset role;
+select tests.login('+970590000001');
+set local role authenticated;
+select tests.eq((select count(*) from public.app_errors), 0::bigint, 'الأخطاء: المدرّس لا يرى السجل');
+select tests.eq((select count(*) from public.admin_app_errors(7)), 0::bigint, 'الأخطاء: ولا ملخصه');
+reset role;
+select set_config('request.jwt.claims', json_build_object('sub', 'f118abc0-6877-4745-8d29-bb9429abeaee', 'role', 'authenticated')::text, true);
+set local role authenticated;
+select tests.eq((select page from public.admin_app_errors(7) where message = 'خطأ تجريبي'), '/s/…', 'الأخطاء: المدير يراه، ورمز الطالب محذوف من الرابط');
 rollback;
 
 \echo 'كل الفحوص نجحت ✓'

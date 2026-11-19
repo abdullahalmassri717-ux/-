@@ -3,7 +3,7 @@
 // reaches the browser. Lessons are read with the teacher's own permissions,
 // so only published curriculum can be used.
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { adminClient, corsHeaders, env, json, userClient } from '../_shared/http.ts';
+import { adminClient, corsHeaders, env, json, logFunctionError, userClient } from '../_shared/http.ts';
 import { ClaudeToolModel, EscalatingToolModel, ToolError, toolConfigFromEnv, type Usage } from '../_shared/aiTools/model.ts';
 import { asNumerals } from '../_shared/numerals.ts';
 import {
@@ -242,6 +242,7 @@ Deno.serve(async (req) => {
       return json({ error: e.userMessage }, e.status);
     }
     console.error(task, e);
+    await logFunctionError(adminClient(), `ai-tools/${task}`, e);
     return json({ error: 'حدث خطأ غير متوقع.' }, 500);
   }
 });

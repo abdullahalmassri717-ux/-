@@ -63,7 +63,7 @@ jobs:
           anon=$(cat * | grep -oE 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|sb_publishable_[A-Za-z0-9_-]{10,}' | head -1)
           [ -n "$anon" ] || { echo "Could not find the public key in the site files"; exit 1; }
           fail=0
-          for t in students profiles submissions submission_pages question_grades grade_edits reports memberships organizations invitations groups assessments whatsapp_login_codes whatsapp_contacts submission_link_attempts invoices payment_receipts tuition_payments tuition_charges support_messages platform_staff_invites group_students subscriptions subscription_pauses platform_admins support_tickets ai_tool_runs grading_runs; do
+          for t in students profiles submissions submission_pages question_grades grade_edits reports memberships organizations invitations groups assessments whatsapp_login_codes whatsapp_contacts submission_link_attempts invoices payment_receipts tuition_payments tuition_charges support_messages platform_staff_invites group_students subscriptions subscription_pauses platform_admins support_tickets ai_tool_runs grading_runs app_errors; do
             body=$(curl -s "$SUPA/rest/v1/$t?select=*&limit=1" -H "apikey: $anon" -H "Authorization: Bearer $anon")
             if [ "$(echo "$body" | jq -r 'if type=="array" then length else 0 end' 2>/dev/null)" = 0 ]; then
               echo "OK  $t: nothing visible"
