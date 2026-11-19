@@ -1,10 +1,13 @@
-# Daily encrypted backup of the live database (all tables and data, not the
-# photographed papers in Storage). Runs every night, or by hand from the
-# Actions tab ("Run workflow").
+# Daily encrypted backup of the whole platform: the database (all tables and
+# data) and the stored files (paper photos, payment receipts, logos). Runs every
+# night, or by hand from the Actions tab ("Run workflow").
 #
-# The backup is encrypted with the database password (the SUPABASE_DB_PASSWORD
-# secret), so the file in GitHub is useless without it. Kept 14 days as a
-# workflow artifact ("database-backup"). How to restore: docs/backup.md.
+# Both files are encrypted with the database password (the SUPABASE_DB_PASSWORD
+# secret), so they are useless without it. Every run also restores the database
+# copy into an empty test database and compares row counts with the live one,
+# and checks every stored file was copied, so a broken backup fails loudly.
+# Kept 14 days as a workflow artifact ("platform-backup"). How to restore:
+# docs/backup.md.
 name: Backup database
 
 on:
@@ -50,10 +53,12 @@ jobs:
           echo "::error::Could not connect to the database (wrong password, or a new region)."
           exit 1
 
-      - name: Dump and encrypt
+      - name: Dump the database
         run: |
           mkdir -p out
-          stamp=$(date -u +%Y-%m-%d)
+          # Row counts just before the copy, to check the restored copy against.
+          q="select (select count(*) from public.organizations)||','||(select count(*) from public.students)||','||(select count(*) from public.submissions)||','||(select count(*) from public.question_grades)||','||(select count(*) from auth.users)||','||(select count(*) from storage.objects)"
+          docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$q" > out/live-counts.txt
           docker run --rm -e PGPASSWORD -v "$PWD/out:/out" postgres:17 \
             pg_dump "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" \
               --format=custom --no-owner --no-privileges \
@@ -61,15 +66,73 @@ jobs:
               --file=/out/daqa.dump
           size=$(stat -c %s out/daqa.dump)
           if [ "$size" -lt 10000 ]; then echo "::error::Backup looks empty ($size bytes)."; exit 1; fi
-          gpg --batch --yes --pinentry-mode loopback --passphrase "$PGPASSWORD" \
-              --symmetric --cipher-algo AES256 -o "out/daqa-$stamp.dump.gpg" out/daqa.dump
-          rm out/daqa.dump
-          echo "BACKUP_FILE=out/daqa-$stamp.dump.gpg" >> "$GITHUB_ENV"
-          echo "Backup size: $(du -h out/daqa-$stamp.dump.gpg | cut -f1)"
+          echo "Database dump: $(du -h out/daqa.dump | cut -f1)"
+
+      - name: Copy the stored files
+        run: |
+          set -euo pipefail
+          live() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -At -F $'\t' -c "$1"; }
+          token=$(live "select value from private.app_secrets where name = 'weekly_reports_token'")
+          echo "::add-mask::$token"
+          url=$(live "select value from private.app_secrets where name = 'functions_url'")
+          live "select bucket_id, name from storage.objects where bucket_id in ('submission-pages','payment-receipts','org-assets') and name not like '%/.emptyFolderPlaceholder' order by 1, 2" > out/objects.tsv
+          expected=$(wc -l < out/objects.tsv)
+          echo "Files to copy: $expected"
+          mkdir -p files
+          for bucket in submission-pages payment-receipts org-assets; do
+            awk -F'\t' -v b="$bucket" '$1 == b { print $2 }' out/objects.tsv > /tmp/paths.txt
+            split -l 200 -d /tmp/paths.txt /tmp/batch- || true
+            for batch in /tmp/batch-*; do
+              [ -s "$batch" ] || continue
+              jq -Rn --arg b "$bucket" '{bucket: $b, paths: [inputs]}' < "$batch" > /tmp/req.json
+              curl -fsS --retry 3 -X POST "$url/backup-files" -H 'Content-Type: application/json' \
+                -H "x-daqa-cron: $token" --data @/tmp/req.json > /tmp/res.json
+              jq -r '.urls[] | select(.url != null) | [.path, .url] | @tsv' /tmp/res.json | while IFS=$'\t' read -r path link; do
+                mkdir -p "files/$bucket/$(dirname "$path")"
+                case "$link" in http*) full="$link" ;; *) full="${url%/functions/v1}/storage/v1$link" ;; esac
+                curl -fsS --retry 3 -o "files/$bucket/$path" "$full"
+              done
+              rm -f "$batch"
+            done
+          done
+          copied=$(find files -type f | wc -l)
+          echo "Files copied: $copied of $expected"
+          if [ "$copied" -ne "$expected" ]; then echo "::error::Only $copied of $expected files were copied."; exit 1; fi
+          tar -cf out/files.tar -C files . 
+          echo "Files archive: $(du -h out/files.tar | cut -f1)"
+
+      - name: Test the database copy (restore into an empty database)
+        run: |
+          set -euo pipefail
+          docker run -d --name pgtest -e POSTGRES_PASSWORD=test -v "$PWD/out:/out" postgres:17 >/dev/null
+          for i in $(seq 1 30); do docker exec pgtest pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
+          # Supabase's built-in roles, so the access rules can be restored too.
+          docker exec pgtest psql -U postgres -q -c "create role anon nologin; create role authenticated nologin; create role service_role nologin; create role supabase_admin nologin; create role supabase_auth_admin nologin; create role supabase_storage_admin nologin; create role authenticator nologin; create schema if not exists extensions;" 
+          docker exec pgtest pg_restore -U postgres -d postgres --no-owner --no-privileges /out/daqa.dump > restore.log 2>&1 || true
+          echo "Restore warnings (Supabase-only parts that a plain database lacks): $(grep -c 'error:' restore.log || true)"
+          q="select (select count(*) from public.organizations)||','||(select count(*) from public.students)||','||(select count(*) from public.submissions)||','||(select count(*) from public.question_grades)||','||(select count(*) from auth.users)||','||(select count(*) from storage.objects)"
+          live=$(cat out/live-counts.txt)
+          copy=$(docker exec pgtest psql -U postgres -Atc "$q")
+          echo "Rows (organizations, students, papers, grades, users, files) live: $live  copy: $copy"
+          if [ "$live" != "$copy" ]; then
+            echo "::error::The restored copy does not match the live database."; grep 'error:' restore.log | head -20; exit 1
+          fi
+          docker rm -f pgtest >/dev/null
+
+      - name: Encrypt
+        run: |
+          stamp=$(date -u +%Y-%m-%d)
+          mkdir -p backup
+          for f in daqa.dump files.tar; do
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$PGPASSWORD" \
+                --symmetric --cipher-algo AES256 -o "backup/${f%%.*}-$stamp.${f#*.}.gpg" "out/$f"
+          done
+          rm -rf out files
+          ls -lh backup
 
       - uses: actions/upload-artifact@v4
         with:
-          name: database-backup
-          path: ${{ env.BACKUP_FILE }}
+          name: platform-backup
+          path: backup/
           retention-days: 14
           if-no-files-found: error
