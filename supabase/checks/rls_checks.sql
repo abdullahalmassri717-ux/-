@@ -536,4 +536,23 @@ select tests.eq((select count(*) from public.students where id = 'de399999-0000-
 select tests.eq((select count(*) from public.organizations where id = 'de300000-0000-4000-8000-000000000009'), 1::bigint, 'التجريبي: الجهة التجريبية باقية');
 rollback;
 
+-- إعادة التصحيح التلقائية: لا يستدعيها إلا الخادم، وتلتقط العالق فقط، 3 مرات كحد أقصى
+begin;
+set local role authenticated;
+select tests.throws('select public.claim_stuck_submissions(10)', 'العالقة: المستخدم لا يستطيع حجز الأوراق');
+reset role;
+update public.submissions set status = 'approved';
+update public.submissions s set status = 'uploaded', updated_at = now() - interval '1 hour'
+ where s.id = (select id from public.submissions order by id limit 1);
+alter table public.submissions disable trigger submissions_touch;
+update public.submissions set updated_at = now() - interval '1 hour' where status = 'uploaded';
+alter table public.submissions enable trigger submissions_touch;
+select tests.eq((select count(*) from public.claim_stuck_submissions(10)), 1::bigint, 'العالقة: تُلتقط الورقة العالقة');
+select tests.eq((select status::text from public.submissions where auto_grade_attempts = 1), 'grading', 'العالقة: وتُعلَّم قيد التصحيح');
+select tests.eq((select count(*) from public.claim_stuck_submissions(10)), 0::bigint, 'العالقة: لا تُلتقط مرتين فوراً');
+alter table public.submissions disable trigger submissions_touch;
+update public.submissions set status = 'failed', updated_at = now() - interval '1 hour', auto_grade_attempts = 3 where auto_grade_attempts = 1;
+select tests.eq((select count(*) from public.claim_stuck_submissions(10)), 0::bigint, 'العالقة: تتوقف بعد 3 محاولات');
+rollback;
+
 \echo 'كل الفحوص نجحت ✓'
