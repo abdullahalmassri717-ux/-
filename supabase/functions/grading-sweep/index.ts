@@ -3,7 +3,7 @@
 // schedule (migration 20261119000100_grading_sweep.sql) with the internal
 // token that lives only inside the database. Each paper gets at most 3
 // automatic tries.
-import { adminClient, env, json, runInBackground } from '../_shared/http.ts';
+import { adminClient, env, json, logFunctionError, runInBackground } from '../_shared/http.ts';
 import { gradeSubmission } from '../_shared/gradeSubmission.ts';
 
 Deno.serve(async (req) => {
@@ -31,6 +31,7 @@ Deno.serve(async (req) => {
           }
         } catch (e) {
           console.error('grading-sweep', id, e);
+          await logFunctionError(admin, 'grading-sweep', e);
         }
       }
     })(),
