@@ -1,6 +1,7 @@
 // Platform admin: organizations, payments to confirm, invoices, plans and
 // grading quality. Every call is checked again by the database (admin only).
 import { supabase } from '../lib/supabase';
+import { toTiers, unitPriceFor, type PriceTier } from '../lib/pricing';
 import { MOCK_PLATFORM_CLIENTS, MOCK_SUBSCRIPTION_PLANS } from '../mockData';
 
 export type OrgStatus = 'pending' | 'active' | 'disabled';
@@ -72,11 +73,7 @@ export interface AdminInvoice {
   createdAt: string;
 }
 
-/** Volume bracket: the whole count is priced at the bracket it falls in. */
-export interface PriceTier {
-  upTo: number | null;
-  price: number;
-}
+export type { PriceTier } from '../lib/pricing';
 
 export interface AdminPlan {
   id: string;
@@ -198,18 +195,7 @@ export interface AppErrorRow {
   detail: string | null;
 }
 
-/** Unit price for a count: the matching tier, else the plan's base price. */
-export function unitPriceFor(tiers: PriceTier[], base: number, units: number): number {
-  const sorted = [...tiers].sort((a, b) => (a.upTo ?? Infinity) - (b.upTo ?? Infinity));
-  return sorted.find((t) => t.upTo === null || units <= t.upTo)?.price ?? base;
-}
-
-export const toTiers = (raw: unknown): PriceTier[] =>
-  Array.isArray(raw)
-    ? raw
-        .map((t: { up_to?: number | null; price?: number }) => ({ upTo: t?.up_to ?? null, price: Number(t?.price ?? 0) }))
-        .filter((t) => Number.isFinite(t.price))
-    : [];
+export { unitPriceFor, toTiers } from '../lib/pricing';
 
 const toQuote = (d: Record<string, unknown> | null): UsageQuote | null =>
   d
