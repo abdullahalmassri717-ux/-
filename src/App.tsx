@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SCREEN_PATHS, pathForScreen, roleForPath, screenForPath } from './routes';
 import { UserRole, ScreenId, Entity } from './types';
@@ -12,55 +12,126 @@ import { useAuth } from './lib/auth';
 
 // Group A Components
 import { LandingPage } from './components/groupA/LandingPage';
-import { PricingPage } from './components/groupA/PricingPage';
-import { RegisterPage } from './components/groupA/RegisterPage';
-import { LoginPage } from './components/groupA/LoginPage';
-import { StudentSubmissionPage } from './components/groupA/StudentSubmissionPage';
 
 // Group B Components
-import { TeacherDashboard } from './components/groupB/TeacherDashboard';
-import { GroupsStudentsPage } from './components/groupB/GroupsStudentsPage';
 import { getSelected, setSelected } from './data/selection';
-import { StudentProfilePage } from './components/groupB/StudentProfilePage';
-import { ExamsListPage } from './components/groupB/ExamsListPage';
-import { ExamQuestionsPage } from './components/groupB/ExamQuestionsPage';
-import { CreateExamPage } from './components/groupB/CreateExamPage';
-import { PrintAnswerSheetsPage } from './components/groupB/PrintAnswerSheetsPage';
-import { UploadPapersPage } from './components/groupB/UploadPapersPage';
-import { GradingReviewPage } from './components/groupB/GradingReviewPage';
-import { ExamAnalyticsPage } from './components/groupB/ExamAnalyticsPage';
-import { ParentReportPage } from './components/groupB/ParentReportPage';
-import { SubscriptionPage } from './components/groupB/SubscriptionPage';
-import { CorrectedPaperViewPage } from './components/groupB/CorrectedPaperViewPage';
 import { getExamScope, setExamScope } from './data/examScope';
-import WhereWeReachedPage from './components/groupB/WhereWeReachedPage';
-import { TeacherDiagnosticAnalyticsPage } from './components/groupB/TeacherDiagnosticAnalyticsPage';
 
 // Common Components
-import { TechnicalSupportPage } from './components/common/TechnicalSupportPage';
 import { Toaster } from './components/common/Toaster';
 import { InstallAppBanner } from './components/common/InstallAppBanner';
 import { OrgStatusGate } from './components/common/OrgStatusGate';
+import { ScreenErrorBoundary } from './components/common/ScreenErrorBoundary';
 
 // Group C Components
-import { AIToolsHubPage } from './components/groupC/AIToolsHubPage';
-import { GenerateExamTool } from './components/groupC/GenerateExamTool';
-import { RemedialExercisesTool } from './components/groupC/RemedialExercisesTool';
-import { QuestionBankTool } from './components/groupC/QuestionBankTool';
-import { ConvertOldExamTool, ClusterGradingTool } from './components/groupC/ConvertOldExamTool';
-import { StudyPlanTool, AtRiskStudentsTool, ParentAutoReplyTool } from './components/groupC/AdvancedTools';
-import { TeacherFilesSection } from './components/groupC/TeacherFilesSection';
 
 // Group D Components
-import { SchoolDashboard, TeachersClassesPage, SchoolReportPage, TeacherComparisonPage } from './components/groupD/SchoolViews';
 
 // Group E Components
-import { PlatformAdminDashboard, AdminBillingPage, GradingQualityPage, AdminSectionGate } from './components/groupE/PlatformAdminViews';
-import { CurriculumManagementPage } from './components/groupE/CurriculumManagementPage';
 
 // Floating AI trigger icon
-import { Sparkles } from 'lucide-react';
+import { Loader2, Sparkles } from 'lucide-react';
 import { notify } from './lib/notify';
+
+// Each screen loads on first visit only, so the app opens fast on a slow
+// connection (the first page no longer downloads every screen).
+const PricingPage = lazy(() => import('./components/groupA/PricingPage').then((m) => ({ default: m.PricingPage })));
+const RegisterPage = lazy(() => import('./components/groupA/RegisterPage').then((m) => ({ default: m.RegisterPage })));
+const LoginPage = lazy(() => import('./components/groupA/LoginPage').then((m) => ({ default: m.LoginPage })));
+const StudentSubmissionPage = lazy(() => import('./components/groupA/StudentSubmissionPage').then((m) => ({ default: m.StudentSubmissionPage })));
+const TeacherDashboard = lazy(() => import('./components/groupB/TeacherDashboard').then((m) => ({ default: m.TeacherDashboard })));
+const GroupsStudentsPage = lazy(() => import('./components/groupB/GroupsStudentsPage').then((m) => ({ default: m.GroupsStudentsPage })));
+const StudentProfilePage = lazy(() => import('./components/groupB/StudentProfilePage').then((m) => ({ default: m.StudentProfilePage })));
+const ExamsListPage = lazy(() => import('./components/groupB/ExamsListPage').then((m) => ({ default: m.ExamsListPage })));
+const ExamQuestionsPage = lazy(() => import('./components/groupB/ExamQuestionsPage').then((m) => ({ default: m.ExamQuestionsPage })));
+const CreateExamPage = lazy(() => import('./components/groupB/CreateExamPage').then((m) => ({ default: m.CreateExamPage })));
+const PrintAnswerSheetsPage = lazy(() => import('./components/groupB/PrintAnswerSheetsPage').then((m) => ({ default: m.PrintAnswerSheetsPage })));
+const UploadPapersPage = lazy(() => import('./components/groupB/UploadPapersPage').then((m) => ({ default: m.UploadPapersPage })));
+const GradingReviewPage = lazy(() => import('./components/groupB/GradingReviewPage').then((m) => ({ default: m.GradingReviewPage })));
+const ExamAnalyticsPage = lazy(() => import('./components/groupB/ExamAnalyticsPage').then((m) => ({ default: m.ExamAnalyticsPage })));
+const ParentReportPage = lazy(() => import('./components/groupB/ParentReportPage').then((m) => ({ default: m.ParentReportPage })));
+const SubscriptionPage = lazy(() => import('./components/groupB/SubscriptionPage').then((m) => ({ default: m.SubscriptionPage })));
+const CorrectedPaperViewPage = lazy(() => import('./components/groupB/CorrectedPaperViewPage').then((m) => ({ default: m.CorrectedPaperViewPage })));
+const WhereWeReachedPage = lazy(() => import('./components/groupB/WhereWeReachedPage'));
+const TeacherDiagnosticAnalyticsPage = lazy(() => import('./components/groupB/TeacherDiagnosticAnalyticsPage').then((m) => ({ default: m.TeacherDiagnosticAnalyticsPage })));
+const TechnicalSupportPage = lazy(() => import('./components/common/TechnicalSupportPage').then((m) => ({ default: m.TechnicalSupportPage })));
+const AIToolsHubPage = lazy(() => import('./components/groupC/AIToolsHubPage').then((m) => ({ default: m.AIToolsHubPage })));
+const GenerateExamTool = lazy(() => import('./components/groupC/GenerateExamTool').then((m) => ({ default: m.GenerateExamTool })));
+const RemedialExercisesTool = lazy(() => import('./components/groupC/RemedialExercisesTool').then((m) => ({ default: m.RemedialExercisesTool })));
+const QuestionBankTool = lazy(() => import('./components/groupC/QuestionBankTool').then((m) => ({ default: m.QuestionBankTool })));
+const ConvertOldExamTool = lazy(() => import('./components/groupC/ConvertOldExamTool').then((m) => ({ default: m.ConvertOldExamTool })));
+const ClusterGradingTool = lazy(() => import('./components/groupC/ConvertOldExamTool').then((m) => ({ default: m.ClusterGradingTool })));
+const StudyPlanTool = lazy(() => import('./components/groupC/AdvancedTools').then((m) => ({ default: m.StudyPlanTool })));
+const AtRiskStudentsTool = lazy(() => import('./components/groupC/AdvancedTools').then((m) => ({ default: m.AtRiskStudentsTool })));
+const ParentAutoReplyTool = lazy(() => import('./components/groupC/AdvancedTools').then((m) => ({ default: m.ParentAutoReplyTool })));
+const TeacherFilesSection = lazy(() => import('./components/groupC/TeacherFilesSection').then((m) => ({ default: m.TeacherFilesSection })));
+const SchoolDashboard = lazy(() => import('./components/groupD/SchoolViews').then((m) => ({ default: m.SchoolDashboard })));
+const TeachersClassesPage = lazy(() => import('./components/groupD/SchoolViews').then((m) => ({ default: m.TeachersClassesPage })));
+const SchoolReportPage = lazy(() => import('./components/groupD/SchoolViews').then((m) => ({ default: m.SchoolReportPage })));
+const TeacherComparisonPage = lazy(() => import('./components/groupD/SchoolViews').then((m) => ({ default: m.TeacherComparisonPage })));
+const PlatformAdminDashboard = lazy(() => import('./components/groupE/PlatformAdminViews').then((m) => ({ default: m.PlatformAdminDashboard })));
+const AdminBillingPage = lazy(() => import('./components/groupE/PlatformAdminViews').then((m) => ({ default: m.AdminBillingPage })));
+const GradingQualityPage = lazy(() => import('./components/groupE/PlatformAdminViews').then((m) => ({ default: m.GradingQualityPage })));
+const AdminSectionGate = lazy(() => import('./components/groupE/PlatformAdminViews').then((m) => ({ default: m.AdminSectionGate })));
+const CurriculumManagementPage = lazy(() => import('./components/groupE/CurriculumManagementPage').then((m) => ({ default: m.CurriculumManagementPage })));
+
+// After the first page shows, quietly download the other screens in the
+// background, so they open instantly later and still work offline.
+let prefetched = false;
+function prefetchScreens() {
+  if (prefetched) return;
+  prefetched = true;
+  const all = [
+    () => import('./components/common/TechnicalSupportPage'),
+    () => import('./components/groupA/LoginPage'),
+    () => import('./components/groupA/PricingPage'),
+    () => import('./components/groupA/RegisterPage'),
+    () => import('./components/groupA/StudentSubmissionPage'),
+    () => import('./components/groupB/CorrectedPaperViewPage'),
+    () => import('./components/groupB/CreateExamPage'),
+    () => import('./components/groupB/ExamAnalyticsPage'),
+    () => import('./components/groupB/ExamQuestionsPage'),
+    () => import('./components/groupB/ExamsListPage'),
+    () => import('./components/groupB/GradingReviewPage'),
+    () => import('./components/groupB/GroupsStudentsPage'),
+    () => import('./components/groupB/ParentReportPage'),
+    () => import('./components/groupB/PrintAnswerSheetsPage'),
+    () => import('./components/groupB/StudentProfilePage'),
+    () => import('./components/groupB/SubscriptionPage'),
+    () => import('./components/groupB/TeacherDashboard'),
+    () => import('./components/groupB/TeacherDiagnosticAnalyticsPage'),
+    () => import('./components/groupB/UploadPapersPage'),
+    () => import('./components/groupB/WhereWeReachedPage'),
+    () => import('./components/groupC/AIToolsHubPage'),
+    () => import('./components/groupC/AdvancedTools'),
+    () => import('./components/groupC/ConvertOldExamTool'),
+    () => import('./components/groupC/GenerateExamTool'),
+    () => import('./components/groupC/QuestionBankTool'),
+    () => import('./components/groupC/RemedialExercisesTool'),
+    () => import('./components/groupC/TeacherFilesSection'),
+    () => import('./components/groupD/SchoolViews'),
+    () => import('./components/groupE/CurriculumManagementPage'),
+    () => import('./components/groupE/PlatformAdminViews'),
+  ];
+  const conn = (navigator as { connection?: { saveData?: boolean } }).connection;
+  if (conn?.saveData) return;
+  let i = 0;
+  const next = () => {
+    if (i >= all.length) return;
+    all[i++]()
+      .catch(() => {})
+      .finally(() => setTimeout(next, 200));
+  };
+  setTimeout(next, 3000);
+}
+
+function ScreenLoading() {
+  return (
+    <div className="py-16 text-center text-xs text-slate-500 flex items-center justify-center gap-2" role="status">
+      <Loader2 className="w-4 h-4 animate-spin" /> جارٍ التحميل…
+    </div>
+  );
+}
 
 const ACTIVE_ENTITY_KEY = 'daqa.activeEntityId';
 
@@ -93,6 +164,13 @@ export default function App() {
   // project, the signed-in account also decides which areas may be opened.
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Only inside the teacher/school/admin areas: students and visitors on a
+  // public page do not spend their data on screens they never open.
+  const inAccountArea = roleForPath(location.pathname) !== 'visitor';
+  useEffect(() => {
+    if (inAccountArea) prefetchScreens();
+  }, [inAccountArea]);
   const auth = useAuth();
   const isReal = auth.mode === 'real';
   const currentScreen: ScreenId = screenForPath(location.pathname);
@@ -438,7 +516,9 @@ export default function App() {
             <OrgStatusGate entity={activeEntity} onRefresh={auth.refresh} />
           ) : (
             <DataProvider org={viewEntity} real={isReal} teacherView={isReal && isOwnerTeacherView}>
-              {renderScreen()}
+              <ScreenErrorBoundary resetKey={location.pathname}>
+                <Suspense fallback={<ScreenLoading />}>{renderScreen()}</Suspense>
+              </ScreenErrorBoundary>
             </DataProvider>
           )}
         </main>
