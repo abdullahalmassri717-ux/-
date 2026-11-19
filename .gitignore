@@ -17,3 +17,4 @@ test-results/
 playwright-report/
 curricula/txt/
 __pycache__/
+*.whl
