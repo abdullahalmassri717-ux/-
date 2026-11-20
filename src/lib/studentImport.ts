@@ -348,7 +348,7 @@ export function parseStudentTable(rows: string[][]): ImportedStudent[] {
 
 // Words that describe a column or a class. Every other word (names!) is hidden before the AI sees the file.
 const KEEP_WORD =
-  /^(و?ال)?(اسم|إسم|طالب|طالبة|ولي|أمر|امر|أب|اب|أم|ام|أهل|اهل|جوال|هاتف|موبايل|رقم|واتس|واتساب|تلفون|صف|شعبة|شعبه|فصل|فوج|مرحلة|مرحله|مستوى|هوية|جلوس|تسلسل|أساسي|اساسي|ثانوي|علمي|أدبي|ادبي|صناعي|ريادي|شرعي|توجيهي|أول|اول|أولى|اولى|ثاني|ثانية|ثالث|رابع|خامس|سادس|سابع|ثامن|تاسع|عاشر|ثالثة|رابعة|خامسة|سادسة|سابعة|ثامنة|تاسعة|عاشرة|ثالثه|رابعه|خامسه|سادسه|سابعه|ثامنه|تاسعه|عاشره|حادي|عشر|الأمر)$|^(name|student|parent|guardian|father|mother|phone|mobile|whatsapp|tel|class|grade|stage|section|level|id|no\.?)$/i;
+  /^(و?ال)?(اسم|إسم|طالب|طالبة|ولي|أمر|امر|أب|اب|أم|ام|أهل|اهل|جوال|هاتف|موبايل|رقم|واتس|واتساب|تلفون|صف|شعبة|شعبه|فصل|فوج|مرحلة|مرحله|مستوى|هوية|جلوس|تسلسل|أساسي|اساسي|ثانوي|علمي|أدبي|ادبي|صناعي|ريادي|شرعي|زراعي|مهني|توجيهي|أول|اول|أولى|اولى|ثاني|ثانية|ثالث|رابع|خامس|سادس|سابع|ثامن|تاسع|عاشر|ثالثة|رابعة|خامسة|سادسة|سابعة|ثامنة|تاسعة|عاشرة|ثالثه|رابعه|خامسه|سادسه|سابعه|ثامنه|تاسعه|عاشره|حادي|عشر|الأمر)$|^(name|student|parent|guardian|father|mother|phone|mobile|whatsapp|tel|class|grade|stage|section|level|id|no\.?)$/i;
 
 function maskCell(cell: string): string {
   const c = toLatinDigits(String(cell ?? '')).trim().slice(0, 60);
