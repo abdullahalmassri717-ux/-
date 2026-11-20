@@ -2,6 +2,7 @@
 // and the teacher's own student tuition ledger. Prices, currency and payment
 // accounts come from platform settings, never from the screens.
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { fetchAll } from './fetchAll';
 import { MOCK_STUDENTS, PLATFORM_CONFIG } from '../mockData';
 import { toInternationalPhone } from '../lib/phone';
 import { toTiers, type PriceTier, type PricingModel } from './admin';
@@ -300,23 +301,42 @@ export function createSupabaseBilling(db: SupabaseClient, orgId: string): Billin
     async listTuition(month) {
       type StDb = { id: string; full_name: string; parent_phone: string | null; group_students: { left_at: string | null; groups: { name: string; archived_at: string | null } | null }[] };
       const [students, balances] = await Promise.all([
-        db
-          .from('students')
-          .select('id, full_name, parent_phone, group_students(left_at, groups(name, archived_at))')
-          .eq('organization_id', orgId)
-          .eq('status', 'active')
-          .order('full_name'),
-        db
-          .from('tuition_balances')
-          .select('charge_id, student_id, amount_due, paid_amount, last_payment_on')
-          .eq('organization_id', orgId)
-          .eq('period_month', month),
+        fetchAll((from, to) =>
+          db
+            .from('students')
+            .select('id, full_name, parent_phone, group_students(left_at, groups(name, archived_at))')
+            .eq('organization_id', orgId)
+            .eq('status', 'active')
+            .order('full_name')
+            .order('id')
+            .range(from, to),
+        ),
+        fetchAll((from, to) =>
+          db
+            .from('tuition_balances')
+            .select('charge_id, student_id, amount_due, paid_amount, last_payment_on')
+            .eq('organization_id', orgId)
+            .eq('period_month', month)
+            .order('charge_id')
+            .range(from, to),
+        ),
       ]);
       if (students.error) fail(students.error, 'تعذّر تحميل الطلاب.');
       if (balances.error) fail(balances.error, 'تعذّر تحميل الرسوم.');
       const chargeIds = (balances.data ?? []).map((b) => b.charge_id as string);
+      // Filtered by the charge's month (not a list of ids), so the request stays
+      // short even with thousands of students.
       const payments = chargeIds.length
-        ? await db.from('tuition_payments').select('charge_id, receipt_number, created_at').in('charge_id', chargeIds).order('created_at', { ascending: false })
+        ? await fetchAll<{ charge_id: string; receipt_number: string | null; created_at: string }>((from, to) =>
+            db
+              .from('tuition_payments')
+              .select('charge_id, receipt_number, created_at, tuition_charges!inner(period_month)')
+              .eq('organization_id', orgId)
+              .eq('tuition_charges.period_month', month)
+              .order('created_at', { ascending: false })
+              .order('id')
+              .range(from, to),
+          )
         : { data: [], error: null };
       if (payments.error) fail(payments.error, 'تعذّر تحميل الدفعات.');
       const lastReceipt = new Map<string, string>();
@@ -344,15 +364,22 @@ export function createSupabaseBilling(db: SupabaseClient, orgId: string): Billin
 
     async createMonthCharges(month, defaultAmount) {
       const [students, current, previous] = await Promise.all([
-        db.from('students').select('id').eq('organization_id', orgId).eq('status', 'active'),
-        db.from('tuition_charges').select('student_id').eq('organization_id', orgId).eq('period_month', month),
-        db
-          .from('tuition_charges')
-          .select('student_id, amount_due, period_month')
-          .eq('organization_id', orgId)
-          .lt('period_month', month)
-          .order('period_month', { ascending: false })
-          .limit(5000),
+        fetchAll((from, to) => db.from('students').select('id').eq('organization_id', orgId).eq('status', 'active').order('id').range(from, to)),
+        fetchAll((from, to) =>
+          db.from('tuition_charges').select('student_id').eq('organization_id', orgId).eq('period_month', month).order('id').range(from, to),
+        ),
+        fetchAll(
+          (from, to) =>
+            db
+              .from('tuition_charges')
+              .select('student_id, amount_due, period_month')
+              .eq('organization_id', orgId)
+              .lt('period_month', month)
+              .order('period_month', { ascending: false })
+              .order('id')
+              .range(from, to),
+          5000,
+        ),
       ]);
       if (students.error || current.error || previous.error) fail(students.error ?? current.error ?? previous.error, 'تعذّر تجهيز رسوم الشهر.');
       const has = new Set((current.data ?? []).map((c) => c.student_id));
