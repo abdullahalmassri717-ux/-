@@ -170,7 +170,7 @@ jobs:
 
           # The first good copy of each month is also kept as the monthly copy.
           if [ -z "$(s3 ls "s3://$bucket/monthly/$month/" || true)" ]; then
-            s3 cp "s3://$bucket/daily/$stamp/" "s3://$bucket/monthly/$month/" --recursive --only-show-errors
+            s3 cp backup/ "s3://$bucket/monthly/$month/" --recursive --only-show-errors
             echo "Monthly copy kept: monthly/$month/"
           fi
 
