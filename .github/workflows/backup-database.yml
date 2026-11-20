@@ -169,7 +169,9 @@ jobs:
           echo "Copied to R2: daily/$stamp/"
 
           # The first good copy of each month is also kept as the monthly copy.
-          if [ -z "$(s3 ls "s3://$bucket/monthly/$month/" || true)" ]; then
+          # (A month with fewer files than a full backup counts as missing.)
+          have=$( (s3 ls "s3://$bucket/monthly/$month/" || true) | wc -l)
+          if [ "$have" -lt "$(ls backup | wc -l)" ]; then
             s3 cp backup/ "s3://$bucket/monthly/$month/" --recursive --only-show-errors
             echo "Monthly copy kept: monthly/$month/"
           fi
