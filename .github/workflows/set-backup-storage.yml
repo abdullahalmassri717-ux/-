@@ -1,0 +1,154 @@
+# Connects a second, independent place for the nightly backup: Cloudflare R2
+# (another company, so the backups survive even if Supabase or GitHub has a
+# problem). Free up to 10 GB. The Cloudflare key never appears in the
+# repository, the logs or a chat.
+# Same two-run pattern as set-ai-key.yml:
+#   1. step=prepare  makes a one-time key pair, keeps the private half in the
+#                    Actions cache and prints the public half in the log.
+#   2. step=apply    takes "ACCOUNT_ID|R2_API_TOKEN" encrypted with that public
+#                    half (base64, RSA-OAEP-SHA256), then:
+#                      - checks the token with Cloudflare,
+#                      - creates the bucket (if it is not there yet),
+#                      - works out the S3 keys from the token (key id = token id,
+#                        secret = sha256 of the token, as Cloudflare documents),
+#                      - uploads, reads back and deletes a small test file,
+#                      - saves the settings in private.app_secrets, where the
+#                        nightly backup (backup-database.yml) reads them.
+#                    Each apply needs a fresh prepare.
+# The token must be an R2 API token with "Admin Read & Write"
+# (Cloudflare dashboard -> R2 -> Manage API tokens).
+name: Set backup storage
+
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: 'prepare or apply'
+        required: true
+        default: prepare
+      prepare_run_id:
+        description: 'apply only: the run id of the prepare run'
+        required: false
+      ciphertext:
+        description: 'apply only: encrypted "ACCOUNT_ID|R2_API_TOKEN" (base64)'
+        required: false
+      bucket:
+        description: 'apply only: bucket name'
+        required: false
+        default: daqa-backups
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  r2:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_REF: roeweplhofhjtcnbfmvo
+      PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - name: Make key pair
+        if: inputs.step == 'prepare'
+        run: |
+          mkdir -p ~/r2key && cd ~/r2key
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out priv.pem 2>/dev/null
+          openssl pkey -in priv.pem -pubout -out pub.pem
+          echo "PUBLIC KEY (safe to share):"
+          cat pub.pem
+
+      - name: Keep private half
+        if: inputs.step == 'prepare'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/r2key/priv.pem
+          key: r2-keypair-${{ github.run_id }}
+
+      - name: Restore private half
+        if: inputs.step == 'apply'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/r2key/priv.pem
+          key: r2-keypair-${{ inputs.prepare_run_id }}
+          fail-on-cache-miss: true
+
+      - name: Connect Cloudflare R2
+        if: inputs.step == 'apply'
+        env:
+          CIPHERTEXT: ${{ inputs.ciphertext }}
+          BUCKET: ${{ inputs.bucket }}
+        run: |
+          set -euo pipefail
+          plain=$(printf %s "$CIPHERTEXT" | base64 -d | openssl pkeyutl -decrypt -inkey ~/r2key/priv.pem \
+            -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256)
+          rm -f ~/r2key/priv.pem
+          account="$(printf %s "${plain%%|*}" | tr -d '[:space:]')"
+          token="$(printf %s "${plain#*|}" | tr -d '[:space:]')"
+          echo "::add-mask::$token"
+          [[ "$account" =~ ^[0-9a-f]{32}$ ]] || { echo "::error::The account id should be 32 letters/digits (0-9, a-f)."; exit 1; }
+          [ -n "$token" ] || { echo "::error::No token in the ciphertext"; exit 1; }
+          [[ "${BUCKET:-}" =~ ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$ ]] || { echo "::error::Bad bucket name"; exit 1; }
+          api=https://api.cloudflare.com/client/v4
+          cf() { curl -sS --retry 3 --retry-all-errors -H "Authorization: Bearer $token" -H 'content-type: application/json' "$@"; }
+
+          echo "== Check the token"
+          cf "$api/accounts/$account/tokens/verify" > /tmp/v.json || true
+          if [ "$(jq -r '.success' /tmp/v.json)" != "true" ]; then cf "$api/user/tokens/verify" > /tmp/v.json || true; fi
+          if [ "$(jq -r '.success' /tmp/v.json)" != "true" ]; then
+            echo "::error::Cloudflare did not accept the token."; jq -c '.errors' /tmp/v.json; exit 1
+          fi
+          key_id=$(jq -r '.result.id' /tmp/v.json)
+          echo "Token OK (status: $(jq -r '.result.status' /tmp/v.json))."
+          secret=$(printf %s "$token" | sha256sum | cut -d' ' -f1)
+          echo "::add-mask::$secret"
+
+          echo "== Bucket $BUCKET"
+          cf "$api/accounts/$account/r2/buckets/$BUCKET" > /tmp/b.json || true
+          if [ "$(jq -r '.success' /tmp/b.json)" = "true" ]; then
+            echo "Bucket already there."
+          else
+            cf -X POST "$api/accounts/$account/r2/buckets" --data "$(jq -n --arg n "$BUCKET" '{name:$n}')" > /tmp/b.json
+            if [ "$(jq -r '.success' /tmp/b.json)" != "true" ]; then
+              echo "::error::Could not create the bucket. If the message mentions a subscription, R2 is not turned on in the Cloudflare account yet."
+              jq -c '.errors' /tmp/b.json; exit 1
+            fi
+            echo "Bucket created."
+          fi
+
+          echo "== Test upload"
+          export AWS_ACCESS_KEY_ID="$key_id" AWS_SECRET_ACCESS_KEY="$secret" AWS_DEFAULT_REGION=auto AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+          s3() { aws s3 --endpoint-url "https://$account.r2.cloudflarestorage.com" "$@"; }
+          echo "daqa backup test $(date -u +%FT%TZ)" > /tmp/test.txt
+          s3 cp /tmp/test.txt "s3://$BUCKET/test/connection.txt" --only-show-errors
+          s3 cp "s3://$BUCKET/test/connection.txt" /tmp/back.txt --only-show-errors
+          cmp /tmp/test.txt /tmp/back.txt
+          s3 rm "s3://$BUCKET/test/connection.txt" --only-show-errors
+          echo "Upload, read back and delete all work."
+
+          echo "== Save the settings for the nightly backup"
+          for region in eu-central-1 eu-central-2 eu-west-1 eu-west-2 eu-west-3 eu-north-1 us-east-1 us-east-2 us-west-1 us-west-2 \
+                        ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2 ca-central-1 sa-east-1 me-central-1; do
+            for n in 0 1; do
+              h="aws-$n-$region.pooler.supabase.com"
+              if docker run --rm -e PGPASSWORD postgres:17 psql "host=$h port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require connect_timeout=8" -Atc 'select 1' >/dev/null 2>&1; then
+                host=$h; break 2
+              fi
+            done
+          done
+          [ -n "${host:-}" ] || { echo "::error::Could not connect to the database."; exit 1; }
+          cat > /tmp/save.sql <<'SQL'
+          insert into private.app_secrets (name, value) values
+            ('r2_account_id', :'account'), ('r2_bucket', :'bucket'),
+            ('r2_access_key_id', :'key_id'), ('r2_secret_access_key', :'secret')
+          on conflict (name) do update set value = excluded.value;
+          SQL
+          docker run --rm -i -e PGPASSWORD postgres:17 psql "host=$host port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" \
+            -v ON_ERROR_STOP=1 -q -v account="$account" -v bucket="$BUCKET" -v key_id="$key_id" -v secret="$secret" < /tmp/save.sql
+          rm -f /tmp/save.sql
+          echo "Saved. From tonight every backup is also copied to Cloudflare R2 ($BUCKET)."
+
+      - name: Delete private half from the cache
+        if: always() && inputs.step == 'apply' && inputs.prepare_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh cache delete "r2-keypair-${{ inputs.prepare_run_id }}" --repo "$GITHUB_REPOSITORY" || true
