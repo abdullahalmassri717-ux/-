@@ -5,7 +5,8 @@
 # Same two-run pattern as set-ai-key.yml:
 #   1. step=prepare  makes a one-time key pair, keeps the private half in the
 #                    Actions cache and prints the public half in the log.
-#   2. step=apply    takes "ACCOUNT_ID|R2_API_TOKEN" encrypted with that public
+#   2. step=apply    takes "ACCOUNT_ID|R2_API_TOKEN" (or just the token; the
+#                    account is then looked up) encrypted with that public
 #                    half (base64, RSA-OAEP-SHA256), then:
 #                      - checks the token with Cloudflare,
 #                      - creates the bucket (if it is not there yet),
@@ -30,7 +31,7 @@ on:
         description: 'apply only: the run id of the prepare run'
         required: false
       ciphertext:
-        description: 'apply only: encrypted "ACCOUNT_ID|R2_API_TOKEN" (base64)'
+        description: 'apply only: encrypted "ACCOUNT_ID|R2_API_TOKEN" or "R2_API_TOKEN" (base64)'
         required: false
       bucket:
         description: 'apply only: bucket name'
@@ -82,14 +83,26 @@ jobs:
           plain=$(printf %s "$CIPHERTEXT" | base64 -d | openssl pkeyutl -decrypt -inkey ~/r2key/priv.pem \
             -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256)
           rm -f ~/r2key/priv.pem
-          account="$(printf %s "${plain%%|*}" | tr -d '[:space:]')"
-          token="$(printf %s "${plain#*|}" | tr -d '[:space:]')"
+          if [[ "$plain" == *"|"* ]]; then account="${plain%%|*}"; token="${plain#*|}"; else account=""; token="$plain"; fi
+          account="$(printf %s "$account" | tr -d '[:space:]')"
+          token="$(printf %s "$token" | tr -d '[:space:]')"
           echo "::add-mask::$token"
-          [[ "$account" =~ ^[0-9a-f]{32}$ ]] || { echo "::error::The account id should be 32 letters/digits (0-9, a-f)."; exit 1; }
           [ -n "$token" ] || { echo "::error::No token in the ciphertext"; exit 1; }
           [[ "${BUCKET:-}" =~ ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$ ]] || { echo "::error::Bad bucket name"; exit 1; }
           api=https://api.cloudflare.com/client/v4
           cf() { curl -sS --retry 3 --retry-all-errors -H "Authorization: Bearer $token" -H 'content-type: application/json' "$@"; }
+          if [ -z "$account" ]; then
+            # Only the token was given: ask Cloudflare which account it belongs to.
+            cf "$api/accounts" > /tmp/a.json || true
+            n=$(jq -r '[.result[]?] | length' /tmp/a.json)
+            if [ "$n" != "1" ]; then
+              echo "::error::Could not work out the account id from the token ($n accounts). Send ACCOUNT_ID|TOKEN instead."
+              jq -c '.errors' /tmp/a.json; exit 1
+            fi
+            account=$(jq -r '.result[0].id' /tmp/a.json)
+            echo "Account found from the token."
+          fi
+          [[ "$account" =~ ^[0-9a-f]{32}$ ]] || { echo "::error::The account id should be 32 letters/digits (0-9, a-f)."; exit 1; }
 
           echo "== Check the token"
           cf "$api/accounts/$account/tokens/verify" > /tmp/v.json || true
