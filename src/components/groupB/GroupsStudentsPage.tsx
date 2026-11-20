@@ -46,6 +46,8 @@ const nameKey = (name: string) =>
     .replace(/ة/g, 'ه')
     .replace(/ى/g, 'ي');
 
+const STUDENTS_PAGE = 100;
+
 export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
   onNavigate,
   onSelectStudent,
@@ -134,6 +136,10 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
     const matchesSearch = st.name.includes(searchQuery) || st.studentCode.includes(searchQuery) || st.parentPhone.includes(searchQuery);
     return matchesGroup && matchesSearch;
   });
+  // Draw 100 students at a time: thousands of rows at once freeze a phone.
+  const [visibleCount, setVisibleCount] = useState(STUDENTS_PAGE);
+  useEffect(() => setVisibleCount(STUDENTS_PAGE), [selectedGroup, searchQuery]);
+  const shownStudents = filteredStudents.slice(0, visibleCount);
 
   const defaultGroupId = currentGroupObj?.id ?? groups[0]?.id ?? '';
 
@@ -735,7 +741,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredStudents.map((st) => (
+            {shownStudents.map((st) => (
               <tr key={st.id} className={`transition-colors ${selectedIds.includes(st.id) ? 'bg-blue-50/70' : 'hover:bg-slate-50/70'}`}>
                 {selectMode && (
                   <td className="p-3.5">
@@ -845,7 +851,7 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
 
       {/* Mobile Cards View (PDF requirement: على الهاتف يتحول الجدول إلى بطاقات) */}
       <div className="md:hidden space-y-3">
-        {filteredStudents.map((st) => (
+        {shownStudents.map((st) => (
           <div
             key={st.id}
             onClick={() => {
@@ -952,6 +958,14 @@ export const GroupsStudentsPage: React.FC<GroupsStudentsPageProps> = ({
           <span>{studentsQ.error || groupsQ.error}</span>
           <button onClick={() => { studentsQ.reload(); groupsQ.reload(); }} className="font-bold underline cursor-pointer">إعادة المحاولة</button>
         </div>
+      )}
+      {filteredStudents.length > shownStudents.length && (
+        <button
+          onClick={() => setVisibleCount((n) => n + STUDENTS_PAGE)}
+          className="w-full bg-white border border-slate-200 rounded-xl py-3 text-sm font-bold text-blue-700 hover:bg-blue-50 cursor-pointer"
+        >
+          عرض المزيد ({shownStudents.length} من {filteredStudents.length})
+        </button>
       )}
       {!studentsQ.loading && !studentsQ.error && filteredStudents.length === 0 && (
         <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-8 text-center space-y-2">
