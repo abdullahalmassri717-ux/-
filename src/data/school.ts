@@ -2,6 +2,7 @@
 // and the raw activity the school screens turn into reports. Only the owner of
 // the organization reaches these screens; RLS enforces it on the server too.
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { fetchAll } from './fetchAll';
 import { MOCK_SCHOOL_TEACHERS } from '../mockData';
 import { toInternationalPhone } from '../lib/phone';
 import type { Group } from '../types';
@@ -87,8 +88,13 @@ export function createSupabaseSchool(db: SupabaseClient, orgId: string, base: Ba
         db.from('invitations').select('id, full_name, phone, created_at').eq('organization_id', orgId).is('accepted_at', null),
         base.listGroups(),
         db.from('group_teachers').select('group_id, user_id').eq('organization_id', orgId),
-        db.from('assessments').select('id, group_id, created_at').eq('organization_id', orgId).gte('created_at', since),
-        db.from('submissions').select('assessment_id, created_at, status').eq('organization_id', orgId).gte('created_at', since).limit(20000),
+        fetchAll((from, to) =>
+          db.from('assessments').select('id, group_id, created_at').eq('organization_id', orgId).gte('created_at', since).order('id').range(from, to),
+        ),
+        fetchAll((from, to) =>
+          db.from('submissions').select('assessment_id, created_at, status').eq('organization_id', orgId).gte('created_at', since).order('id').range(from, to),
+          20_000,
+        ),
         base.listDiagnosticRows(null),
         db.from('reports').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).eq('status', 'sent'),
         db.from('students').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).eq('status', 'active'),

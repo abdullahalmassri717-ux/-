@@ -8,6 +8,7 @@ import { PLATFORM_CONFIG } from '../mockData';
 import { createSupabaseBilling } from './billing';
 import { createSupabaseAi } from './ai';
 import { createSupabaseSchool, type SchoolStore } from './school';
+import { fetchAll } from './fetchAll';
 import type {
   AssessmentDetail,
   AssessmentRow,
@@ -100,13 +101,17 @@ type CurriculumRow = {
 
 const bySort = <T extends { sort_order: number }>(a: T, b: T) => a.sort_order - b.sort_order;
 
+const CURRICULA_CACHE_MS = 10 * 60_000;
+
 export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStore {
-  // Short-lived cache: the admin may publish a subject while a teacher screen is open.
+  // The whole curriculum tree is about 1 MB (300 KB on the wire), and many
+  // screens ask for it. Keep it for 10 minutes: a subject the admin publishes
+  // reaches open teacher screens within 10 minutes (or at once on reload).
   let curriculaCache: Promise<Curriculum[]> | null = null;
   let curriculaCachedAt = 0;
 
   const listCurricula = (): Promise<Curriculum[]> => {
-    if (Date.now() - curriculaCachedAt > 30_000) curriculaCache = null;
+    if (Date.now() - curriculaCachedAt > CURRICULA_CACHE_MS) curriculaCache = null;
     if (!curriculaCache) curriculaCachedAt = Date.now();
     curriculaCache ??= (async () => {
       const { data, error } = await db
@@ -173,33 +178,20 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     return { curriculumId: '', curriculumName: '', gradeId: gradeId ?? '', gradeName: '', subjectName: '', totalLessons: 0, lessonIds: new Set<string>() };
   }
 
+  // Latest two approved scores per student, computed in the database
+  // (student_latest_scores), so it stays right past 1000 papers.
   async function scoresByStudent(): Promise<Map<string, { pct: number; trend: 'up' | 'down' | 'steady' }>> {
-    const { data, error } = await db
-      .from('submissions')
-      .select('id, student_id, submitted_at, status, assessments!inner(organization_id, assessment_totals:questions(max_score))')
-      .eq('organization_id', orgId)
-      .eq('status', 'approved')
-      .order('submitted_at', { ascending: false });
-    if (error || !data) return new Map();
-    const ids = data.map((r) => r.id as string);
-    if (!ids.length) return new Map();
-    const { data: scores } = await db.from('submission_scores').select('submission_id, total_score').in('submission_id', ids);
-    const scoreOf = new Map((scores ?? []).map((s) => [s.submission_id as string, Number(s.total_score)]));
-    const perStudent = new Map<string, number[]>();
-    for (const r of data as unknown as { id: string; student_id: string | null; assessments: { assessment_totals: QuestionMax[] | null } }[]) {
-      if (!r.student_id) continue;
-      const total = Number(qTotals(r.assessments.assessment_totals)?.total_score ?? 0);
-      if (!total) continue;
-      const pct = Math.round(((scoreOf.get(r.id) ?? 0) / total) * 100);
-      const list = perStudent.get(r.student_id) ?? [];
-      list.push(pct);
-      perStudent.set(r.student_id, list);
-    }
+    const { data, error } = await fetchAll<{ student_id: string; latest_pct: number | null; previous_pct: number | null }>((from, to) =>
+      db.rpc('student_latest_scores', { p_org: orgId }).order('student_id').range(from, to),
+    );
     const out = new Map<string, { pct: number; trend: 'up' | 'down' | 'steady' }>();
-    perStudent.forEach((list, id) => {
-      const [latest, prev] = list;
-      out.set(id, { pct: latest, trend: prev === undefined || prev === latest ? 'steady' : latest > prev ? 'up' : 'down' });
-    });
+    if (error) return out;
+    for (const r of data) {
+      if (r.latest_pct === null) continue;
+      const latest = Number(r.latest_pct);
+      const prev = r.previous_pct === null ? undefined : Number(r.previous_pct);
+      out.set(r.student_id, { pct: latest, trend: prev === undefined || prev === latest ? 'steady' : latest > prev ? 'up' : 'down' });
+    }
     return out;
   }
 
@@ -352,15 +344,17 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     listCurricula,
 
     async listDiagnosticRows(groupId) {
-      let q = db
-        .from('question_grades')
-        .select('submission_id, final_score, ai_criteria, questions!inner(number, max_score, lessons(title)), submissions!inner(student_id, status, submitted_at, assessments!inner(title, group_id))')
-        .eq('organization_id', orgId)
-        .eq('submissions.status', 'approved')
-        .not('submissions.student_id', 'is', null)
-        .limit(10000);
-      if (groupId) q = q.eq('submissions.assessments.group_id', groupId);
-      const { data, error } = await q;
+      const page = (from: number, to: number) => {
+        let q = db
+          .from('question_grades')
+          .select('submission_id, final_score, ai_criteria, questions!inner(number, max_score, lessons(title)), submissions!inner(student_id, status, submitted_at, assessments!inner(title, group_id))')
+          .eq('organization_id', orgId)
+          .eq('submissions.status', 'approved')
+          .not('submissions.student_id', 'is', null);
+        if (groupId) q = q.eq('submissions.assessments.group_id', groupId);
+        return q.order('id').range(from, to);
+      };
+      const { data, error } = await fetchAll(page, 10_000);
       if (error) fail(error, 'تعذّر تحميل بيانات التشخيص.');
       type Row = {
         submission_id: string; final_score: number | null; ai_criteria: { criterion: string; met: boolean }[] | null;
@@ -533,7 +527,9 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
 
     async listStudents() {
       const [{ data, error }, scores] = await Promise.all([
-        db.from('students').select(STUDENT_COLUMNS).eq('organization_id', orgId).eq('status', 'active').order('full_name'),
+        fetchAll((from, to) =>
+          db.from('students').select(STUDENT_COLUMNS).eq('organization_id', orgId).eq('status', 'active').order('full_name').order('id').range(from, to),
+        ),
         scoresByStudent(),
       ]);
       if (error) fail(error, 'تعذّر تحميل الطلاب.');
@@ -627,12 +623,9 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     },
 
     async listArchivedStudents() {
-      const { data, error } = await db
-        .from('students')
-        .select(STUDENT_COLUMNS)
-        .eq('organization_id', orgId)
-        .eq('status', 'archived')
-        .order('full_name');
+      const { data, error } = await fetchAll((from, to) =>
+        db.from('students').select(STUDENT_COLUMNS).eq('organization_id', orgId).eq('status', 'archived').order('full_name').order('id').range(from, to),
+      );
       if (error) fail(error, 'تعذّر تحميل الطلاب المعطّلين.');
       return ((data ?? []) as unknown as StudentDb[]).map((s) => toStudent(s, new Map()));
     },
@@ -755,11 +748,9 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
     },
 
     async listAssessments() {
-      const { data, error } = await db
-        .from('assessments')
-        .select(ASSESSMENT_COLUMNS)
-        .eq('organization_id', orgId)
-        .order('created_at', { ascending: false });
+      const { data, error } = await fetchAll((from, to) =>
+        db.from('assessments').select(ASSESSMENT_COLUMNS).eq('organization_id', orgId).order('created_at', { ascending: false }).order('id').range(from, to),
+      );
       if (error) fail(error, 'تعذّر تحميل الواجبات والامتحانات.');
       return ((data ?? []) as unknown as AssessmentDb[]).map(toAssessment);
     },
