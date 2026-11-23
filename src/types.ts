@@ -345,6 +345,10 @@ export interface SupportTicket {
 }
 
 // --- Landing Page CMS Configuration ---
+// Every list item and section on the public intro page can be shown, hidden,
+// or shown with a «قريباً» (coming soon) badge. The admin edits all of it in E6.
+export type LandingItemStatus = 'visible' | 'soon' | 'hidden';
+
 export interface LandingHeroConfig {
   announcementBadge: string;
   headline: string;
@@ -357,29 +361,54 @@ export interface LandingHeroConfig {
   sampleTeacherNote: string;
 }
 
+export interface LandingBullet {
+  id: string;
+  text: string;
+  status: LandingItemStatus;
+}
+
 export interface LandingAudienceCard {
+  id: string;
+  status: LandingItemStatus;
   title: string;
   subtitle: string;
   exampleTitle: string;
   exampleText: string;
-  features: string[];
+  features: LandingBullet[];
   buttonText: string;
+  /** Small ribbon on the card corner, e.g. «حل مؤسسي متكامل». Empty = none. */
+  ribbon?: string;
 }
 
 export interface LandingHowItWorksStep {
-  num: string;
+  id: string;
+  status: LandingItemStatus;
+  /** Old saved steps carry a fixed number; the page now numbers shown steps itself. */
+  num?: string;
   title: string;
   desc: string;
 }
 
 export interface LandingFeatureItem {
+  id: string;
+  status: LandingItemStatus;
   title: string;
   desc: string;
 }
 
 export interface LandingFaqItem {
+  id: string;
+  status: LandingItemStatus;
   q: string;
   a: string;
+}
+
+/** One curriculum card. 'visible' shows «متاح الآن», 'soon' shows «قريباً». */
+export interface LandingCurriculumCard {
+  id: string;
+  status: LandingItemStatus;
+  title: string;
+  desc: string;
 }
 
 export interface LandingCurriculaConfig {
@@ -388,6 +417,16 @@ export interface LandingCurriculaConfig {
   description: string;
   palestineNotice: string;
   upcomingNotice: string;
+  items: LandingCurriculumCard[];
+}
+
+/** A section the admin adds: a title and a grid of cards (title + text). */
+export interface LandingCustomSection {
+  id: string;
+  sectionBadge: string;
+  sectionTitle: string;
+  sectionSubtitle: string;
+  items: LandingFeatureItem[];
 }
 
 export interface LandingPageConfig {
@@ -396,9 +435,7 @@ export interface LandingPageConfig {
     sectionBadge: string;
     sectionTitle: string;
     sectionSubtitle: string;
-    tutor: LandingAudienceCard;
-    school: LandingAudienceCard;
-    center: LandingAudienceCard;
+    cards: LandingAudienceCard[];
   };
   curricula: LandingCurriculaConfig;
   howItWorks: {
@@ -430,14 +467,12 @@ export interface LandingPageConfig {
     contactEmail: string;
     whatsappNumber: string;
   };
-  sectionVisibility: {
-    hero: boolean;
-    whoIsItFor: boolean;
-    curricula: boolean;
-    howItWorks: boolean;
-    features: boolean;
-    faqs: boolean;
-    ctaBanner: boolean;
-  };
+  customSections: LandingCustomSection[];
+  /** Order of the sections between the hero and the footer (built-in keys and 'custom:<id>'). */
+  sectionOrder: string[];
+  /** true = shown. Keys: hero, the built-in section keys, and 'custom:<id>'. */
+  sectionVisibility: Record<string, boolean>;
+  /** The badge text on coming-soon items. */
+  soonLabel: string;
 }
 

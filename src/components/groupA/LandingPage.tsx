@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { ScreenId } from '../../types';
+import { ScreenId, LandingItemStatus } from '../../types';
 import {
   CheckCircle2,
-  Clock,
   Send,
   Sparkles,
   BarChart3,
@@ -12,14 +11,12 @@ import {
   Smartphone,
   ChevronDown,
   ArrowRight,
-  ShieldCheck,
   Building,
   GraduationCap,
   MessageCircle,
-  Camera,
-  Play
 } from 'lucide-react';
 import { useLandingConfig } from '../../lib/landing';
+import { CUSTOM_PREFIX, shown } from '../../lib/landingConfig';
 import { InstallAppSection, INSTALL_SECTION_ID } from '../common/InstallAppSection';
 
 interface LandingPageProps {
@@ -27,404 +24,215 @@ interface LandingPageProps {
   onOpenAI: () => void;
 }
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }) => {
+/** The amber «قريباً» pill on a coming-soon item. */
+const SoonBadge: React.FC<{ label: string; className?: string }> = ({ label, className = '' }) => (
+  <span className={`inline-block bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${className}`}>
+    {label}
+  </span>
+);
+
+const soonCls = (s: LandingItemStatus) => (s === 'soon' ? 'opacity-85' : '');
+
+const featureIcons = [CheckCircle2, Send, BarChart3, Wallet, FileText, Sparkles];
+
+// Audience card looks, by position (first three match the original design).
+const cardLooks = [
+  { icon: GraduationCap, iconBox: 'bg-blue-50 text-blue-700', box: 'border border-slate-200 hover:border-blue-300 shadow-xs hover:shadow-md', example: 'bg-slate-50 border-slate-100', exampleTitle: 'text-slate-700', exampleText: 'text-slate-600', button: 'bg-[#1E3A5F] hover:bg-[#152a45]' },
+  { icon: Building, iconBox: 'bg-emerald-50 text-emerald-700', box: 'border-2 border-[#1E3A5F] shadow-md', example: 'bg-emerald-50/60 border-emerald-100', exampleTitle: 'text-emerald-900', exampleText: 'text-emerald-800', button: 'bg-emerald-700 hover:bg-emerald-800' },
+  { icon: Users, iconBox: 'bg-purple-50 text-purple-700', box: 'border border-slate-200 hover:border-purple-300 shadow-xs hover:shadow-md', example: 'bg-slate-50 border-slate-100', exampleTitle: 'text-slate-700', exampleText: 'text-slate-600', button: 'bg-[#1E3A5F] hover:bg-[#152a45]' },
+];
+
+const gridCols = (n: number) =>
+  n <= 1 ? 'grid-cols-1 max-w-md mx-auto' : n === 2 ? 'grid-cols-1 md:grid-cols-2' : n === 4 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3';
+
+export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   const [activeSubjectTab, setActiveSubjectTab] = useState<'math' | 'physics' | 'chemistry' | 'english'>('math');
-  const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const [openFaq, setOpenFaq] = useState<string | null>(null);
 
   const cfg = useLandingConfig();
-  const featureIcons = [CheckCircle2, Send, BarChart3, Wallet, FileText, Sparkles];
-  const features = cfg.features.items.map((f, i) => ({ ...f, icon: featureIcons[i % featureIcons.length] }));
-  const steps = cfg.howItWorks.steps;
-  const faqs = cfg.faqs.items;
+  const soon = cfg.soonLabel;
+  const isOn = (key: string) => cfg.sectionVisibility[key] !== false;
 
-  return (
-    <div className="space-y-16 pb-16">
-      {/* Hero Section */}
-      <section className="bg-gradient-to-b from-white to-[#F7F8FA] border-b border-slate-200 pt-10 pb-16 px-4 sm:px-6">
-        <div className="max-w-6xl mx-auto text-center space-y-6">
-          <div className="inline-flex items-center gap-2 bg-[#E8F0F8] text-[#1E3A5F] px-4 py-1.5 rounded-full text-xs font-bold border border-blue-200 shadow-2xs">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>{cfg.hero.announcementBadge}</span>
-          </div>
-
-          <h1 className="text-3xl sm:text-5xl font-black text-[#1E3A5F] tracking-tight leading-tight max-w-4xl mx-auto">
-            {cfg.hero.headline}
-          </h1>
-
-          <p className="text-base sm:text-lg text-slate-600 max-w-3xl mx-auto leading-relaxed">
-            {cfg.hero.subheadline}
-          </p>
-
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <button
-              onClick={() => onNavigate('A3')}
-              className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-6 py-3.5 rounded-xl font-bold text-sm transition-all shadow-md hover:shadow-lg cursor-pointer flex items-center gap-2"
-            >
-              <span>{cfg.hero.primaryCtaText}</span>
-              <ArrowRight className="w-4 h-4 rtl:rotate-180" />
-            </button>
-            <button
-              onClick={() => {
-                const el = document.getElementById('who-is-it-for');
-                el?.scrollIntoView({ behavior: 'smooth' });
-              }}
-              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-5 py-3.5 rounded-xl font-semibold text-sm transition-colors cursor-pointer flex items-center gap-2"
-            >
-              <span>{cfg.hero.secondaryCtaText}</span>
-              <ChevronDown className="w-4 h-4 text-[#1E3A5F]" />
-            </button>
-            <button
-              onClick={() => document.getElementById(INSTALL_SECTION_ID)?.scrollIntoView({ behavior: 'smooth' })}
-              className="bg-white hover:bg-slate-50 text-[#1E3A5F] border border-slate-300 px-5 py-3.5 rounded-xl font-semibold text-sm transition-colors cursor-pointer flex items-center gap-2"
-            >
-              <Smartphone className="w-4 h-4" />
-              <span>نزّل التطبيق</span>
-            </button>
-          </div>
-
-          {/* Interactive Visual: Graded Paper Card Preview */}
-          <div className="max-w-3xl mx-auto mt-10 pt-4">
-            <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden text-right p-6 relative">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-sm">
-                    ✓
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm text-slate-900">{cfg.hero.sampleExamTitle}</h3>
-                    <p className="text-xs text-slate-500">الطالب: {cfg.hero.sampleStudentName} · ورقة إجابة مصححة بدعم دقة</p>
-                  </div>
-                </div>
-                <div className="text-left">
-                  <span className="text-xs text-slate-500 block">الدرجة المعتمدة</span>
-                  <span className="text-xl font-bold text-emerald-600 tabular-nums">{cfg.hero.sampleExamScore}</span>
-                </div>
-              </div>
-
-              {/* Scanned Paper Snippet with handwritten simulation */}
-              <div className="bg-[#FAF9F6] border border-amber-200/80 rounded-xl p-4 font-mono text-xs text-slate-800 relative space-y-2">
-                <div className="absolute top-3 left-4 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded">
-                  ✓ مكتمل الخطوات
-                </div>
-                <p className="text-slate-500 text-[11px] font-sans">حل الطالب بالخط اليدوي مقروء عبر الذكاء الاصطناعي المنهاجي:</p>
-                <div className="text-sm font-semibold text-blue-950 font-serif leading-relaxed">
-                  س² + ص² = 25  ⇒  2س + 2ص (ص') = 0 <span className="text-emerald-600 font-bold mr-2">✓ (+6)</span><br />
-                  ص' = -س / ص = -3/4 <span className="text-emerald-600 font-bold mr-2">✓ (+4)</span><br />
-                  ص'' = (-ص - س ص') / ص² = (-25) / 64 <span className="text-emerald-600 font-bold mr-2">✓ (+10)</span>
-                </div>
-                <div className="pt-2 border-t border-amber-200/50 flex items-center justify-between text-xs font-sans">
-                  <span className="text-red-600 font-semibold italic">
-                    ملاحظة المعلم: "{cfg.hero.sampleTeacherNote}"
-                  </span>
-                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded font-bold text-[11px]">
-                    فُحص: داخل المنهج المعتمد ✓
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-                <span className="flex items-center gap-1.5">
-                  <MessageCircle className="w-4 h-4 text-emerald-600" />
-                  أُرسلت النتيجة وتفاصيل الورقة تلقائياً على واتساب ولي الأمر
-                </span>
-                <button
-                  onClick={() => onNavigate('B8')}
-                  className="text-[#1E3A5F] hover:underline font-bold cursor-pointer"
-                >
-                  افتح شاشة المراجعة كاملة ←
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Section: لمن دِقّـة؟ (Who is Dequa for? - 3 Cards with practical examples) */}
-      {cfg.sectionVisibility.whoIsItFor && (
-      <section id="who-is-it-for" className="max-w-6xl mx-auto px-4 sm:px-6 scroll-mt-24">
-        <div className="text-center space-y-2 mb-10">
-          <div className="inline-block bg-blue-100 text-[#1E3A5F] text-xs font-bold px-3 py-1 rounded-full">
-            {cfg.whoIsItFor.sectionBadge}
-          </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-[#1E3A5F]">
-            {cfg.whoIsItFor.sectionTitle}
-          </h2>
-          <p className="text-sm text-slate-600 max-w-2xl mx-auto">
-            {cfg.whoIsItFor.sectionSubtitle}
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Card 1: المدرّس الخصوصي */}
-          <div className="bg-white border border-slate-200 hover:border-blue-300 rounded-2xl p-6 shadow-xs hover:shadow-md transition-all space-y-4 flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold">
-                <GraduationCap className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-lg font-black text-slate-900">{cfg.whoIsItFor.tutor.title}</h3>
-                <p className="text-xs text-slate-500 mt-1">{cfg.whoIsItFor.tutor.subtitle}</p>
-              </div>
-
-              {/* Real-world example */}
-              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs space-y-1">
-                <span className="font-bold text-slate-700 block">{cfg.whoIsItFor.tutor.exampleTitle}</span>
-                <p className="text-slate-600 text-[11px] leading-relaxed">
-                  {cfg.whoIsItFor.tutor.exampleText}
-                </p>
-              </div>
-
-              <ul className="space-y-2 text-xs text-slate-600 pt-1">
-                {cfg.whoIsItFor.tutor.features.map((f, n) => (
-                  <li key={n} className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <button
-              onClick={() => onNavigate('A3')}
-              className="w-full bg-[#1E3A5F] hover:bg-[#152a45] text-white py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer text-center"
-            >
-              {cfg.whoIsItFor.tutor.buttonText}
-            </button>
-          </div>
-
-          {/* Card 2: المدرسة */}
-          <div className="bg-white border-2 border-[#1E3A5F] rounded-2xl p-6 shadow-md space-y-4 flex flex-col justify-between relative overflow-hidden">
-            <div className="absolute top-0 left-0 bg-[#1E3A5F] text-white text-[10px] font-bold px-3 py-1 rounded-br-xl">
-              حل مؤسسي متكامل
-            </div>
-
-            <div className="space-y-3">
-              <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
-                <Building className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-lg font-black text-slate-900">{cfg.whoIsItFor.school.title}</h3>
-                <p className="text-xs text-slate-500 mt-1">{cfg.whoIsItFor.school.subtitle}</p>
-              </div>
-
-              {/* Real-world example */}
-              <div className="p-3 bg-emerald-50/60 border border-emerald-100 rounded-xl text-xs space-y-1">
-                <span className="font-bold text-emerald-900 block">{cfg.whoIsItFor.school.exampleTitle}</span>
-                <p className="text-emerald-800 text-[11px] leading-relaxed">
-                  {cfg.whoIsItFor.school.exampleText}
-                </p>
-              </div>
-
-              <ul className="space-y-2 text-xs text-slate-600 pt-1">
-                {cfg.whoIsItFor.school.features.map((f, n) => (
-                  <li key={n} className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <button
-              onClick={() => onNavigate('A3')}
-              className="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer text-center"
-            >
-              {cfg.whoIsItFor.school.buttonText}
-            </button>
-          </div>
-
-          {/* Card 3: المركز التعليمي */}
-          <div className="bg-white border border-slate-200 hover:border-purple-300 rounded-2xl p-6 shadow-xs hover:shadow-md transition-all space-y-4 flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center font-bold">
-                <Users className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-lg font-black text-slate-900">{cfg.whoIsItFor.center.title}</h3>
-                <p className="text-xs text-slate-500 mt-1">{cfg.whoIsItFor.center.subtitle}</p>
-              </div>
-
-              {/* Real-world example */}
-              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs space-y-1">
-                <span className="font-bold text-slate-700 block">{cfg.whoIsItFor.center.exampleTitle}</span>
-                <p className="text-slate-600 text-[11px] leading-relaxed">
-                  {cfg.whoIsItFor.center.exampleText}
-                </p>
-              </div>
-
-              <ul className="space-y-2 text-xs text-slate-600 pt-1">
-                {cfg.whoIsItFor.center.features.map((f, n) => (
-                  <li key={n} className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <button
-              onClick={() => onNavigate('A3')}
-              className="w-full bg-[#1E3A5F] hover:bg-[#152a45] text-white py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer text-center"
-            >
-              {cfg.whoIsItFor.center.buttonText}
-            </button>
-          </div>
-        </div>
-      </section>
+  const sectionHeader = (badge: string, title: string, subtitle: string) => (
+    <div className="text-center space-y-2 mb-10">
+      {badge && (
+        <div className="inline-block bg-blue-100 text-[#1E3A5F] text-xs font-bold px-3 py-1 rounded-full">{badge}</div>
       )}
+      {title && <h2 className="text-2xl sm:text-3xl font-extrabold text-[#1E3A5F]">{title}</h2>}
+      {subtitle && <p className="text-sm text-slate-600 max-w-2xl mx-auto">{subtitle}</p>}
+    </div>
+  );
 
-      {/* Section: المناهج المدعومة (Supported Curricula) */}
-      {cfg.sectionVisibility.curricula && (
-      <section id="curricula-section" className="max-w-6xl mx-auto px-4 sm:px-6">
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50/60 border border-blue-200 rounded-2xl p-6 sm:p-8 space-y-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <span className="text-xs font-bold text-blue-700 bg-blue-100 px-3 py-1 rounded-full">
-                {cfg.curricula.badge}
-              </span>
-              <h2 className="text-2xl font-black text-[#1E3A5F] mt-2">
-                {cfg.curricula.title}
-              </h2>
-              <p className="text-xs text-slate-600 mt-1 max-w-xl">
-                {cfg.curricula.description}
-              </p>
+  const renderCards = (items: { id: string; status: LandingItemStatus; title: string; desc: string }[], withIcons: boolean) => {
+    const list = shown(items);
+    return (
+      <div className={`grid gap-6 ${gridCols(list.length)}`}>
+        {list.map((feat, idx) => {
+          const Icon = featureIcons[idx % featureIcons.length];
+          return (
+            <div key={feat.id} className={`bg-white border border-slate-200 rounded-xl p-5 hover:border-blue-300 hover:shadow-xs transition-all space-y-3 ${soonCls(feat.status)}`}>
+              <div className="flex items-start justify-between gap-2">
+                {withIcons ? (
+                  <div className="w-10 h-10 rounded-lg bg-[#E8F0F8] text-[#1E3A5F] flex items-center justify-center font-bold">
+                    <Icon className="w-5 h-5" />
+                  </div>
+                ) : <span />}
+                {feat.status === 'soon' && <SoonBadge label={soon} />}
+              </div>
+              <h3 className="font-bold text-slate-900 text-base">{feat.title}</h3>
+              {feat.desc && <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">{feat.desc}</p>}
             </div>
+          );
+        })}
+      </div>
+    );
+  };
 
-            <button
-              onClick={() => onNavigate('A3')}
-              className="bg-[#1E3A5F] text-white px-5 py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer whitespace-nowrap self-start md:self-auto shadow-xs"
-            >
-              اختر منهجك وابدأ الآن ←
-            </button>
+  const sections: Record<string, () => React.ReactNode> = {
+    whoIsItFor: () => {
+      const cards = shown(cfg.whoIsItFor.cards);
+      if (!cards.length) return null;
+      return (
+        <section id="who-is-it-for" className="max-w-6xl mx-auto px-4 sm:px-6 scroll-mt-24">
+          {sectionHeader(cfg.whoIsItFor.sectionBadge, cfg.whoIsItFor.sectionTitle, cfg.whoIsItFor.sectionSubtitle)}
+          <div className={`grid gap-6 ${gridCols(cards.length)}`}>
+            {cards.map((c, idx) => {
+              const look = cardLooks[idx % cardLooks.length];
+              const Icon = look.icon;
+              const isSoon = c.status === 'soon';
+              return (
+                <div key={c.id} className={`bg-white rounded-2xl p-6 transition-all space-y-4 flex flex-col justify-between relative overflow-hidden ${look.box} ${soonCls(c.status)}`}>
+                  {c.ribbon && (
+                    <div className="absolute top-0 left-0 bg-[#1E3A5F] text-white text-[10px] font-bold px-3 py-1 rounded-br-xl">{c.ribbon}</div>
+                  )}
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold ${look.iconBox}`}>
+                        <Icon className="w-6 h-6" />
+                      </div>
+                      {isSoon && <SoonBadge label={soon} className={c.ribbon ? 'mt-6' : ''} />}
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900">{c.title}</h3>
+                      {c.subtitle && <p className="text-xs text-slate-500 mt-1">{c.subtitle}</p>}
+                    </div>
+                    {(c.exampleTitle || c.exampleText) && (
+                      <div className={`p-3 border rounded-xl text-xs space-y-1 ${look.example}`}>
+                        {c.exampleTitle && <span className={`font-bold block ${look.exampleTitle}`}>{c.exampleTitle}</span>}
+                        {c.exampleText && <p className={`text-[11px] leading-relaxed ${look.exampleText}`}>{c.exampleText}</p>}
+                      </div>
+                    )}
+                    <ul className="space-y-2 text-xs text-slate-600 pt-1">
+                      {shown(c.features).map((f) => (
+                        <li key={f.id} className="flex items-center gap-2">
+                          <CheckCircle2 className={`w-4 h-4 shrink-0 ${f.status === 'soon' ? 'text-amber-500' : 'text-emerald-600'}`} />
+                          <span>{f.text}</span>
+                          {f.status === 'soon' && <SoonBadge label={soon} />}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  {c.buttonText && (
+                    <button
+                      onClick={() => !isSoon && onNavigate('A3')}
+                      disabled={isSoon}
+                      className={`w-full text-white py-2.5 rounded-xl font-bold text-xs transition-colors text-center ${isSoon ? 'bg-slate-400 cursor-not-allowed' : `${look.button} cursor-pointer`}`}
+                    >
+                      {isSoon ? soon : c.buttonText}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
+        </section>
+      );
+    },
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-            {/* Curriculum 1: Palestine */}
-            <div className="bg-white border-2 border-emerald-500 rounded-xl p-4 shadow-2xs space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-900 text-sm">🇵🇸 المنهاج الفلسطيني</span>
-                <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  متاح الآن
-                </span>
+    curricula: () => {
+      const items = shown(cfg.curricula.items);
+      return (
+        <section id="curricula-section" className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50/60 border border-blue-200 rounded-2xl p-6 sm:p-8 space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                {cfg.curricula.badge && (
+                  <span className="text-xs font-bold text-blue-700 bg-blue-100 px-3 py-1 rounded-full">{cfg.curricula.badge}</span>
+                )}
+                <h2 className="text-2xl font-black text-[#1E3A5F] mt-2">{cfg.curricula.title}</h2>
+                <p className="text-xs text-slate-600 mt-1 max-w-xl">{cfg.curricula.description}</p>
               </div>
-              <p className="text-[11px] text-slate-500">
-                الصفوف 1 - 12 (الأساسي والثانوي والتوجيهي) لكافة المواد العلمية والأدبية.
-              </p>
-            </div>
-
-            {/* Curriculum 2: Jordan */}
-            <div className="bg-white/80 border border-slate-200 rounded-xl p-4 shadow-2xs space-y-2 opacity-85">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-800 text-sm">🇯🇴 المنهاج الأردني</span>
-                <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  قريباً
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500">
-                مرحلة التوجيهي والمرحلة الأساسية - قيد المراجعة وإدخال بنوك الأسئلة.
-              </p>
-            </div>
-
-            {/* Curriculum 3: Saudi */}
-            <div className="bg-white/80 border border-slate-200 rounded-xl p-4 shadow-2xs space-y-2 opacity-85">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-800 text-sm">🇸🇦 المنهاج السعودي</span>
-                <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  قريباً
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500">
-                نظام المسارات والمرحلة المتوسطة والابتدائية.
-              </p>
-            </div>
-
-            {/* Curriculum 4: Egypt */}
-            <div className="bg-white/80 border border-slate-200 rounded-xl p-4 shadow-2xs space-y-2 opacity-85">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-800 text-sm">🇪🇬 المنهاج المصري</span>
-                <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  قريباً
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500">
-                الثانوية العامة ونظام التعليم الجديد والمرحلة الإعدادية.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-      )}
-
-      {/* 6 Feature Cards */}
-      {cfg.sectionVisibility.features && (
-      <section className="max-w-6xl mx-auto px-4 sm:px-6">
-        <div className="text-center space-y-2 mb-10">
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-[#1E3A5F]">
-            {cfg.features.sectionTitle}
-          </h2>
-          <p className="text-sm text-slate-600">
-            {cfg.features.sectionSubtitle}
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {features.map((feat, idx) => {
-            const Icon = feat.icon;
-            return (
-              <div
-                key={idx}
-                className="bg-white border border-slate-200 rounded-xl p-5 hover:border-blue-300 hover:shadow-xs transition-all space-y-3"
+              <button
+                onClick={() => onNavigate('A3')}
+                className="bg-[#1E3A5F] text-white px-5 py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer whitespace-nowrap self-start md:self-auto shadow-xs"
               >
-                <div className="w-10 h-10 rounded-lg bg-[#E8F0F8] text-[#1E3A5F] flex items-center justify-center font-bold">
-                  <Icon className="w-5 h-5" />
-                </div>
-                <h3 className="font-bold text-slate-900 text-base">{feat.title}</h3>
-                <p className="text-xs text-slate-600 leading-relaxed">{feat.desc}</p>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-      )}
-
-      {/* How it Works: 6-Step Loop (01 - 06) */}
-      {cfg.sectionVisibility.howItWorks && (
-      <section id="how-it-works" className="max-w-6xl mx-auto px-4 sm:px-6 scroll-mt-24">
-        <div className="text-center space-y-2 mb-12">
-          <div className="inline-block bg-blue-100 text-[#1E3A5F] text-xs font-bold px-3 py-1 rounded-full">
-            {cfg.howItWorks.sectionBadge}
-          </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-[#1E3A5F]">
-            {cfg.howItWorks.sectionTitle}
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {steps.map((st, idx) => (
-            <div
-              key={idx}
-              className="bg-white border border-slate-200 rounded-xl p-5 relative overflow-hidden group hover:border-[#1E3A5F] transition-colors"
-            >
-              <div className="text-3xl font-black text-slate-200 group-hover:text-blue-100 transition-colors tabular-nums absolute top-3 left-4">
-                {st.num}
-              </div>
-              <div className="space-y-2 pr-1 pt-2">
-                <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
-                  خطوة {st.num}
-                </span>
-                <h3 className="font-bold text-slate-900 text-sm">{st.title}</h3>
-                <p className="text-xs text-slate-600 leading-relaxed">{st.desc}</p>
-              </div>
+                اختر منهجك وابدأ الآن ←
+              </button>
             </div>
-          ))}
-        </div>
-      </section>
-      )}
+            {items.length > 0 && (
+              <div className={`grid gap-4 text-xs ${items.length >= 4 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4' : gridCols(items.length)}`}>
+                {items.map((c) => {
+                  const isSoon = c.status === 'soon';
+                  return (
+                    <div key={c.id} className={`rounded-xl p-4 shadow-2xs space-y-2 ${isSoon ? 'bg-white/80 border border-slate-200 opacity-85' : 'bg-white border-2 border-emerald-500'}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`font-bold text-sm ${isSoon ? 'text-slate-800' : 'text-slate-900'}`}>{c.title}</span>
+                        {isSoon ? (
+                          <SoonBadge label={soon} />
+                        ) : (
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">متاح الآن</span>
+                        )}
+                      </div>
+                      {c.desc && <p className="text-[11px] text-slate-500">{c.desc}</p>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
+      );
+    },
 
-      {/* Install the app on the phone (PWA) */}
-      <InstallAppSection />
+    features: () =>
+      shown(cfg.features.items).length > 0 && (
+        <section className="max-w-6xl mx-auto px-4 sm:px-6">
+          {sectionHeader(cfg.features.sectionBadge, cfg.features.sectionTitle, cfg.features.sectionSubtitle)}
+          {renderCards(cfg.features.items, true)}
+        </section>
+      ),
 
-      {/* Before & After Interactive Paper Comparison */}
+    howItWorks: () => {
+      const steps = shown(cfg.howItWorks.steps);
+      if (!steps.length) return null;
+      return (
+        <section id="how-it-works" className="max-w-6xl mx-auto px-4 sm:px-6 scroll-mt-24">
+          {sectionHeader(cfg.howItWorks.sectionBadge, cfg.howItWorks.sectionTitle, '')}
+          <div className={`grid gap-5 ${gridCols(steps.length)}`}>
+            {steps.map((st, idx) => {
+              const num = String(idx + 1).padStart(2, '0');
+              return (
+                <div key={st.id} className={`bg-white border border-slate-200 rounded-xl p-5 relative overflow-hidden group hover:border-[#1E3A5F] transition-colors ${soonCls(st.status)}`}>
+                  <div className="text-3xl font-black text-slate-200 group-hover:text-blue-100 transition-colors tabular-nums absolute top-3 left-4">{num}</div>
+                  <div className="space-y-2 pr-1 pt-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">خطوة {num}</span>
+                      {st.status === 'soon' && <SoonBadge label={soon} />}
+                    </div>
+                    <h3 className="font-bold text-slate-900 text-sm">{st.title}</h3>
+                    <p className="text-xs text-slate-600 leading-relaxed">{st.desc}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      );
+    },
+
+    install: () => <InstallAppSection />,
+
+    comparison: () => (
       <section className="max-w-5xl mx-auto px-4 sm:px-6">
         <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 space-y-6">
           <div className="text-center space-y-1">
@@ -522,8 +330,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
           </div>
         </div>
       </section>
+    ),
 
-      {/* 2 Audience Sections (Private Tutor vs Private Schools) */}
+    plans: () => (
       <section className="max-w-6xl mx-auto px-4 sm:px-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* Card 1: Private Tutor */}
@@ -599,8 +408,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
           </div>
         </div>
       </section>
+    ),
 
-      {/* WhatsApp Parent Report Preview (as required by PDF page 5) */}
+    whatsapp: () => (
       <section className="max-w-4xl mx-auto px-4 sm:px-6">
         <div className="bg-emerald-800 text-white rounded-2xl p-6 sm:p-8 space-y-6 shadow-lg">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-emerald-700/60 pb-5">
@@ -644,8 +454,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
           </div>
         </div>
       </section>
+    ),
 
-      {/* Testimonials Placeholder */}
+    testimonials: () => (
       <section className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
         <div className="border border-dashed border-slate-300 rounded-xl p-8 bg-white/50 space-y-2">
           <h3 className="font-bold text-slate-800 text-sm">شهادات وتجارب معلمين من قطاع غزة وفلسطين</h3>
@@ -654,40 +465,181 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAI }
           </p>
         </div>
       </section>
+    ),
 
-      {/* FAQ Section */}
-      {cfg.sectionVisibility.faqs && (
-      <section id="faq-section" className="max-w-4xl mx-auto px-4 sm:px-6 scroll-mt-24 space-y-6">
-        <div className="text-center space-y-1">
-          <h2 className="text-2xl font-extrabold text-[#1E3A5F]">{cfg.faqs.sectionTitle}</h2>
-          <p className="text-xs text-slate-500">{cfg.faqs.sectionSubtitle}</p>
-        </div>
+    faqs: () => {
+      const faqs = shown(cfg.faqs.items);
+      if (!faqs.length) return null;
+      const open = openFaq ?? faqs[0].id;
+      return (
+        <section id="faq-section" className="max-w-4xl mx-auto px-4 sm:px-6 scroll-mt-24 space-y-6">
+          <div className="text-center space-y-1">
+            <h2 className="text-2xl font-extrabold text-[#1E3A5F]">{cfg.faqs.sectionTitle}</h2>
+            <p className="text-xs text-slate-500">{cfg.faqs.sectionSubtitle}</p>
+          </div>
+          <div className="space-y-3">
+            {faqs.map((faq) => (
+              <div key={faq.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden transition-colors">
+                <button
+                  onClick={() => setOpenFaq(open === faq.id ? '' : faq.id)}
+                  className="w-full text-right p-4 font-bold text-xs sm:text-sm text-slate-800 hover:text-[#1E3A5F] flex items-center justify-between gap-2 cursor-pointer"
+                >
+                  <span className="flex items-center gap-2 flex-wrap">
+                    <span>{faq.q}</span>
+                    {faq.status === 'soon' && <SoonBadge label={soon} />}
+                  </span>
+                  <ChevronDown className={`w-4 h-4 shrink-0 transition-transform text-slate-400 ${open === faq.id ? 'rotate-180 text-[#1E3A5F]' : ''}`} />
+                </button>
+                {open === faq.id && (
+                  <div className="px-4 pb-4 pt-1 text-xs text-slate-600 leading-relaxed border-t border-slate-100 bg-slate-50/50">{faq.a}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      );
+    },
 
-        <div className="space-y-3">
-          {faqs.map((faq, idx) => (
-            <div
-              key={idx}
-              className="bg-white border border-slate-200 rounded-xl overflow-hidden transition-colors"
-            >
+    ctaBanner: () =>
+      (cfg.ctaBanner.title || cfg.ctaBanner.buttonText) && (
+        <section className="max-w-5xl mx-auto px-4 sm:px-6">
+          <div className="bg-[#1E3A5F] text-white rounded-2xl p-6 sm:p-10 text-center space-y-4 shadow-lg">
+            {cfg.ctaBanner.title && <h2 className="text-xl sm:text-3xl font-black">{cfg.ctaBanner.title}</h2>}
+            {cfg.ctaBanner.subtitle && <p className="text-sm text-blue-100 max-w-2xl mx-auto">{cfg.ctaBanner.subtitle}</p>}
+            {cfg.ctaBanner.buttonText && (
               <button
-                onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
-                className="w-full text-right p-4 font-bold text-xs sm:text-sm text-slate-800 hover:text-[#1E3A5F] flex items-center justify-between cursor-pointer"
+                onClick={() => onNavigate('A3')}
+                className="bg-white text-[#1E3A5F] hover:bg-blue-50 px-6 py-3 rounded-xl font-bold text-sm transition-colors cursor-pointer"
               >
-                <span>{faq.q}</span>
-                <ChevronDown className={`w-4 h-4 transition-transform text-slate-400 ${openFaq === idx ? 'rotate-180 text-[#1E3A5F]' : ''}`} />
+                {cfg.ctaBanner.buttonText}
               </button>
-              {openFaq === idx && (
-                <div className="px-4 pb-4 pt-1 text-xs text-slate-600 leading-relaxed border-t border-slate-100 bg-slate-50/50">
-                  {faq.a}
-                </div>
-              )}
+            )}
+          </div>
+        </section>
+      ),
+  };
+
+  const renderSection = (key: string): React.ReactNode => {
+    if (key.startsWith(CUSTOM_PREFIX)) {
+      const sec = cfg.customSections.find((c) => CUSTOM_PREFIX + c.id === key);
+      if (!sec || (!sec.sectionTitle && !shown(sec.items).length)) return null;
+      return (
+        <section className="max-w-6xl mx-auto px-4 sm:px-6">
+          {sectionHeader(sec.sectionBadge, sec.sectionTitle, sec.sectionSubtitle)}
+          {renderCards(sec.items, false)}
+        </section>
+      );
+    }
+    return sections[key]?.() ?? null;
+  };
+
+  return (
+    <div className="space-y-16 pb-16">
+      {isOn('hero') && (
+        <section className="bg-gradient-to-b from-white to-[#F7F8FA] border-b border-slate-200 pt-10 pb-16 px-4 sm:px-6">
+          <div className="max-w-6xl mx-auto text-center space-y-6">
+            <div className="inline-flex items-center gap-2 bg-[#E8F0F8] text-[#1E3A5F] px-4 py-1.5 rounded-full text-xs font-bold border border-blue-200 shadow-2xs">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>{cfg.hero.announcementBadge}</span>
             </div>
-          ))}
-        </div>
-      </section>
+
+            <h1 className="text-3xl sm:text-5xl font-black text-[#1E3A5F] tracking-tight leading-tight max-w-4xl mx-auto">
+              {cfg.hero.headline}
+            </h1>
+
+            <p className="text-base sm:text-lg text-slate-600 max-w-3xl mx-auto leading-relaxed">
+              {cfg.hero.subheadline}
+            </p>
+
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              <button
+                onClick={() => onNavigate('A3')}
+                className="bg-[#1E3A5F] hover:bg-[#152a45] text-white px-6 py-3.5 rounded-xl font-bold text-sm transition-all shadow-md hover:shadow-lg cursor-pointer flex items-center gap-2"
+              >
+                <span>{cfg.hero.primaryCtaText}</span>
+                <ArrowRight className="w-4 h-4 rtl:rotate-180" />
+              </button>
+              <button
+                onClick={() => {
+                  const el = document.getElementById('who-is-it-for');
+                  el?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-5 py-3.5 rounded-xl font-semibold text-sm transition-colors cursor-pointer flex items-center gap-2"
+              >
+                <span>{cfg.hero.secondaryCtaText}</span>
+                <ChevronDown className="w-4 h-4 text-[#1E3A5F]" />
+              </button>
+              <button
+                onClick={() => document.getElementById(INSTALL_SECTION_ID)?.scrollIntoView({ behavior: 'smooth' })}
+                className="bg-white hover:bg-slate-50 text-[#1E3A5F] border border-slate-300 px-5 py-3.5 rounded-xl font-semibold text-sm transition-colors cursor-pointer flex items-center gap-2"
+              >
+                <Smartphone className="w-4 h-4" />
+                <span>نزّل التطبيق</span>
+              </button>
+            </div>
+
+            {/* Interactive Visual: Graded Paper Card Preview */}
+            <div className="max-w-3xl mx-auto mt-10 pt-4">
+              <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden text-right p-6 relative">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-sm">
+                      ✓
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-sm text-slate-900">{cfg.hero.sampleExamTitle}</h3>
+                      <p className="text-xs text-slate-500">الطالب: {cfg.hero.sampleStudentName} · ورقة إجابة مصححة بدعم دقة</p>
+                    </div>
+                  </div>
+                  <div className="text-left">
+                    <span className="text-xs text-slate-500 block">الدرجة المعتمدة</span>
+                    <span className="text-xl font-bold text-emerald-600 tabular-nums">{cfg.hero.sampleExamScore}</span>
+                  </div>
+                </div>
+
+                {/* Scanned Paper Snippet with handwritten simulation */}
+                <div className="bg-[#FAF9F6] border border-amber-200/80 rounded-xl p-4 font-mono text-xs text-slate-800 relative space-y-2">
+                  <div className="absolute top-3 left-4 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded">
+                    ✓ مكتمل الخطوات
+                  </div>
+                  <p className="text-slate-500 text-[11px] font-sans">حل الطالب بالخط اليدوي مقروء عبر الذكاء الاصطناعي المنهاجي:</p>
+                  <div className="text-sm font-semibold text-blue-950 font-serif leading-relaxed">
+                    س² + ص² = 25  ⇒  2س + 2ص (ص') = 0 <span className="text-emerald-600 font-bold mr-2">✓ (+6)</span><br />
+                    ص' = -س / ص = -3/4 <span className="text-emerald-600 font-bold mr-2">✓ (+4)</span><br />
+                    ص'' = (-ص - س ص') / ص² = (-25) / 64 <span className="text-emerald-600 font-bold mr-2">✓ (+10)</span>
+                  </div>
+                  <div className="pt-2 border-t border-amber-200/50 flex items-center justify-between text-xs font-sans">
+                    <span className="text-red-600 font-semibold italic">
+                      ملاحظة المعلم: "{cfg.hero.sampleTeacherNote}"
+                    </span>
+                    <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded font-bold text-[11px]">
+                      فُحص: داخل المنهج المعتمد ✓
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
+                  <span className="flex items-center gap-1.5">
+                    <MessageCircle className="w-4 h-4 text-emerald-600" />
+                    أُرسلت النتيجة وتفاصيل الورقة تلقائياً على واتساب ولي الأمر
+                  </span>
+                  <button
+                    onClick={() => onNavigate('B8')}
+                    className="text-[#1E3A5F] hover:underline font-bold cursor-pointer"
+                  >
+                    افتح شاشة المراجعة كاملة ←
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       )}
 
-      {/* Footer */}
+      {cfg.sectionOrder.filter(isOn).map((key) => (
+        <React.Fragment key={key}>{renderSection(key)}</React.Fragment>
+      ))}
+
       <footer className="border-t border-slate-200 bg-white pt-10 pb-6 px-4 sm:px-6 mt-16 text-slate-600 text-xs">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-2">
