@@ -1,0 +1,62 @@
+# Builds ONE sample weekly parent report (grade 10, all subjects in one report)
+# so the owner can see exactly what a parent receives at dequa.study/r/<code>.
+# All data is made up and lives in a separate demo school (is_demo), built by
+# scripts/sample-report/sample-report.sql. Safe to run again: it rebuilds it.
+# It does NOT send anything: parent reports stay paused platform-wide.
+name: Sample report
+
+on:
+  workflow_dispatch:
+    inputs:
+      phone:
+        description: 'parent phone stored on the sample student, e.g. 0592810385'
+        required: true
+        default: '0592810385'
+  push:
+    branches: ['claude/**']
+    paths: ['.github/workflows/sample-report.yml', 'scripts/sample-report/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sample-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PROJECT_REF: roeweplhofhjtcnbfmvo
+      SITE: https://dequa.study
+      PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PHONE: ${{ inputs.phone || '0592810385' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find the database address
+        run: |
+          for region in eu-central-1 eu-central-2 eu-west-1 eu-west-2 eu-west-3 eu-north-1 us-east-1 us-east-2 us-west-1 us-west-2 \
+                        ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2 ca-central-1 sa-east-1 me-central-1; do
+            for n in 0 1; do
+              host="aws-$n-$region.pooler.supabase.com"
+              if docker run --rm -e PGPASSWORD postgres:17 psql "host=$host port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require connect_timeout=8" -Atc 'select 1' >/dev/null 2>&1; then
+                echo "DB_HOST=$host" >> "$GITHUB_ENV"; echo "Found the database."; exit 0
+              fi
+            done
+          done
+          echo "::error::Could not connect to the database."; exit 1
+
+      - name: Build the sample report
+        run: |
+          set -euo pipefail
+          num=$(printf %s "$PHONE" | tr -cd '0-9' | sed -E 's/^(00)?(97[02])?0?(5[0-9]{8})$/\3/')
+          [[ "$num" =~ ^5[0-9]{8}$ ]] || { echo "::error::bad phone"; exit 1; }
+          docker run --rm -e PGPASSWORD -v "$PWD/scripts/sample-report:/s" postgres:17 \
+            psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" \
+            -At -v phone="+970$num" -f /s/sample-report.sql > /tmp/out.txt
+          sed -E 's/\+970[0-9]{9}/+970*********/g' /tmp/out.txt
+          line=$(grep -E '^[0-9a-f-]{36} [0-9a-f]{12,16}$' /tmp/out.txt | head -1)
+          [ -n "$line" ] || { echo "::error::no report was built"; exit 1; }
+          echo "REPORT LINK: $SITE/r/${line##* }"
