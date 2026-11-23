@@ -7,6 +7,7 @@
 # SMS: sent only when asked: dispatch with send=yes, or a push whose commit
 # message holds [send-sms]. Parent reports are paused platform-wide, so the
 # pause is lifted only while this one report is sent, then put back.
+# The site must already have the new report page (Vercel deploys main).
 name: Sample report
 
 on:
