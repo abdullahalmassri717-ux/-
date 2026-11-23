@@ -1,0 +1,144 @@
+# Builds ONE sample weekly parent report (grade 10, all subjects in one report)
+# so the owner can see exactly what a parent receives at dequa.study/r/<code>,
+# with a photo of each corrected paper (made-up handwriting, drawn here).
+# All data is made up and lives in a separate demo school (is_demo), built by
+# scripts/sample-report/sample-report.sql. Safe to run again: it rebuilds it.
+#
+# SMS: sent only when asked: dispatch with send=yes, or a push whose commit
+# message holds [send-sms]. Parent reports are paused platform-wide, so the
+# pause is lifted only while this one report is sent, then put back.
+name: Sample report
+
+on:
+  workflow_dispatch:
+    inputs:
+      phone:
+        description: 'parent phone stored on the sample student, e.g. 0592810385'
+        required: true
+        default: '0592810385'
+      send:
+        description: 'yes = also send it by SMS to that phone (owner test only)'
+        required: true
+        default: 'no'
+  push:
+    branches: ['claude/**']
+    paths: ['.github/workflows/sample-report.yml', 'scripts/sample-report/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sample-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PROJECT_REF: roeweplhofhjtcnbfmvo
+      SITE: https://dequa.study
+      SUPA: https://roeweplhofhjtcnbfmvo.supabase.co
+      ORG: de300000-0000-4000-8000-0000000000a0
+      PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PHONE: ${{ inputs.phone || '0592810385' }}
+      SEND: ${{ (inputs.send == 'yes' || contains(github.event.head_commit.message, '[send-sms]')) && 'yes' || 'no' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find the database address
+        run: |
+          for region in eu-central-1 eu-central-2 eu-west-1 eu-west-2 eu-west-3 eu-north-1 us-east-1 us-east-2 us-west-1 us-west-2 \
+                        ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2 ca-central-1 sa-east-1 me-central-1; do
+            for n in 0 1; do
+              host="aws-$n-$region.pooler.supabase.com"
+              if docker run --rm -e PGPASSWORD postgres:17 psql "host=$host port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require connect_timeout=8" -Atc 'select 1' >/dev/null 2>&1; then
+                echo "DB_HOST=$host" >> "$GITHUB_ENV"; echo "Found the database."; exit 0
+              fi
+            done
+          done
+          echo "::error::Could not connect to the database."; exit 1
+
+      # Demo school owner 0599990003: a Supabase test number with a fixed code, so no SMS for this login.
+      - name: Sign in as the demo school owner
+        run: |
+          set -euo pipefail
+          curl -fsS "$SITE/" -o /tmp/index.html
+          anon=""
+          for f in $(grep -oE '/assets/[^"]+\.js' /tmp/index.html | sort -u); do
+            anon=$(curl -fsS "$SITE$f" | grep -oE 'sb_publishable_[A-Za-z0-9_-]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}' | head -1 || true)
+            [ -n "$anon" ] && break
+          done
+          [ -n "$anon" ] || { echo "::error::public key not found"; exit 1; }
+          curl -sS -o /dev/null -w 'otp HTTP %{http_code}\n' -X POST "$SUPA/auth/v1/otp" -H "apikey: $anon" \
+            -H 'content-type: application/json' --data '{"phone":"+970599990003"}'
+          code=$(curl -sS -o /tmp/v.json -w '%{http_code}' -X POST "$SUPA/auth/v1/verify" -H "apikey: $anon" \
+            -H 'content-type: application/json' --data '{"phone":"+970599990003","token":"123456","type":"sms"}')
+          echo "verify HTTP $code"; [ "$code" = 200 ] || { head -c 300 /tmp/v.json; exit 1; }
+          tok=$(jq -r .access_token /tmp/v.json); uid=$(jq -r .user.id /tmp/v.json); rm -f /tmp/v.json
+          echo "::add-mask::$tok"
+          { echo "ANON=$anon"; echo "USER_TOKEN=$tok"; echo "DEMO_UID=$uid"; } >> "$GITHUB_ENV"
+
+      - name: Build the sample report
+        run: |
+          set -euo pipefail
+          num=$(printf %s "$PHONE" | tr -cd '0-9' | sed -E 's/^(00)?(97[02])?0?(5[0-9]{8})$/\3/')
+          [[ "$num" =~ ^5[0-9]{8}$ ]] || { echo "::error::bad phone"; exit 1; }
+          docker run --rm -e PGPASSWORD -v "$PWD/scripts/sample-report:/s" postgres:17 \
+            psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" \
+            -At -v phone="+970$num" -v uid="$DEMO_UID" -f /s/sample-report.sql > /tmp/out.txt
+          grep -v '^PAPERS ' /tmp/out.txt | sed -E 's/\+970[0-9]{9}/+970*********/g'
+          grep '^PAPERS ' /tmp/out.txt | sed 's/^PAPERS //' > /tmp/papers.json
+          line=$(grep -E '^[0-9a-f-]{36} [0-9a-f]{12,16}$' /tmp/out.txt | head -1)
+          [ -n "$line" ] || { echo "::error::no report was built"; exit 1; }
+          echo "REPORT_ID=${line%% *}" >> "$GITHUB_ENV"
+          echo "REPORT_LINK=$SITE/r/${line##* }" >> "$GITHUB_ENV"
+
+      - name: Draw the papers and store them privately
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.49.1
+          npx playwright install --with-deps chromium >/dev/null
+          cp "$GITHUB_WORKSPACE/scripts/sample-report/render-papers.mjs" /tmp/pw/ && node /tmp/pw/render-papers.mjs /tmp/papers.json /tmp/pages
+          db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
+          for row in $(jq -r '.[] | "\(.asm)/\(.sub)"' /tmp/papers.json); do
+            sub="${row#*/}"
+            for kind in "" "-corrected"; do
+              path="$ORG/$row/1$kind.jpg"
+              code=$(curl -sS -o /tmp/up.json -w '%{http_code}' -X POST "$SUPA/storage/v1/object/submission-pages/$path" \
+                -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" -H 'content-type: image/jpeg' -H 'x-upsert: true' \
+                --data-binary @"/tmp/pages/$sub$kind.jpg")
+              echo "upload $path HTTP $code"; [ "$code" = 200 ] || { head -c 300 /tmp/up.json; exit 1; }
+            done
+            db "insert into public.submission_pages (submission_id, organization_id, page_number, storage_path, corrected_storage_path)
+                values ('$sub', '$ORG', 1, '$ORG/$row/1.jpg', '$ORG/$row/1-corrected.jpg')
+                on conflict (submission_id, page_number) do update set storage_path = excluded.storage_path,
+                  corrected_storage_path = excluded.corrected_storage_path" >/dev/null
+          done
+          echo "Papers with photos: $(jq length /tmp/papers.json)"
+          echo "REPORT LINK: $REPORT_LINK"
+
+      - name: Check what the parent's page gets
+        run: |
+          curl -sS -X POST "$SUPA/functions/v1/shared-report-papers" -H "apikey: $ANON" -H 'content-type: application/json' \
+            --data "{\"code\":\"${REPORT_LINK##*/}\"}" -o /tmp/p.json -w 'HTTP %{http_code}\n' || true
+          jq -r '(.papers // []) | "papers: \(length)", (.[] | "  \(.subject) · \(.title): \(.score)/\(.total), questions \(.questions | length), photos \(.pageUrls | length)")' /tmp/p.json \
+            || head -c 500 /tmp/p.json
+
+      - name: Send this one report by SMS
+        if: env.SEND == 'yes'
+        run: |
+          set -euo pipefail
+          db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
+          echo "PAUSE_LIFTED=1" >> "$GITHUB_ENV"
+          db "update public.platform_settings set value = '{\"paused\": false}'::jsonb where key = 'reports_paused'" >/dev/null
+          curl -sS -X POST "$SUPA/functions/v1/send-reports" -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" \
+            -H 'content-type: application/json' --data "{\"reportIds\":[\"$REPORT_ID\"]}" -w '\nHTTP %{http_code}\n' || true
+
+      - name: Put the pause back
+        if: always() && env.PAUSE_LIFTED == '1'
+        run: |
+          db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
+          db "update public.platform_settings set value = '{\"paused\": true}'::jsonb where key = 'reports_paused'" >/dev/null
+          echo "pause now: $(db "select value::text from public.platform_settings where key = 'reports_paused'")"
+          echo "report status: $(db "select status::text || ' ' || coalesce(error, '') from public.reports where id = '$REPORT_ID'")"

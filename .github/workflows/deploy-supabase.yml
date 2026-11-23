@@ -196,5 +196,6 @@ jobs:
           supabase functions deploy grading-sweep --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt $yes_flag
           supabase functions deploy backup-files --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt $yes_flag
           supabase functions deploy student-submit --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt $yes_flag
+          supabase functions deploy shared-report-papers --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt $yes_flag
           supabase functions deploy send-sms-hook --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt $yes_flag
           supabase functions deploy whatsapp-inbound --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt $yes_flag
