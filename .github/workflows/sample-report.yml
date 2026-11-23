@@ -2,7 +2,7 @@
 # so the owner can see exactly what a parent receives at dequa.study/r/<code>.
 # All data is made up and lives in a separate demo school (is_demo), built by
 # scripts/sample-report/sample-report.sql. Safe to run again: it rebuilds it.
-# It does NOT send anything: parent reports stay paused platform-wide.
+# Sends it by SMS only when send=yes (owner's own phone, one-off test).
 name: Sample report
 
 on:
@@ -12,6 +12,10 @@ on:
         description: 'parent phone stored on the sample student, e.g. 0592810385'
         required: true
         default: '0592810385'
+      send:
+        description: 'yes = also send it by SMS to that phone (owner test only)'
+        required: true
+        default: 'no'
   push:
     branches: ['claude/**']
     paths: ['.github/workflows/sample-report.yml', 'scripts/sample-report/**']
@@ -30,8 +34,10 @@ jobs:
     env:
       PROJECT_REF: roeweplhofhjtcnbfmvo
       SITE: https://dequa.study
+      SUPA: https://roeweplhofhjtcnbfmvo.supabase.co
       PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       PHONE: ${{ inputs.phone || '0592810385' }}
+      SEND: ${{ inputs.send || 'yes' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -59,4 +65,42 @@ jobs:
           sed -E 's/\+970[0-9]{9}/+970*********/g' /tmp/out.txt
           line=$(grep -E '^[0-9a-f-]{36} [0-9a-f]{12,16}$' /tmp/out.txt | head -1)
           [ -n "$line" ] || { echo "::error::no report was built"; exit 1; }
+          echo "REPORT_ID=${line%% *}" >> "$GITHUB_ENV"
           echo "REPORT LINK: $SITE/r/${line##* }"
+
+      # Owner approved one real test SMS (2026-11-23). Parent reports are paused
+      # platform-wide; the pause is lifted only while this one report is sent
+      # through the normal send-reports function, then put back (next step).
+      - name: Send this one report by SMS
+        if: env.SEND == 'yes'
+        run: |
+          set -euo pipefail
+          db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
+          curl -fsS "$SITE/" -o /tmp/index.html
+          anon=""
+          for f in $(grep -oE '/assets/[^"]+\.js' /tmp/index.html | sort -u); do
+            anon=$(curl -fsS "$SITE$f" | grep -oE 'sb_publishable_[A-Za-z0-9_-]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}' | head -1 || true)
+            [ -n "$anon" ] && break
+          done
+          [ -n "$anon" ] || { echo "::error::public key not found"; exit 1; }
+          # Demo school owner 0599990003 (Supabase test number, fixed code: no SMS for the login).
+          curl -sS -o /dev/null -w 'otp HTTP %{http_code}\n' -X POST "$SUPA/auth/v1/otp" -H "apikey: $anon" \
+            -H 'content-type: application/json' --data '{"phone":"+970599990003"}'
+          code=$(curl -sS -o /tmp/v.json -w '%{http_code}' -X POST "$SUPA/auth/v1/verify" -H "apikey: $anon" \
+            -H 'content-type: application/json' --data '{"phone":"+970599990003","token":"123456","type":"sms"}')
+          echo "verify HTTP $code"; [ "$code" = 200 ] || { head -c 300 /tmp/v.json; exit 1; }
+          tok=$(jq -r .access_token /tmp/v.json); uid=$(jq -r .user.id /tmp/v.json); rm -f /tmp/v.json
+          echo "::add-mask::$tok"
+          db "insert into public.memberships (organization_id, user_id, role, status) values ('de300000-0000-4000-8000-0000000000a0', '$uid', 'owner', 'active') on conflict (organization_id, user_id) do update set role = 'owner', status = 'active'" >/dev/null
+          echo "PAUSE_LIFTED=1" >> "$GITHUB_ENV"
+          db "update public.platform_settings set value = '{\"paused\": false}'::jsonb where key = 'reports_paused'" >/dev/null
+          curl -sS -X POST "$SUPA/functions/v1/send-reports" -H "apikey: $anon" -H "Authorization: Bearer $tok" \
+            -H 'content-type: application/json' --data "{\"reportIds\":[\"$REPORT_ID\"]}" -w '\nHTTP %{http_code}\n' || true
+
+      - name: Put the pause back
+        if: always() && env.PAUSE_LIFTED == '1'
+        run: |
+          db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
+          db "update public.platform_settings set value = '{\"paused\": true}'::jsonb where key = 'reports_paused'" >/dev/null
+          echo "pause now: $(db "select value::text from public.platform_settings where key = 'reports_paused'")"
+          echo "report status: $(db "select status::text || ' ' || coalesce(error, '') from public.reports where id = '$REPORT_ID'")"
