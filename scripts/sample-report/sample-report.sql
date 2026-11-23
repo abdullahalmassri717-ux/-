@@ -3,14 +3,14 @@
 -- يشغّله .github/workflows/sample-report.yml. كل البيانات وهمية، في جهة تجريبية
 -- منفصلة (is_demo) تُحذف تلقائياً مع البيانات التجريبية الأخرى.
 -- آمن للتكرار: يحذف نسخته السابقة أولاً.
--- المتغير: :phone (رقم ولي الأمر +970...). مالك الجهة: مستخدم الرقم التجريبي 0599990003 إن وُجد.
+-- المتغيرات: :phone (رقم ولي الأمر +970...)، :uid (مستخدم الرقم التجريبي 0599990003، مالك الجهة).
 -- ============================================================================
 \set ON_ERROR_STOP on
-select set_config('sample.phone', :'phone', false);
+select set_config('sample.phone', :'phone', false), set_config('sample.uid', :'uid', false);
 
 do $$
 declare
-  v_uid   uuid := (select id from auth.users where phone = '970599990003');
+  v_uid   uuid := coalesce(nullif(current_setting('sample.uid'), '')::uuid, (select id from auth.users where phone = '970599990003'));
   v_phone text := current_setting('sample.phone');
   o   uuid := 'de300000-0000-4000-8000-0000000000a0';
   cls uuid := 'de301000-0000-4000-8000-0000000000a0';
@@ -110,3 +110,19 @@ select r.id || ' ' || r.share_code from public.reports r
  where r.organization_id = 'de300000-0000-4000-8000-0000000000a0' and r.kind = 'progress';
 select r.body from public.reports r
  where r.organization_id = 'de300000-0000-4000-8000-0000000000a0' and r.kind = 'progress';
+
+-- أوراق هذا الأسبوع لرسم صورها (scripts/sample-report/render-papers.mjs).
+select 'PAPERS ' || coalesce(jsonb_agg(jsonb_build_object(
+         'sub', s.id, 'asm', a.id, 'title', a.title, 'subject', sub.name,
+         'date', to_char(s.approved_at at time zone 'Asia/Gaza', 'DD/MM/YYYY'),
+         'questions', (select jsonb_agg(jsonb_build_object('n', q.number, 'lesson', l.title, 'max', q.max_score,
+                                                           'score', qg.final_score, 'note', qg.teacher_note) order by q.number)
+                       from public.questions q
+                       join public.question_grades qg on qg.question_id = q.id and qg.submission_id = s.id
+                       left join public.lessons l on l.id = q.lesson_id
+                       where q.assessment_id = a.id))), '[]'::jsonb)::text
+from public.submissions s
+join public.assessments a on a.id = s.assessment_id
+left join public.subjects sub on sub.id = a.subject_id
+where s.organization_id = 'de300000-0000-4000-8000-0000000000a0'
+  and s.approved_at > now() - interval '7 days';

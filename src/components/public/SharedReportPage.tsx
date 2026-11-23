@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FileText } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 // The parent's report page, opened from the short SMS link dequa.study/r/<code>.
@@ -43,12 +43,103 @@ const SAMPLE: SharedReport = {
   ].join('\n'),
 };
 
+interface PaperQuestion {
+  number: number;
+  lesson: string | null;
+  score: number;
+  max: number;
+  note: string | null;
+}
+
+interface SharedPaper {
+  id: string;
+  title: string;
+  subject: string;
+  score: number;
+  total: number;
+  approvedAt: string;
+  questions: PaperQuestion[];
+  pageUrls: string[];
+}
+
+// 7.50 -> 7.5, 8.00 -> 8
+const num = (n: number) => String(Number(Number(n).toFixed(2)));
+const isCorrect = (q: PaperQuestion) => Number(q.score) >= Number(q.max) * 0.7;
+
+function PaperCard({ paper }: { paper: SharedPaper }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border border-slate-200 rounded-2xl overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full p-3.5 bg-slate-50 hover:bg-slate-100 cursor-pointer text-right space-y-2.5"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <span className="block text-[11px] font-bold text-slate-500 break-words">{paper.subject}</span>
+            <span className="block text-sm font-extrabold text-[#1E3A5F] break-words">{paper.title}</span>
+          </div>
+          <span className="text-sm font-black text-red-700 font-mono tabular-nums shrink-0" dir="ltr">
+            {num(paper.score)} / {num(paper.total)}
+          </span>
+        </div>
+        <span className="w-full text-xs font-bold text-white bg-[#1E3A5F] rounded-xl px-3 py-2 flex items-center justify-center gap-1.5">
+          {open ? 'إخفاء الورقة' : 'شوف الورقة المصحّحة'}
+          {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </span>
+      </button>
+      {open && (
+        <div className="p-3 space-y-3">
+          {paper.pageUrls.map((url, i) => (
+            <div key={url} className="relative border border-slate-300 rounded-xl overflow-hidden bg-white">
+              <img src={url} alt={`صفحة ${i + 1} من الورقة`} className="w-full h-auto block" />
+              {i === 0 && (
+                <div className="absolute top-2 left-2 w-16 h-16 rounded-full border-4 border-red-600 bg-white/85 text-red-700 flex flex-col items-center justify-center font-black font-mono tabular-nums rotate-[-8deg]">
+                  <span className="text-base leading-none">{num(paper.score)}</span>
+                  <span className="text-[10px] border-t-2 border-red-600 px-1.5">{num(paper.total)}</span>
+                </div>
+              )}
+            </div>
+          ))}
+          {paper.pageUrls.length === 0 && (
+            <p className="text-xs text-slate-500 text-center">صورة الورقة غير متوفرة، وهذه درجات كل سؤال.</p>
+          )}
+          <ul className="divide-y divide-slate-100">
+            {paper.questions.map((q) => (
+              <li key={q.number} className="py-2.5 flex items-start gap-3">
+                <span
+                  className={`w-7 h-7 rounded-full flex items-center justify-center font-black shrink-0 ${
+                    isCorrect(q) ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                  }`}
+                >
+                  {isCorrect(q) ? '✓' : '✗'}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <span className="block text-xs font-bold text-slate-800 break-words">
+                    السؤال {q.number}
+                    {q.lesson ? ` · ${q.lesson}` : ''}
+                  </span>
+                  {q.note && <span className="block text-xs text-red-700 font-medium break-words">✍️ {q.note}</span>}
+                </div>
+                <span className="text-xs font-bold text-red-700 font-mono tabular-nums shrink-0" dir="ltr">
+                  {num(q.score)}/{num(q.max)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const dateText = (d: string | null) =>
   d ? new Date(d).toLocaleDateString('ar-PS-u-nu-latn', { day: 'numeric', month: 'long' }) : '';
 
 export default function SharedReportPage({ code }: { code: string }) {
   const [report, setReport] = useState<SharedReport | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
+  const [papers, setPapers] = useState<SharedPaper[]>([]);
 
   useEffect(() => {
     if (code === 'demo') {
@@ -66,6 +157,11 @@ export default function SharedReportPage({ code }: { code: string }) {
       if (!row) return setState('missing');
       setReport(row);
       setState('ready');
+      // The corrected papers of that week (photos come as short-lived private links).
+      supabase!.functions
+        .invoke('shared-report-papers', { body: { code } })
+        .then(({ data: res }) => setPapers(Array.isArray(res?.papers) ? (res.papers as SharedPaper[]) : []))
+        .catch(() => setPapers([]));
     });
   }, [code]);
 
@@ -99,6 +195,14 @@ export default function SharedReportPage({ code }: { code: string }) {
                 </div>
               </div>
               <div className="text-sm leading-7 text-slate-800 whitespace-pre-line break-words">{report.body}</div>
+              {papers.length > 0 && (
+                <div className="border-t border-slate-100 pt-4 space-y-3">
+                  <h2 className="text-sm font-black text-[#1E3A5F]">📄 الأوراق المصحّحة</h2>
+                  {papers.map((p) => (
+                    <PaperCard key={p.id} paper={p} />
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>
