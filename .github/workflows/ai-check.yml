@@ -175,7 +175,24 @@ jobs:
         run: |
           db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
           lessons=$(db "select coalesce(json_agg(id), '[]') from (select l.id from public.lessons l join public.units u on u.id = l.unit_id where u.subject_id = '$SUBJ' order by u.sort_order, l.sort_order limit 10) x")
-          for n in 5 10; do
+          echo "### 20 questions as a background job (as the exam screen does it)"
+          t0=$(date +%s)
+          curl -sS -o /tmp/j.json -X POST "$SUPA/functions/v1/ai-tools" \
+            -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" -H 'content-type: application/json' \
+            --data "{\"task\":\"generate_questions\",\"background\":true,\"organizationId\":\"$ORG\",\"subjectId\":\"$SUBJ\",\"groupId\":\"$GRP\",\"lessonIds\":$lessons,\"count\":20,\"difficulty\":\"medium\",\"purpose\":\"exam\",\"totalScore\":40}"
+          cat /tmp/j.json; echo
+          job=$(jq -r '.jobId // empty' /tmp/j.json)
+          if [ -n "$job" ]; then
+            for i in $(seq 1 80); do
+              st=$(curl -sS "$SUPA/rest/v1/ai_jobs?id=eq.$job&select=status,error" -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" | jq -r '.[0].status')
+              [ "$st" != running ] && break; sleep 3
+            done
+            echo "job $st after $(( $(date +%s) - t0 ))s"
+            curl -sS "$SUPA/rest/v1/ai_jobs?id=eq.$job&select=status,error,result" -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" \
+              | jq -r '.[0] | "status \(.status) error \(.error) questions \(.result.questions | length // 0) total \([.result.questions[]?.maxScore] | add) rejected \(.result.rejected | length // 0)"'
+          fi
+          echo
+          for n in 10; do
             t0=$(date +%s)
             code=$(curl -sS -o /tmp/r.json -w '%{http_code}' --max-time 400 -X POST "$SUPA/functions/v1/ai-tools" \
               -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" -H 'content-type: application/json' \
