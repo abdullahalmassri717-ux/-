@@ -35,6 +35,9 @@
   .print-area, .print-area * { visibility: visible; }
   .print-area { display: block !important; position: absolute; inset: 0; }
   .print-sheet { box-shadow: none !important; border: none !important; }
+  /* Answer sheets come as ready-made pages (186 × 273 mm, the A4 area inside the margin). */
+  .print-portal .print-page { break-inside: avoid; overflow: hidden; }
+  .print-portal .print-page + .print-page { break-before: page; page-break-before: always; }
   /* Per-student sheets are moved to the end of <body> (a portal) and everything
      else is removed from the layout, because browsers ignore page breaks inside
      absolutely positioned boxes. Each student then starts on a fresh page, so one

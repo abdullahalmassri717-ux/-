@@ -1,3 +1,4 @@
+import type { PrintLayout } from '../lib/printLayout';
 import type { BillingStore } from './billing';
 import type { AiStore } from './ai';
 import type { SchoolStore } from './school';
@@ -234,6 +235,9 @@ export interface DataStore extends BillingStore, SchoolStore, AiStore {
   // Assessments
   listAssessments(): Promise<AssessmentRow[]>;
   getAssessment(id: string): Promise<AssessmentDetail | null>;
+  /** The printed sheet's layout (answer lines per question, page count). */
+  getPrintLayout(assessmentId: string): Promise<PrintLayout>;
+  savePrintLayout(assessmentId: string, layout: PrintLayout): Promise<void>;
   createAssessment(input: NewAssessmentInput): Promise<string>;
   updateAssessment(
     id: string,

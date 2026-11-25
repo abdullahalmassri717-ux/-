@@ -27,6 +27,7 @@ import type {
   WeeklyReportRow,
 } from './types';
 import { buildWeeklyText } from '../lib/weeklyReportText';
+import { normalizePrintLayout, type PrintLayout } from '../lib/printLayout';
 
 const wait = <T,>(value: T): Promise<T> => new Promise((r) => setTimeout(() => r(value), 120));
 let seq = 0;
@@ -135,6 +136,7 @@ let state: DemoState | null = null;
 const s = () => (state ??= initialState());
 let archivedGroups: Group[] = [];
 let weeklyEnabled = true;
+const printLayouts = new Map<string, PrintLayout>();
 
 function summary(a: AssessmentDetail): AssessmentRow {
   const { questions, ...row } = a;
@@ -399,6 +401,11 @@ export function createDemoStore(): DataStore {
     getAssessment: (id) => {
       const a = s().assessments.find((x) => x.id === id);
       return wait(a ? { ...summary(a), questions: a.questions } : null);
+    },
+    getPrintLayout: (id) => wait(normalizePrintLayout(printLayouts.get(id))),
+    async savePrintLayout(id, layout) {
+      printLayouts.set(id, normalizePrintLayout(layout));
+      return wait(undefined);
     },
     async createAssessment(input) {
       const group = s().groups.find((g) => g.id === input.groupId);

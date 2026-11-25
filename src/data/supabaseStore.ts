@@ -9,6 +9,7 @@ import { createSupabaseBilling } from './billing';
 import { createSupabaseAi } from './ai';
 import { createSupabaseSchool, type SchoolStore } from './school';
 import { fetchAll } from './fetchAll';
+import { normalizePrintLayout } from '../lib/printLayout';
 import type {
   AssessmentDetail,
   AssessmentRow,
@@ -785,6 +786,17 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
             criteria: [...(q.rubric_criteria ?? [])].sort(bySort).map((c) => ({ description: c.description, points: Number(c.points) })),
           })),
       };
+    },
+
+    async getPrintLayout(assessmentId) {
+      const { data, error } = await db.from('assessments').select('print_layout').eq('id', assessmentId).maybeSingle();
+      if (error) fail(error, 'تعذّر تحميل تنسيق الورقة.');
+      return normalizePrintLayout(data?.print_layout);
+    },
+
+    async savePrintLayout(assessmentId, layout) {
+      const { error } = await db.from('assessments').update({ print_layout: normalizePrintLayout(layout) }).eq('id', assessmentId);
+      if (error) fail(error, 'تعذّر حفظ تنسيق الورقة.');
     },
 
     async createAssessment(input: NewAssessmentInput) {
