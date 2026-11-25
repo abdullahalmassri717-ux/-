@@ -144,6 +144,32 @@ export interface GenerateOptions {
  * each one measures an outcome of those lessons. Questions that fail the check
  * are returned separately so the teacher can see why they were dropped.
  */
+/** At most this many questions per AI call: big sets are split and written in parallel. */
+export const GENERATE_BATCH = 5;
+
+/**
+ * Splits a request for `count` questions into batches of at most GENERATE_BATCH,
+ * spreading the lessons over the batches so they cover different lessons.
+ */
+export function planBatches(count: number, lessons: LessonContext[]): { count: number; lessons: LessonContext[] }[] {
+  const n = Math.ceil(count / GENERATE_BATCH);
+  const base = Math.floor(count / n);
+  const extra = count % n;
+  const counts = Array.from({ length: n }, (_, i) => base + (i < extra ? 1 : 0));
+  if (n === 1 || lessons.length < 2) return counts.map((c) => ({ count: c, lessons }));
+  // Each batch gets a share of the lessons (in order), proportional to its questions.
+  // With fewer lessons than batches, lessons are shared round-robin.
+  if (lessons.length < n) return counts.map((c, i) => ({ count: c, lessons: [lessons[i % lessons.length]] }));
+  const out: { count: number; lessons: LessonContext[] }[] = [];
+  let from = 0;
+  counts.forEach((c, i) => {
+    const to = i === n - 1 ? lessons.length : Math.max(from + 1, Math.round((lessons.length * counts.slice(0, i + 1).reduce((s, x) => s + x, 0)) / count));
+    out.push({ count: c, lessons: lessons.slice(from, to) });
+    from = to;
+  });
+  return out;
+}
+
 export async function generateQuestions(
   model: ToolModel,
   config: ToolModelConfig,
@@ -156,32 +182,48 @@ export async function generateQuestions(
     o.purpose === 'remedial'
       ? 'هذه تمارين علاجية لطالب ضعيف في هذه الدروس: ابدأ بالأسهل وتدرّج، واجعل نموذج الإجابة يشرح الخطوات بوضوح ليتعلم منه الطالب.'
       : 'هذه أسئلة امتحان ورقي يصحّحه الذكاء الاصطناعي ثم المدرّس.';
-  const prompt = [
-    `المادة: ${o.subjectName} — الصف: ${o.gradeName}`,
-    `الدروس المسموح بها:\n${renderLessons(o.lessons)}`,
-    `المطلوب: ${count} أسئلة ${level}. ${purpose}`,
-    numeralsInstruction(o.numerals),
-    o.totalScore
-      ? `علامة الأسئلة كلها معاً: ${o.totalScore} درجة بالضبط. وزّعها على الأسئلة حسب صعوبة كل سؤال وطول حله (الأسئلة القصيرة درجات أقل، والمسائل والأسئلة المقالية درجات أكثر)، واستخدم أعداداً صحيحة أو أنصاف درجات فقط. ثم اكتب معايير تصحيح كل سؤال بحيث يساوي مجموع نقاطها درجة السؤال، وكل معيار جزء واضح من الحل يستحق نقاطه.`
-      : '',
-    o.lessons.length > 3 ? 'وزّع الأسئلة على كل الدروس والوحدات المذكورة بشكل متوازن، ولا تركّز على درس واحد.' : '',
-    o.note?.trim() ? `ملاحظات المدرّس: ${o.note.trim()}` : '',
-    o.avoid?.length ? `لا تكرر هذه الأسئلة:\n${o.avoid.slice(0, 30).map((t) => `- ${t}`).join('\n')}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n');
+  const promptFor = (n: number, lessons: LessonContext[], share?: number) =>
+    [
+      `المادة: ${o.subjectName} — الصف: ${o.gradeName}`,
+      `الدروس المسموح بها:\n${renderLessons(lessons)}`,
+      `المطلوب: ${n} أسئلة ${level}. ${purpose}`,
+      numeralsInstruction(o.numerals),
+      share
+        ? `علامة الأسئلة كلها معاً: ${share} درجة بالضبط. وزّعها على الأسئلة حسب صعوبة كل سؤال وطول حله (الأسئلة القصيرة درجات أقل، والمسائل والأسئلة المقالية درجات أكثر)، واستخدم أعداداً صحيحة أو أنصاف درجات فقط. ثم اكتب معايير تصحيح كل سؤال بحيث يساوي مجموع نقاطها درجة السؤال، وكل معيار جزء واضح من الحل يستحق نقاطه.`
+        : '',
+      lessons.length > 3 ? 'وزّع الأسئلة على كل الدروس والوحدات المذكورة بشكل متوازن، ولا تركّز على درس واحد.' : '',
+      'اجعل نموذج الإجابة ومعايير التصحيح مختصرة وواضحة.',
+      o.note?.trim() ? `ملاحظات المدرّس: ${o.note.trim()}` : '',
+      o.avoid?.length ? `لا تكرر هذه الأسئلة:\n${o.avoid.slice(0, 30).map((t) => `- ${t}`).join('\n')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n');
 
+  // One batch: cheap model first; if fewer than half of its questions pass the
+  // curriculum check, the stronger model writes that batch again.
+  const runBatch = async (n: number, lessons: LessonContext[]) => {
+    const share = o.totalScore ? Math.round(((o.totalScore * n) / count) * 2) / 2 : undefined;
+    const prompt = promptFor(n, lessons, share);
+    const first = await writeAndCheck(model, config, config.mainModel, prompt, lessons, lessonIds, o.numerals);
+    const strong = config.strongModel;
+    if (first.data.questions.length * 2 >= n || !strong || strong === config.mainModel) return first;
+    const second = await writeAndCheck(model, config, strong, prompt, lessons, lessonIds, o.numerals);
+    const usage = [...first.usage, ...second.usage];
+    return second.data.questions.length >= first.data.questions.length ? { ...second, usage } : { ...first, usage };
+  };
+
+  // Big sets run as parallel batches, so a 25-question exam takes about as long as a 5-question one.
+  const settled = await Promise.allSettled(planBatches(count, o.lessons).map((b) => runBatch(b.count, b.lessons)));
+  const ok = settled.filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof runBatch>>> => r.status === 'fulfilled').map((r) => r.value);
+  if (!ok.length) throw (settled[0] as PromiseRejectedResult).reason;
+  const seen = new Set<string>();
+  const questions = ok.flatMap((r) => r.data.questions).filter((q) => (seen.has(q.text) ? false : (seen.add(q.text), true)));
+  const merged = {
+    data: { questions, rejected: ok.flatMap((r) => r.data.rejected) },
+    usage: ok.flatMap((r) => r.usage),
+  };
   // The checker may drop some questions: the ones left still add up to the teacher's total.
-  const fit = (r: ToolResult<{ questions: DraftQuestion[]; rejected: { text: string; reason: string }[] }>) =>
-    o.totalScore ? { ...r, data: { ...r.data, questions: fitToTotal(r.data.questions, o.totalScore) } } : r;
-  const first = await writeAndCheck(model, config, config.mainModel, prompt, o.lessons, lessonIds, o.numerals);
-  // Cheap model first. If fewer than half of the requested questions pass the
-  // curriculum check, the stronger model writes the set again.
-  const strong = config.strongModel;
-  if (first.data.questions.length * 2 >= count || !strong || strong === config.mainModel) return fit(first);
-  const second = await writeAndCheck(model, config, strong, prompt, o.lessons, lessonIds, o.numerals);
-  const usage = [...first.usage, ...second.usage];
-  return fit(second.data.questions.length >= first.data.questions.length ? { ...second, usage } : { ...first, usage });
+  return o.totalScore ? { ...merged, data: { ...merged.data, questions: fitToTotal(merged.data.questions, o.totalScore) } } : merged;
 }
 
 async function writeAndCheck(

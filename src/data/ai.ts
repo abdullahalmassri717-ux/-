@@ -59,8 +59,23 @@ export interface StudyPlan {
   tip: string;
 }
 
+export type GenerateResult = { questions: DraftQuestion[]; rejected: { text: string; reason: string }[] };
+
+/** A generation still running on the server (it goes on if the teacher leaves the page). */
+export interface PendingGenerate {
+  jobId: string;
+  startedAt: number;
+  /** What the screen needs to show the result when the teacher comes back. */
+  context: Record<string, unknown>;
+}
+
 export interface AiStore {
-  aiGenerateQuestions(input: GenerateInput): Promise<{ questions: DraftQuestion[]; rejected: { text: string; reason: string }[] }>;
+  /** `context` is kept with the running job so the screen can pick it up again after leaving. */
+  aiGenerateQuestions(input: GenerateInput, context?: Record<string, unknown>): Promise<GenerateResult>;
+  /** The exam generation this teacher started and has not seen yet, if any. */
+  aiPendingGenerate(): PendingGenerate | null;
+  aiWaitGenerate(jobId: string): Promise<GenerateResult>;
+  aiClearPendingGenerate(): void;
   aiExtractExam(subjectId: string, pages: PaperPage[]): Promise<{ questions: DraftQuestion[]; readable: boolean }>;
   aiSuggestRubric(input: { subjectId: string; lessonId: string | null; text: string; maxScore: number }): Promise<{ modelAnswer: string; criteria: { description: string; points: number }[] }>;
   aiStudyPlan(subjectId: string, lessons: { id: string; mastery: number | null }[], days: number): Promise<StudyPlan>;
@@ -74,6 +89,29 @@ export interface AiStore {
 }
 
 class AiError extends Error {}
+
+const PENDING_KEY = 'daqa.aiGenerate';
+// The server stops any job after a few minutes; past this the job is treated as failed.
+const JOB_LIMIT_MS = 6 * 60 * 1000;
+
+function readPending(orgId: string): PendingGenerate | null {
+  try {
+    const raw = localStorage.getItem(`${PENDING_KEY}.${orgId}`);
+    const p = raw ? (JSON.parse(raw) as PendingGenerate) : null;
+    return p && typeof p.jobId === 'string' && Date.now() - p.startedAt < 24 * 3600 * 1000 ? p : null;
+  } catch {
+    return null;
+  }
+}
+function writePending(orgId: string, p: PendingGenerate | null) {
+  try {
+    if (p) localStorage.setItem(`${PENDING_KEY}.${orgId}`, JSON.stringify(p));
+    else localStorage.removeItem(`${PENDING_KEY}.${orgId}`);
+  } catch {
+    // private mode: the job still runs, only resuming after leaving is lost
+  }
+}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function createSupabaseAi(db: SupabaseClient, orgId: string): AiStore {
   const call = async <T,>(task: string, input: Record<string, unknown>): Promise<T> => {
@@ -96,8 +134,37 @@ export function createSupabaseAi(db: SupabaseClient, orgId: string): AiStore {
     throw new AiError(/[؀-ۿ]/.test(msg) ? msg : fallback);
   };
 
+  const waitJob = async (jobId: string, startedAt: number): Promise<GenerateResult> => {
+    let misses = 0;
+    for (;;) {
+      const { data, error } = await db.from('ai_jobs').select('status, result, error, created_at').eq('id', jobId).maybeSingle();
+      if (error) {
+        // A short network drop (phone): keep trying for a while.
+        if (++misses > 20) throw new AiError('انقطع الاتصال. افتح الصفحة مرة أخرى لترى الأسئلة عندما يعود الإنترنت.');
+      } else {
+        misses = 0;
+        if (!data) throw new AiError('لم نجد طلب التوليد. جرّب مرة أخرى.');
+        const row = data as { status: string; result: GenerateResult | null; error: string | null; created_at: string };
+        if (row.status === 'done' && row.result) return row.result;
+        if (row.status === 'failed') throw new AiError(row.error || 'تعذّر توليد الأسئلة. جرّب مرة أخرى.');
+        const began = Date.parse(row.created_at) || startedAt;
+        if (Date.now() - began > JOB_LIMIT_MS) throw new AiError('استغرق التوليد وقتاً أطول من اللازم. جرّب عدد أسئلة أقل أو دروساً أقل.');
+      }
+      await sleep(3000);
+    }
+  };
+
   return {
-    aiGenerateQuestions: (input) => call('generate_questions', { ...input }),
+    async aiGenerateQuestions(input, context = {}) {
+      const r = await call<GenerateResult | { jobId: string }>('generate_questions', { ...input, background: true });
+      if (!('jobId' in r)) return r; // older server: answered directly
+      const pending = { jobId: r.jobId, startedAt: Date.now(), context };
+      if (Object.keys(context).length) writePending(orgId, pending);
+      return waitJob(r.jobId, pending.startedAt);
+    },
+    aiPendingGenerate: () => readPending(orgId),
+    aiWaitGenerate: (jobId) => waitJob(jobId, readPending(orgId)?.startedAt ?? Date.now()),
+    aiClearPendingGenerate: () => writePending(orgId, null),
     aiExtractExam: (subjectId, pages) =>
       call('extract_exam', { subjectId, pages: pages.map((p) => ({ data: p.base64, mediaType: p.mediaType })) }),
     aiSuggestRubric: (input) => call('suggest_rubric', { ...input }),
@@ -250,6 +317,9 @@ export function createDemoAi(): AiStore {
   const bank: BankQuestion[] = [];
   let seq = 0;
   return {
+    aiPendingGenerate: () => null,
+    aiWaitGenerate: () => Promise.reject(new AiError('لا يوجد توليد قيد التشغيل.')),
+    aiClearPendingGenerate: () => undefined,
     async aiGenerateQuestions(input) {
       const chosen = lessons.filter((l) => input.lessonIds.includes(l.id));
       const list = chosen.length ? chosen : lessons.slice(0, 1);
