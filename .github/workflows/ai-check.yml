@@ -82,9 +82,24 @@ jobs:
         run: |
           set -euo pipefail
           db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
+          echo "Demo tutor's organizations:"
+          db "select o.id || ' | ' || o.name || ' | ' || m.role || ' | ' || m.status from public.memberships m join public.organizations o on o.id = m.organization_id where m.user_id = '$DEMO_UID'"
+          org=$(db "select m.organization_id from public.memberships m where m.user_id = '$DEMO_UID' and m.status = 'active' order by (m.organization_id = '$ORG') desc limit 1")
+          [ -n "$org" ] || { echo "::error::demo tutor has no active organization"; exit 1; }
+          echo "ORG=$org" >> "$GITHUB_ENV"
           row=$(db "select g.id || ' ' || g.subject_id || ' ' || coalesce((select gs.student_id::text from public.group_students gs where gs.group_id = g.id limit 1), '-')
-                    from public.groups g where g.organization_id = '$ORG' and g.subject_id is not null order by g.created_at limit 1")
-          [ -n "$row" ] || { echo "::error::no class in the demo org"; exit 1; }
+                    from public.groups g where g.organization_id = '$org' and g.subject_id is not null and g.archived_at is null order by g.created_at limit 1")
+          if [ -z "$row" ]; then
+            # No class there: make a temporary one (grade 10 maths), removed at the end.
+            subj=$(db "select s.id from public.subjects s join public.grades gr on gr.id = s.grade_id
+                       where s.name = 'الرياضيات' and gr.name like '%العاشر%' and s.status = 'published' limit 1" 2>/dev/null \
+                   || db "select s.id from public.subjects s join public.grades gr on gr.id = s.grade_id where s.name = 'الرياضيات' and gr.name like '%العاشر%' limit 1")
+            grp=$(db "insert into public.groups (organization_id, name, grade_id, subject_id, created_by)
+                      select '$org', 'فحص الذكاء الاصطناعي (يُحذف)', s.grade_id, s.id, '$DEMO_UID' from public.subjects s where s.id = '$subj' returning id")
+            echo "TEMP_GRP=$grp" >> "$GITHUB_ENV"
+            row="$grp $subj -"
+            echo "Made a temporary class."
+          fi
           read -r grp subj stu <<<"$row"
           lesson=$(db "select l.id from public.lessons l join public.units u on u.id = l.unit_id where u.subject_id = '$subj' and coalesce(l.content,'') <> '' order by u.sort_order, l.sort_order limit 1")
           echo "group=$grp subject=$subj student=$stu lesson=$lesson"
@@ -158,4 +173,5 @@ jobs:
               -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" || true
           fi
           [ -n "${ASM:-}" ] && db "delete from public.assessments where id = '$ASM'" || true
+          [ -n "${TEMP_GRP:-}" ] && db "delete from public.groups where id = '$TEMP_GRP'" || true
           echo "== Summary =="; cat /tmp/summary.txt 2>/dev/null || true
