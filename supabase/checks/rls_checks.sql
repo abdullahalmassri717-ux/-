@@ -224,6 +224,7 @@ insert into public.bank_questions (organization_id, text) values (tests.org('ind
 select tests.eq((select count(*) from public.bank_questions), 1::bigint, 'البنك: المدرّس يرى سؤاله');
 select tests.throws($$insert into public.bank_questions (organization_id, text) values (tests.org('learning_center'), 'x')$$, 'البنك: لا يضيف لجهة ليس عضواً فيها');
 select tests.throws($$insert into public.ai_tool_runs (organization_id, task, model) values (tests.org('individual_teacher'), 'x', 'y')$$, 'سجل الأدوات: لا يكتبه المتصفح');
+select tests.throws($$insert into public.ai_jobs (organization_id, user_id, task) values (tests.org('individual_teacher'), auth.uid(), 'x')$$, 'طلبات التوليد: لا يكتبها المتصفح');
 select tests.login('+970590000011');
 select tests.eq((select count(*) from public.bank_questions), 0::bigint, 'البنك: معلم جهة أخرى لا يرى أسئلة غيره');
 rollback;

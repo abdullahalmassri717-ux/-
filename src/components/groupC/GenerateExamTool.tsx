@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ScreenId } from '../../types';
 import {
   Sparkles,
@@ -14,7 +14,7 @@ import {
   FilePlus2,
 } from 'lucide-react';
 import { useData, useLoad, errorMessage } from '../../data/DataContext';
-import type { BankQuestion, DraftQuestion } from '../../data/ai';
+import type { BankQuestion, DraftQuestion, GenerateResult } from '../../data/ai';
 import { setExamDraft } from '../../data/examDraft';
 import type { ExamScope } from '../../data/examScope';
 import type { TaughtLessons } from '../../data/types';
@@ -73,9 +73,11 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
   const [showAllLessons, setShowAllLessons] = useState(false);
   const [selectedLessons, setSelectedLessons] = useState<string[]>(preselectedLessonIds ?? []);
 
+  // Set when the screen picks up a generation started before the teacher left it.
+  const resumed = useRef(false);
   // Default: the most recently taught lessons of this group.
   useEffect(() => {
-    if (preselectedLessonIds?.length || !taughtQ.data) return;
+    if (resumed.current || preselectedLessonIds?.length || !taughtQ.data) return;
     const recent = Object.entries(taughtQ.data)
       .sort((a, b) => b[1].localeCompare(a[1]))
       .map(([id]) => id)
@@ -95,6 +97,48 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
   const [isGenerating, setIsGenerating] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
   const [rejected, setRejected] = useState<{ text: string; reason: string }[]>([]);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const showGenerated = (r: GenerateResult, fromBank: Item[], keep: Item[], total: number) => {
+    const generated = r.questions.map((q, i) => ({ ...q, key: `g_${Date.now()}_${i}`, origin: 'ai' as const, sourceLabel: 'توليد جديد' }));
+    setRejected(r.rejected);
+    setItems(fitToTotal([...fromBank, ...generated, ...keep], total));
+    if (!fromBank.length && !generated.length) notify('لم تُنتج أسئلة. جرّب دروساً أخرى أو عدداً أقل.', 'warning');
+  };
+
+  // A generation keeps running on the server if the teacher leaves this page.
+  // Coming back picks it up and shows its questions.
+  useEffect(() => {
+    const pending = store.aiPendingGenerate();
+    const ctx = pending?.context as { screen?: string; groupId?: string; examTotal?: string; lessons?: string[]; difficulty?: 'easy' | 'medium' | 'hard'; bank?: Item[]; keep?: Item[] } | undefined;
+    if (!pending || ctx?.screen !== 'generate_exam') return;
+    if (scope && ctx.groupId && scope.groupId !== ctx.groupId) return;
+    resumed.current = true;
+    if (ctx.groupId) setGroupId(ctx.groupId);
+    if (ctx.examTotal) setExamTotal(ctx.examTotal);
+    if (ctx.lessons?.length) setSelectedLessons(ctx.lessons);
+    if (ctx.difficulty) setDifficulty(ctx.difficulty);
+    setIsGenerating(true);
+    store
+      .aiWaitGenerate(pending.jobId)
+      .then((r) => {
+        if (!mounted.current) return;
+        store.aiClearPendingGenerate();
+        showGenerated(r, ctx.bank ?? [], ctx.keep ?? [], Math.round(Number(ctx.examTotal) * 2) / 2);
+      })
+      .catch((e) => {
+        store.aiClearPendingGenerate();
+        if (mounted.current) notify(errorMessage(e));
+      })
+      .finally(() => mounted.current && setIsGenerating(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const hasUntaughtSelected = selectedLessons.some((id) => !taught[id]);
   const visibleLessons = scope
@@ -149,9 +193,12 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
           .map((q) => ({ ...q, key: `b_${q.id}`, origin: 'bank' as const, sourceLabel: `${SOURCE_LABEL[q.source]}${q.sourceNote ? ` (${q.sourceNote})` : ''}`, saved: true }));
       }
       const remaining = qCount - fromBank.length;
-      let generated: Item[] = [];
-      if (remaining > 0) {
-        const r = await store.aiGenerateQuestions({
+      if (remaining <= 0) {
+        showGenerated({ questions: [], rejected: [] }, fromBank, items, totalMark);
+        return;
+      }
+      const r = await store.aiGenerateQuestions(
+        {
           subjectId,
           groupId: group.id,
           lessonIds: selectedLessons,
@@ -162,16 +209,21 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
           avoid: [...existing, ...fromBank.map((q) => q.text)],
           // Their share of the exam mark; the whole list is fitted to the exact total below.
           totalScore: Math.max(remaining / 2, Math.round(((totalMark * remaining) / (items.length + qCount)) * 2) / 2),
-        });
-        generated = r.questions.map((q, i) => ({ ...q, key: `g_${Date.now()}_${i}`, origin: 'ai' as const, sourceLabel: 'توليد جديد' }));
-        setRejected(r.rejected);
+        },
+        { screen: 'generate_exam', groupId: group.id, examTotal, lessons: selectedLessons, difficulty, bank: fromBank, keep: items },
+      );
+      if (!mounted.current) {
+        // The teacher left: keep the result for when they come back.
+        notify('جهزت أسئلة الامتحان. افتح «توليد امتحان بالذكاء الاصطناعي» لتراها.', 'success');
+        return;
       }
-      setItems((prev) => fitToTotal([...fromBank, ...generated, ...prev], totalMark));
-      if (!fromBank.length && !generated.length) notify('لم تُنتج أسئلة. جرّب دروساً أخرى أو عدداً أقل.', 'warning');
+      store.aiClearPendingGenerate();
+      showGenerated(r, fromBank, items, totalMark);
     } catch (e) {
+      store.aiClearPendingGenerate();
       notify(errorMessage(e));
     } finally {
-      setIsGenerating(false);
+      if (mounted.current) setIsGenerating(false);
     }
   };
 

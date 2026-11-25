@@ -9,9 +9,21 @@ name: AI check
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'full = try every tool; diag = only print recent AI runs and errors; gen = time a big exam generation'
+        required: false
+        default: full
+      prepare_run_id:
+        description: 'logs only: run id of the logs-prepare run'
+        required: false
+      ciphertext:
+        description: 'logs only: Supabase access token encrypted with the logs-prepare public key (base64, RSA-OAEP-SHA256)'
+        required: false
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: ai-check
@@ -30,7 +42,54 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # logs-prepare / logs: read the server function logs with a Supabase token
+      # that is not in the secrets, sent encrypted (same idea as Deploy Supabase).
+      - name: Make key pair (logs-prepare)
+        if: inputs.mode == 'logs-prepare'
+        run: |
+          mkdir -p ~/logkey && cd ~/logkey
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out priv.pem 2>/dev/null
+          openssl pkey -in priv.pem -pubout -out pub.pem
+          echo "PUBLIC KEY (safe to share):"; cat pub.pem
+      - name: Keep private half (logs-prepare)
+        if: inputs.mode == 'logs-prepare'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/logkey/priv.pem
+          key: ai-logkey-${{ github.run_id }}
+      - name: Restore private half (logs)
+        if: inputs.mode == 'logs'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/logkey/priv.pem
+          key: ai-logkey-${{ inputs.prepare_run_id }}
+          fail-on-cache-miss: true
+      - name: Read function logs, last 2 hours (logs)
+        if: inputs.mode == 'logs'
+        env:
+          CIPHERTEXT: ${{ inputs.ciphertext }}
+        run: |
+          set -euo pipefail
+          tok=$(printf %s "$CIPHERTEXT" | base64 -d | openssl pkeyutl -decrypt -inkey ~/logkey/priv.pem -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256)
+          echo "::add-mask::$tok"; rm -f ~/logkey/priv.pem
+          start=$(date -u -d '-2 hours' +%Y-%m-%dT%H:%M:%SZ); end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          q() {
+            curl -sS -G "https://api.supabase.com/v1/projects/$PROJECT_REF/analytics/endpoints/logs.all" \
+              -H "Authorization: Bearer $tok" --data-urlencode "sql=$1" \
+              --data-urlencode "iso_timestamp_start=$start" --data-urlencode "iso_timestamp_end=$end"
+          }
+          run_q() { echo "== $1 =="; q "$2" > /tmp/l.json; jq -r '.result[]? | [.[]] | map(tostring) | join("  ") | .[0:500]' /tmp/l.json || true; jq -c '.error // empty' /tmp/l.json 2>/dev/null | head -c 600 || head -c 600 /tmp/l.json; echo; }
+          run_q "Edge calls (status, time)" "select datetime(timestamp) as t, event_message from function_edge_logs order by timestamp desc limit 80"
+          run_q "Edge calls detail" "select datetime(timestamp) as t, response.status_code, m.execution_time_ms, request.url from function_edge_logs cross join unnest(metadata) as m cross join unnest(m.response) as response cross join unnest(m.request) as request order by timestamp desc limit 60"
+          run_q "Function messages" "select datetime(timestamp) as t, event_message from function_logs order by timestamp desc limit 80"
+      - name: Delete private half (logs)
+        if: always() && inputs.mode == 'logs' && inputs.prepare_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh cache delete "ai-logkey-${{ inputs.prepare_run_id }}" --repo "$GITHUB_REPOSITORY" || true
+
       - name: Find the database address
+        if: inputs.mode != 'logs' && inputs.mode != 'logs-prepare'
         run: |
           for region in eu-central-1 eu-central-2 eu-west-1 eu-west-2 eu-west-3 eu-north-1 us-east-1 us-east-2 us-west-1 us-west-2 \
                         ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2 ca-central-1 sa-east-1 me-central-1; do
@@ -44,7 +103,13 @@ jobs:
           echo "::error::Could not connect to the database."; exit 1
 
       - name: Recent AI usage and errors (before the test)
+        if: inputs.mode != 'logs' && inputs.mode != 'logs-prepare'
         run: |
+          db0() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -c "$1"; }
+          echo "== AI tool runs, last 3 hours (all) =="
+          db0 "select r.created_at, r.task, r.ok, r.model, r.input_tokens, r.output_tokens, o.name as org from public.ai_tool_runs r left join public.organizations o on o.id = r.organization_id where r.created_at > now() - interval '3 hours' order by r.created_at desc limit 40"
+          echo "== All errors, last 3 hours =="
+          db0 "select created_at, source, left(message, 200) as message, left(coalesce(detail,''), 400) as detail, page from public.app_errors where created_at > now() - interval '3 hours' order by created_at desc limit 30"
           db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -c "$1"; }
           echo "== AI tool runs, last 30 days =="
           db "select task, ok, count(*), max(created_at) as last, round(sum(cost_usd)::numeric,4) as usd from public.ai_tool_runs where created_at > now() - interval '30 days' group by 1,2 order by 1,2"
@@ -58,6 +123,7 @@ jobs:
           db "select created_at, left(message, 160) as message, left(coalesce(detail,''), 200) as detail from public.app_errors where source = 'function' order by created_at desc limit 15"
 
       - name: Sign in as demo tutor 0599990001
+        if: inputs.mode != 'diag' && !startsWith(inputs.mode, 'logs')
         run: |
           set -euo pipefail
           curl -fsS "$SITE/" -o /tmp/index.html
@@ -77,6 +143,7 @@ jobs:
           { echo "ANON=$anon"; echo "USER_TOKEN=$tok"; echo "DEMO_UID=$uid"; } >> "$GITHUB_ENV"
 
       - name: Pick a class, subject, lesson and student in the demo org
+        if: inputs.mode != 'diag' && !startsWith(inputs.mode, 'logs')
         run: |
           set -euo pipefail
           db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
@@ -103,7 +170,39 @@ jobs:
           echo "group=$grp subject=$subj student=$stu lesson=$lesson"
           { echo "GRP=$grp"; echo "SUBJ=$subj"; echo "STU=$stu"; echo "LESSON=$lesson"; } >> "$GITHUB_ENV"
 
+      - name: Time a big exam generation (10 questions, 10 lessons)
+        if: inputs.mode == 'gen'
+        run: |
+          db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
+          lessons=$(db "select coalesce(json_agg(id), '[]') from (select l.id from public.lessons l join public.units u on u.id = l.unit_id where u.subject_id = '$SUBJ' order by u.sort_order, l.sort_order limit 10) x")
+          echo "### 20 questions as a background job (as the exam screen does it)"
+          t0=$(date +%s)
+          curl -sS -o /tmp/j.json -X POST "$SUPA/functions/v1/ai-tools" \
+            -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" -H 'content-type: application/json' \
+            --data "{\"task\":\"generate_questions\",\"background\":true,\"organizationId\":\"$ORG\",\"subjectId\":\"$SUBJ\",\"groupId\":\"$GRP\",\"lessonIds\":$lessons,\"count\":20,\"difficulty\":\"medium\",\"purpose\":\"exam\",\"totalScore\":40}"
+          cat /tmp/j.json; echo
+          job=$(jq -r '.jobId // empty' /tmp/j.json)
+          if [ -n "$job" ]; then
+            for i in $(seq 1 80); do
+              st=$(curl -sS "$SUPA/rest/v1/ai_jobs?id=eq.$job&select=status,error" -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" | jq -r '.[0].status')
+              [ "$st" != running ] && break; sleep 3
+            done
+            echo "job $st after $(( $(date +%s) - t0 ))s"
+            curl -sS "$SUPA/rest/v1/ai_jobs?id=eq.$job&select=status,error,result" -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" \
+              | jq -r '.[0] | "status \(.status) error \(.error) questions \(.result.questions | length // 0) total \([.result.questions[]?.maxScore] | add) rejected \(.result.rejected | length // 0)"'
+          fi
+          echo
+          for n in 10; do
+            t0=$(date +%s)
+            code=$(curl -sS -o /tmp/r.json -w '%{http_code}' --max-time 400 -X POST "$SUPA/functions/v1/ai-tools" \
+              -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" -H 'content-type: application/json' \
+              --data "{\"task\":\"generate_questions\",\"organizationId\":\"$ORG\",\"subjectId\":\"$SUBJ\",\"groupId\":\"$GRP\",\"lessonIds\":$lessons,\"count\":$n,\"difficulty\":\"medium\",\"purpose\":\"exam\",\"totalScore\":20}")
+            echo "### $n questions: HTTP $code in $(( $(date +%s) - t0 ))s"; head -c 400 /tmp/r.json; echo; echo
+          done
+          db "select created_at, ok, model, input_tokens, output_tokens from public.ai_tool_runs where task = 'generate_questions' order by created_at desc limit 8"
+
       - name: Try every AI tool
+        if: inputs.mode == 'full'
         run: |
           img=$(base64 -w0 scripts/ai-check/paper.png)
           call() {
@@ -125,6 +224,7 @@ jobs:
           call assistant "{\"task\":\"assistant\",\"organizationId\":\"$ORG\",\"turns\":[{\"role\":\"user\",\"text\":\"كيف أنشئ امتحاناً جديداً؟\"}]}"
 
       - name: Grade one made-up paper
+        if: inputs.mode == 'full'
         run: |
           set -uo pipefail
           db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
@@ -163,7 +263,7 @@ jobs:
             "select status, model, escalated, cost_usd, left(coalesce(error,''), 300) as error from public.grading_runs where submission_id = '$sub'"
 
       - name: Remove the test exam
-        if: always()
+        if: always() && inputs.mode != 'diag' && !startsWith(inputs.mode, 'logs')
         run: |
           db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
           if [ -n "${PAGE_PATH:-}" ]; then

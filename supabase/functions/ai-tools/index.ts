@@ -3,7 +3,7 @@
 // reaches the browser. Lessons are read with the teacher's own permissions,
 // so only published curriculum can be used.
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { adminClient, corsHeaders, env, json, logFunctionError, userClient } from '../_shared/http.ts';
+import { adminClient, corsHeaders, env, json, logFunctionError, runInBackground, userClient } from '../_shared/http.ts';
 import { ClaudeToolModel, EscalatingToolModel, ToolError, toolConfigFromEnv, type Usage } from '../_shared/aiTools/model.ts';
 import { asNumerals } from '../_shared/numerals.ts';
 import {
@@ -139,7 +139,7 @@ Deno.serve(async (req) => {
           const lessons = await loadLessons(db, ids(body.lessonIds), subjectId);
           if (!lessons.length) return json({ error: 'اختر درساً واحداً على الأقل من المادة.' }, 400);
           const difficulty = (['easy', 'medium', 'hard'] as const).find((d) => d === body.difficulty) ?? 'medium';
-          const result = await generateQuestions(model, config, {
+          const run = () => generateQuestions(model, config, {
             lessons,
             count: Number(body.count) || 5,
             difficulty,
@@ -149,8 +149,37 @@ Deno.serve(async (req) => {
             totalScore: Number(body.totalScore) > 0 ? Math.min(Math.round(Number(body.totalScore) * 2) / 2, 1000) : undefined,
             ...info,
           });
-          await log(result.usage);
-          return json(result.data);
+          if (body.background !== true) {
+            const result = await run();
+            await log(result.usage);
+            return json(result.data);
+          }
+          // Background: answer at once with a job id; the work goes on even if
+          // the teacher leaves the page, and the browser reads public.ai_jobs.
+          await admin.from('ai_jobs').delete().eq('user_id', userId).lt('created_at', new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString());
+          const { data: job, error: jobError } = await admin
+            .from('ai_jobs')
+            .insert({ organization_id: orgId, user_id: userId, task })
+            .select('id')
+            .single();
+          if (jobError || !job) throw new Error(jobError?.message ?? 'ai_jobs insert failed');
+          const finish = (patch: Record<string, unknown>) =>
+            admin.from('ai_jobs').update({ ...patch, finished_at: new Date().toISOString() }).eq('id', job.id);
+          runInBackground(
+            (async () => {
+              try {
+                const result = await run();
+                await log(result.usage);
+                await finish({ status: 'done', result: result.data });
+              } catch (e) {
+                await log(e instanceof ToolError && e.usage ? [e.usage] : [], false);
+                if (!(e instanceof ToolError)) await logFunctionError(admin, `ai-tools/${task}`, e);
+                console.error(task, e);
+                await finish({ status: 'failed', error: e instanceof ToolError ? e.userMessage : 'حدث خطأ غير متوقع أثناء التوليد.' });
+              }
+            })(),
+          );
+          return json({ jobId: job.id });
         }
 
         if (task === 'suggest_rubric') {
