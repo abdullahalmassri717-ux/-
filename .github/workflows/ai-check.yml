@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'full = try every tool; diag = only print recent AI runs and errors'
+        description: 'full = try every tool; diag = only print recent AI runs and errors; gen = time a big exam generation'
         required: false
         default: full
 
@@ -115,8 +115,22 @@ jobs:
           echo "group=$grp subject=$subj student=$stu lesson=$lesson"
           { echo "GRP=$grp"; echo "SUBJ=$subj"; echo "STU=$stu"; echo "LESSON=$lesson"; } >> "$GITHUB_ENV"
 
+      - name: Time a big exam generation (10 questions, 10 lessons)
+        if: inputs.mode == 'gen'
+        run: |
+          db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
+          lessons=$(db "select coalesce(json_agg(id), '[]') from (select l.id from public.lessons l join public.units u on u.id = l.unit_id where u.subject_id = '$SUBJ' order by u.sort_order, l.sort_order limit 10) x")
+          for n in 5 10; do
+            t0=$(date +%s)
+            code=$(curl -sS -o /tmp/r.json -w '%{http_code}' --max-time 400 -X POST "$SUPA/functions/v1/ai-tools" \
+              -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" -H 'content-type: application/json' \
+              --data "{\"task\":\"generate_questions\",\"organizationId\":\"$ORG\",\"subjectId\":\"$SUBJ\",\"groupId\":\"$GRP\",\"lessonIds\":$lessons,\"count\":$n,\"difficulty\":\"medium\",\"purpose\":\"exam\",\"totalScore\":20}")
+            echo "### $n questions: HTTP $code in $(( $(date +%s) - t0 ))s"; head -c 400 /tmp/r.json; echo; echo
+          done
+          db "select created_at, ok, model, input_tokens, output_tokens from public.ai_tool_runs where task = 'generate_questions' order by created_at desc limit 8"
+
       - name: Try every AI tool
-        if: inputs.mode != 'diag'
+        if: inputs.mode != 'diag' && inputs.mode != 'gen'
         run: |
           img=$(base64 -w0 scripts/ai-check/paper.png)
           call() {
@@ -138,7 +152,7 @@ jobs:
           call assistant "{\"task\":\"assistant\",\"organizationId\":\"$ORG\",\"turns\":[{\"role\":\"user\",\"text\":\"كيف أنشئ امتحاناً جديداً؟\"}]}"
 
       - name: Grade one made-up paper
-        if: inputs.mode != 'diag'
+        if: inputs.mode != 'diag' && inputs.mode != 'gen'
         run: |
           set -uo pipefail
           db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
