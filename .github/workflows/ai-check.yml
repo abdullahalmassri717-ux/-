@@ -78,12 +78,10 @@ jobs:
               -H "Authorization: Bearer $tok" --data-urlencode "sql=$1" \
               --data-urlencode "iso_timestamp_start=$start" --data-urlencode "iso_timestamp_end=$end"
           }
-          echo "== Calls to ai-tools =="
-          q "select datetime(timestamp) as t, response.status_code as status, m.execution_time_ms as ms, request.method as method from function_edge_logs cross join unnest(metadata) as m cross join unnest(m.response) as response cross join unnest(m.request) as request where request.pathname like '%ai-tools%' order by timestamp desc limit 60" \
-            | jq -r '.result[]? | "\(.t)  \(.method)  status \(.status)  \(.ms) ms"' || true
-          echo "== Messages printed by the functions =="
-          q "select datetime(timestamp) as t, event_message as msg, m.level as level from function_logs cross join unnest(metadata) as m order by timestamp desc limit 60" \
-            | jq -r '.result[]? | "\(.t) [\(.level)] \(.msg | .[0:400])"' || true
+          run_q() { echo "== $1 =="; q "$2" > /tmp/l.json; jq -r '.result[]? | [.[]] | map(tostring) | join("  ") | .[0:500]' /tmp/l.json || true; jq -c '.error // empty' /tmp/l.json 2>/dev/null | head -c 600 || head -c 600 /tmp/l.json; echo; }
+          run_q "Edge calls (status, time)" "select datetime(timestamp) as t, event_message from function_edge_logs order by timestamp desc limit 80"
+          run_q "Edge calls detail" "select datetime(timestamp) as t, response.status_code, m.execution_time_ms, request.url from function_edge_logs cross join unnest(metadata) as m cross join unnest(m.response) as response cross join unnest(m.request) as request order by timestamp desc limit 60"
+          run_q "Function messages" "select datetime(timestamp) as t, event_message from function_logs order by timestamp desc limit 80"
       - name: Delete private half (logs)
         if: always() && inputs.mode == 'logs' && inputs.prepare_run_id != ''
         env:
