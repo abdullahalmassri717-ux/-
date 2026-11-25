@@ -1,0 +1,175 @@
+# Checks that every AI tool on the live site answers, using demo account
+# 0599990001 (private tutor, grade 10 maths; a Supabase test number, so no SMS).
+# Also grades ONE made-up paper (scripts/ai-check/paper.png) in that demo org,
+# then deletes the test exam again. Prints recent AI usage and errors.
+# Run by hand from the Actions tab. Note: the test exam is made in the demo
+# tutor's org; if 0599990001 has joined a real school, it is made there for a
+# minute and then deleted (no report is sent: it stays «needs review»).
+name: AI check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PROJECT_REF: roeweplhofhjtcnbfmvo
+      SITE: https://dequa.study
+      SUPA: https://roeweplhofhjtcnbfmvo.supabase.co
+      ORG: de300000-0000-4000-8000-000000000001
+      PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find the database address
+        run: |
+          for region in eu-central-1 eu-central-2 eu-west-1 eu-west-2 eu-west-3 eu-north-1 us-east-1 us-east-2 us-west-1 us-west-2 \
+                        ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2 ca-central-1 sa-east-1 me-central-1; do
+            for n in 0 1; do
+              host="aws-$n-$region.pooler.supabase.com"
+              if docker run --rm -e PGPASSWORD postgres:17 psql "host=$host port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require connect_timeout=8" -Atc 'select 1' >/dev/null 2>&1; then
+                echo "DB_HOST=$host" >> "$GITHUB_ENV"; echo "Found the database."; exit 0
+              fi
+            done
+          done
+          echo "::error::Could not connect to the database."; exit 1
+
+      - name: Recent AI usage and errors (before the test)
+        run: |
+          db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -c "$1"; }
+          echo "== AI tool runs, last 30 days =="
+          db "select task, ok, count(*), max(created_at) as last, round(sum(cost_usd)::numeric,4) as usd from public.ai_tool_runs where created_at > now() - interval '30 days' group by 1,2 order by 1,2"
+          echo "== Grading runs, last 30 days =="
+          db "select status, model, count(*), max(started_at) as last, round(sum(cost_usd)::numeric,4) as usd from public.grading_runs where started_at > now() - interval '30 days' group by 1,2 order by 1,2"
+          echo "== Last 10 grading errors =="
+          db "select started_at, left(error, 200) as error from public.grading_runs where error is not null order by started_at desc limit 10"
+          echo "== Papers by status =="
+          db "select status, count(*) from public.submissions group by 1 order by 1"
+          echo "== Last 15 server errors =="
+          db "select created_at, left(message, 160) as message, left(coalesce(detail,''), 200) as detail from public.app_errors where source = 'function' order by created_at desc limit 15"
+
+      - name: Sign in as demo tutor 0599990001
+        run: |
+          set -euo pipefail
+          curl -fsS "$SITE/" -o /tmp/index.html
+          anon=""
+          for f in $(grep -oE '/assets/[^"]+\.js' /tmp/index.html | sort -u); do
+            anon=$(curl -fsS "$SITE$f" | grep -oE 'sb_publishable_[A-Za-z0-9_-]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}' | head -1 || true)
+            [ -n "$anon" ] && break
+          done
+          [ -n "$anon" ] || { echo "::error::public key not found"; exit 1; }
+          curl -sS -o /dev/null -w 'otp HTTP %{http_code}\n' -X POST "$SUPA/auth/v1/otp" -H "apikey: $anon" \
+            -H 'content-type: application/json' --data '{"phone":"+970599990001"}'
+          code=$(curl -sS -o /tmp/v.json -w '%{http_code}' -X POST "$SUPA/auth/v1/verify" -H "apikey: $anon" \
+            -H 'content-type: application/json' --data '{"phone":"+970599990001","token":"123456","type":"sms"}')
+          echo "verify HTTP $code"; [ "$code" = 200 ] || { head -c 300 /tmp/v.json; exit 1; }
+          tok=$(jq -r .access_token /tmp/v.json); uid=$(jq -r .user.id /tmp/v.json); rm -f /tmp/v.json
+          echo "::add-mask::$tok"
+          { echo "ANON=$anon"; echo "USER_TOKEN=$tok"; echo "DEMO_UID=$uid"; } >> "$GITHUB_ENV"
+
+      - name: Pick a class, subject, lesson and student in the demo org
+        run: |
+          set -euo pipefail
+          db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
+          echo "Demo tutor's organizations:"
+          db "select o.id || ' | ' || o.name || ' | ' || m.role || ' | ' || m.status from public.memberships m join public.organizations o on o.id = m.organization_id where m.user_id = '$DEMO_UID'"
+          org=$(db "select m.organization_id from public.memberships m where m.user_id = '$DEMO_UID' and m.status = 'active' order by (m.organization_id = '$ORG') desc limit 1")
+          [ -n "$org" ] || { echo "::error::demo tutor has no active organization"; exit 1; }
+          echo "ORG=$org" >> "$GITHUB_ENV"
+          row=$(db "select g.id || ' ' || g.subject_id || ' ' || coalesce((select gs.student_id::text from public.group_students gs where gs.group_id = g.id limit 1), '-')
+                    from public.groups g where g.organization_id = '$org' and g.subject_id is not null and g.archived_at is null order by g.created_at limit 1")
+          if [ -z "$row" ]; then
+            # No class there: make a temporary one (grade 10 maths), removed at the end.
+            subj=$(db "select s.id from public.subjects s join public.grades gr on gr.id = s.grade_id
+                       where s.name = 'الرياضيات' and gr.name like '%العاشر%' and s.status = 'published' limit 1" 2>/dev/null \
+                   || db "select s.id from public.subjects s join public.grades gr on gr.id = s.grade_id where s.name = 'الرياضيات' and gr.name like '%العاشر%' limit 1")
+            grp=$(db "insert into public.groups (organization_id, name, grade_id, subject_id, created_by)
+                      select '$org', 'فحص الذكاء الاصطناعي (يُحذف)', s.grade_id, s.id, '$DEMO_UID' from public.subjects s where s.id = '$subj' returning id")
+            echo "TEMP_GRP=$grp" >> "$GITHUB_ENV"
+            row="$grp $subj -"
+            echo "Made a temporary class."
+          fi
+          read -r grp subj stu <<<"$row"
+          lesson=$(db "select l.id from public.lessons l join public.units u on u.id = l.unit_id where u.subject_id = '$subj' and coalesce(l.content,'') <> '' order by u.sort_order, l.sort_order limit 1")
+          echo "group=$grp subject=$subj student=$stu lesson=$lesson"
+          { echo "GRP=$grp"; echo "SUBJ=$subj"; echo "STU=$stu"; echo "LESSON=$lesson"; } >> "$GITHUB_ENV"
+
+      - name: Try every AI tool
+        run: |
+          img=$(base64 -w0 scripts/ai-check/paper.png)
+          call() {
+            local name="$1" body="$2"
+            local t0=$(date +%s)
+            code=$(curl -sS -o /tmp/r.json -w '%{http_code}' --max-time 150 -X POST "$SUPA/functions/v1/ai-tools" \
+              -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" -H 'content-type: application/json' --data @- <<<"$body")
+            echo "### $name: HTTP $code in $(( $(date +%s) - t0 ))s"
+            head -c 700 /tmp/r.json; echo; echo
+            [ "$code" = 200 ] && echo "$name OK" >> /tmp/summary.txt || echo "$name FAILED ($code)" >> /tmp/summary.txt
+          }
+          base="\"organizationId\":\"$ORG\",\"subjectId\":\"$SUBJ\""
+          call generate_questions "{\"task\":\"generate_questions\",$base,\"groupId\":\"$GRP\",\"lessonIds\":[\"$LESSON\"],\"count\":2,\"difficulty\":\"easy\"}"
+          call suggest_rubric "{\"task\":\"suggest_rubric\",$base,\"text\":\"حل المعادلة 2س = 10\",\"maxScore\":3,\"lessonId\":\"$LESSON\"}"
+          call study_plan "{\"task\":\"study_plan\",$base,\"lessons\":[{\"id\":\"$LESSON\",\"mastery\":40}],\"days\":3}"
+          call extract_exam "{\"task\":\"extract_exam\",$base,\"pages\":[{\"data\":\"$img\",\"mediaType\":\"image/png\"}]}"
+          call parent_reply "{\"task\":\"parent_reply\",\"organizationId\":\"$ORG\",\"message\":\"السلام عليكم، كيف مستوى ابني في الرياضيات؟\",\"studentFirstName\":\"أحمد\",\"facts\":[\"آخر امتحان 8 من 10\"]}"
+          call map_student_columns "{\"task\":\"map_student_columns\",\"organizationId\":\"$ORG\",\"rows\":[[\"الاسم\",\"رقم ولي الأمر\",\"الصف\"],[\"***\",\"***\",\"العاشر\"]]}"
+          call assistant "{\"task\":\"assistant\",\"organizationId\":\"$ORG\",\"turns\":[{\"role\":\"user\",\"text\":\"كيف أنشئ امتحاناً جديداً؟\"}]}"
+
+      - name: Grade one made-up paper
+        run: |
+          set -uo pipefail
+          db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
+          stu=$([ "$STU" = "-" ] && echo null || echo "'$STU'")
+          ids=$(db "with a as (
+                      insert into public.assessments (organization_id, group_id, subject_id, title, kind, status, created_by)
+                      values ('$ORG', '$GRP', '$SUBJ', 'فحص التصحيح الآلي (يُحذف)', 'exam', 'awaiting_papers', '$DEMO_UID') returning id),
+                    q as (
+                      insert into public.questions (assessment_id, number, text, max_score, model_answer)
+                      select a.id, n, t, m, ans from a, (values (1, '7 + 5 = ?', 2, '12'), (2, 'Solve: 2x = 10', 3, 'x = 5'), (3, '9 x 3 = ?', 2, '27')) v(n, t, m, ans)
+                      returning id),
+                    s as (
+                      insert into public.submissions (organization_id, assessment_id, student_id, source, status)
+                      select '$ORG', a.id, $stu, 'teacher_scan', 'uploaded' from a returning id, assessment_id)
+                    select assessment_id || ' ' || id from s" | head -1)
+          read -r asm sub <<<"$ids"
+          echo "ASM=$asm" >> "$GITHUB_ENV"
+          path="$ORG/$asm/$sub/1.png"; echo "PAGE_PATH=$path" >> "$GITHUB_ENV"
+          code=$(curl -sS -o /tmp/up.json -w '%{http_code}' -X POST "$SUPA/storage/v1/object/submission-pages/$path" \
+            -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" -H 'content-type: image/png' -H 'x-upsert: true' \
+            --data-binary @scripts/ai-check/paper.png)
+          echo "upload HTTP $code"; [ "$code" = 200 ] || { head -c 300 /tmp/up.json; exit 1; }
+          db "insert into public.submission_pages (submission_id, organization_id, page_number, storage_path) values ('$sub', '$ORG', 1, '$path')" >/dev/null
+          t0=$(date +%s)
+          code=$(curl -sS -o /tmp/g.json -w '%{http_code}' --max-time 200 -X POST "$SUPA/functions/v1/grade-submission" \
+            -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" -H 'content-type: application/json' --data "{\"submissionId\":\"$sub\"}")
+          echo "### grade-submission: HTTP $code in $(( $(date +%s) - t0 ))s"; cat /tmp/g.json; echo
+          [ "$code" = 200 ] && echo "grading OK" >> /tmp/summary.txt || echo "grading FAILED ($code)" >> /tmp/summary.txt
+          echo "== Grades the AI gave (expected 2, 0, 2) =="
+          docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -c \
+            "select q.number, q.max_score, g.ai_score, g.ai_confidence, g.ai_model, left(coalesce(g.ai_reason, ''), 120) as reason
+             from public.question_grades g join public.questions q on q.id = g.question_id where g.submission_id = '$sub' order by q.number" \
+            || docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -c \
+            "select q.number, q.max_score, g.* from public.question_grades g join public.questions q on q.id = g.question_id where g.submission_id = '$sub' order by q.number"
+          docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -c \
+            "select status, model, escalated, cost_usd, left(coalesce(error,''), 300) as error from public.grading_runs where submission_id = '$sub'"
+
+      - name: Remove the test exam
+        if: always()
+        run: |
+          db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
+          if [ -n "${PAGE_PATH:-}" ]; then
+            curl -sS -o /dev/null -w 'delete page HTTP %{http_code}\n' -X DELETE "$SUPA/storage/v1/object/submission-pages/$PAGE_PATH" \
+              -H "apikey: $ANON" -H "Authorization: Bearer $USER_TOKEN" || true
+          fi
+          [ -n "${ASM:-}" ] && db "delete from public.assessments where id = '$ASM'" || true
+          [ -n "${TEMP_GRP:-}" ] && db "delete from public.groups where id = '$TEMP_GRP'" || true
+          echo "== Summary =="; cat /tmp/summary.txt 2>/dev/null || true

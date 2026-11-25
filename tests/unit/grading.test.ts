@@ -117,3 +117,33 @@ test('student names match loosely (hamza, ta marbuta, diacritics, spaces)', () =
   assert.equal(normalizeName('فاطمة'), normalizeName('فاطمه'));
   assert.equal(normalizeName('مصطفى'), normalizeName('مصطفي'));
 });
+
+test('a question with no rubric keeps the score the AI gave (was always 0)', async () => {
+  const { normalizeQuestions } = await import('../../supabase/functions/_shared/grading/normalize.ts');
+  const e = exam(['short_answer', 'short_answer']).exam;
+  const out = normalizeQuestions(e, {
+    student_code_on_paper: null,
+    student_name_on_paper: null,
+    questions: [
+      { question_number: 1, transcription: '12', criteria: [], score: 5, reason: 'صحيح', feedback_for_student: '', confidence: 'high', unreadable: false },
+      { question_number: 2, transcription: '4', criteria: [], score: 0, reason: 'خطأ', feedback_for_student: '', confidence: 'high', unreadable: false },
+    ],
+  });
+  assert.deepEqual(out.map((q) => q.score), [5, 0]);
+  assert.equal(out[0].confidence, 'high');
+});
+
+test('with a rubric the score is still the sum of the met criteria', async () => {
+  const { normalizeQuestions } = await import('../../supabase/functions/_shared/grading/normalize.ts');
+  const e = exam(['short_answer']).exam;
+  e.questions[0].criteria = [{ description: 'أ', points: 2 }, { description: 'ب', points: 3 }];
+  const [q] = normalizeQuestions(e, {
+    student_code_on_paper: null,
+    student_name_on_paper: null,
+    questions: [{
+      question_number: 1, transcription: '', score: 5, reason: '', feedback_for_student: '', confidence: 'high', unreadable: false,
+      criteria: [{ criterion: 'أ', met: true, points_awarded: 2 }, { criterion: 'ب', met: false, points_awarded: 0 }],
+    }],
+  });
+  assert.equal(q.score, 2);
+});

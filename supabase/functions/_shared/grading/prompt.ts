@@ -51,7 +51,9 @@ export function renderExam(exam: ExamToGrade): string {
     lines.push(`Question: ${q.text}`);
     if (q.lesson) lines.push(`Lesson: ${q.lesson}`);
     lines.push(`Model answer: ${q.modelAnswer}`);
-    lines.push('Rubric:');
+    if (!q.criteria.length) {
+      lines.push('Rubric: none. Compare with the model answer and give a score from 0 to max_score; return an empty criteria list.');
+    } else lines.push('Rubric:');
     q.criteria.forEach((c, i) => lines.push(`  ${i + 1}. (${c.points} points) ${c.description}`));
     lines.push('</question>');
     lines.push('');
