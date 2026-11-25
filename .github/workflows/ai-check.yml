@@ -2,15 +2,13 @@
 # 0599990001 (private tutor, grade 10 maths; a Supabase test number, so no SMS).
 # Also grades ONE made-up paper (scripts/ai-check/paper.png) in that demo org,
 # then deletes the test exam again. Prints recent AI usage and errors.
-# Run by hand from the Actions tab, or by a push to a claude/** branch that
-# changes this file or scripts/ai-check/**.
+# Run by hand from the Actions tab. Note: the test exam is made in the demo
+# tutor's org; if 0599990001 has joined a real school, it is made there for a
+# minute and then deleted (no report is sent: it stays «needs review»).
 name: AI check
 
 on:
   workflow_dispatch:
-  push:
-    branches: ['claude/**']
-    paths: ['.github/workflows/ai-check.yml', 'scripts/ai-check/**']
 
 permissions:
   contents: read
