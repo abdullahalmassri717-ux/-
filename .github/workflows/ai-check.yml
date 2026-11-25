@@ -9,6 +9,11 @@ name: AI check
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'full = try every tool; diag = only print recent AI runs and errors'
+        required: false
+        default: full
 
 permissions:
   contents: read
@@ -45,6 +50,11 @@ jobs:
 
       - name: Recent AI usage and errors (before the test)
         run: |
+          db0() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -c "$1"; }
+          echo "== AI tool runs, last 3 hours (all) =="
+          db0 "select r.created_at, r.task, r.ok, r.model, r.input_tokens, r.output_tokens, o.name as org from public.ai_tool_runs r left join public.organizations o on o.id = r.organization_id where r.created_at > now() - interval '3 hours' order by r.created_at desc limit 40"
+          echo "== All errors, last 3 hours =="
+          db0 "select created_at, source, left(message, 200) as message, left(coalesce(detail,''), 400) as detail, page from public.app_errors where created_at > now() - interval '3 hours' order by created_at desc limit 30"
           db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -c "$1"; }
           echo "== AI tool runs, last 30 days =="
           db "select task, ok, count(*), max(created_at) as last, round(sum(cost_usd)::numeric,4) as usd from public.ai_tool_runs where created_at > now() - interval '30 days' group by 1,2 order by 1,2"
@@ -58,6 +68,7 @@ jobs:
           db "select created_at, left(message, 160) as message, left(coalesce(detail,''), 200) as detail from public.app_errors where source = 'function' order by created_at desc limit 15"
 
       - name: Sign in as demo tutor 0599990001
+        if: inputs.mode != 'diag'
         run: |
           set -euo pipefail
           curl -fsS "$SITE/" -o /tmp/index.html
@@ -77,6 +88,7 @@ jobs:
           { echo "ANON=$anon"; echo "USER_TOKEN=$tok"; echo "DEMO_UID=$uid"; } >> "$GITHUB_ENV"
 
       - name: Pick a class, subject, lesson and student in the demo org
+        if: inputs.mode != 'diag'
         run: |
           set -euo pipefail
           db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
@@ -104,6 +116,7 @@ jobs:
           { echo "GRP=$grp"; echo "SUBJ=$subj"; echo "STU=$stu"; echo "LESSON=$lesson"; } >> "$GITHUB_ENV"
 
       - name: Try every AI tool
+        if: inputs.mode != 'diag'
         run: |
           img=$(base64 -w0 scripts/ai-check/paper.png)
           call() {
@@ -125,6 +138,7 @@ jobs:
           call assistant "{\"task\":\"assistant\",\"organizationId\":\"$ORG\",\"turns\":[{\"role\":\"user\",\"text\":\"كيف أنشئ امتحاناً جديداً؟\"}]}"
 
       - name: Grade one made-up paper
+        if: inputs.mode != 'diag'
         run: |
           set -uo pipefail
           db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
@@ -163,7 +177,7 @@ jobs:
             "select status, model, escalated, cost_usd, left(coalesce(error,''), 300) as error from public.grading_runs where submission_id = '$sub'"
 
       - name: Remove the test exam
-        if: always()
+        if: always() && inputs.mode != 'diag'
         run: |
           db() { docker run --rm -e PGPASSWORD postgres:17 psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" -Atc "$1"; }
           if [ -n "${PAGE_PATH:-}" ]; then
