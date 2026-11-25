@@ -13,7 +13,24 @@ type Tab = 'android' | 'iphone';
 
 export const INSTALL_SECTION_ID = 'install-app';
 
-export function InstallAppSection() {
+const DEFAULT_POINTS = [
+  { id: 'inst_1', status: 'visible' as const, text: 'أيقونة على الشاشة الرئيسية وتفتح مثل أي تطبيق' },
+  { id: 'inst_2', status: 'visible' as const, text: 'مجاني، حجمه صغير، وبدون متجر تطبيقات' },
+  { id: 'inst_3', status: 'visible' as const, text: 'يتحدّث تلقائياً، ولا يحتاج تنزيل نسخ جديدة' },
+];
+
+/** Texts come from the landing page settings (E6); the install steps stay built in. */
+export function InstallAppSection({
+  title = 'نزّل تطبيق دقة',
+  subtitle = 'على الجوال أو الكمبيوتر',
+  points = DEFAULT_POINTS,
+  soonLabel = 'قريباً',
+}: {
+  title?: string;
+  subtitle?: string;
+  points?: { id: string; status: 'visible' | 'soon' | 'hidden'; text: string }[];
+  soonLabel?: string;
+} = {}) {
   const [, rerender] = useState(0);
   const [installed, setInstalled] = useState(() => isInstalled());
   const [tab, setTab] = useState<Tab>(() => (isIos() ? 'iphone' : 'android'));
@@ -58,14 +75,22 @@ export function InstallAppSection() {
             <div className="flex items-center gap-3">
               <img src="/icons/icon-192.png" alt="" className="w-14 h-14 rounded-2xl bg-white shrink-0" />
               <div>
-                <h2 className="text-xl sm:text-2xl font-extrabold">نزّل تطبيق دقة</h2>
-                <p className="text-blue-100 text-xs mt-0.5">على الجوال أو الكمبيوتر</p>
+                <h2 className="text-xl sm:text-2xl font-extrabold">{title}</h2>
+                {subtitle && <p className="text-blue-100 text-xs mt-0.5">{subtitle}</p>}
               </div>
             </div>
             <ul className="space-y-2 text-sm text-blue-50">
-              <li className="flex items-start gap-2"><CheckCircle2 className="w-4 h-4 mt-0.5 text-emerald-300 shrink-0" />أيقونة على الشاشة الرئيسية وتفتح مثل أي تطبيق</li>
-              <li className="flex items-start gap-2"><CheckCircle2 className="w-4 h-4 mt-0.5 text-emerald-300 shrink-0" />مجاني، حجمه صغير، وبدون متجر تطبيقات</li>
-              <li className="flex items-start gap-2"><CheckCircle2 className="w-4 h-4 mt-0.5 text-emerald-300 shrink-0" />يتحدّث تلقائياً، ولا يحتاج تنزيل نسخ جديدة</li>
+              {points.filter((p) => p.status !== 'hidden').map((p) => (
+                <li key={p.id} className="flex items-start gap-2">
+                  <CheckCircle2 className={`w-4 h-4 mt-0.5 shrink-0 ${p.status === 'soon' ? 'text-amber-300' : 'text-emerald-300'}`} />
+                  <span>
+                    {p.text}
+                    {p.status === 'soon' && (
+                      <span className="mr-1.5 inline-block bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full">{soonLabel}</span>
+                    )}
+                  </span>
+                </li>
+              ))}
             </ul>
 
             {installed ? (

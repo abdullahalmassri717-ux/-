@@ -29,26 +29,32 @@ import {
   Layers,
   Clock,
   Pencil,
-  Lock,
+  Smartphone,
+  Columns2,
+  CreditCard,
+  MessageCircle,
+  Quote,
 } from 'lucide-react';
 
 interface LandingPageCMSProps {
   onNavigate: (screen: ScreenId) => void;
 }
 
-type Tab = 'sections' | 'hero' | 'audience' | 'curricula' | 'features' | 'howItWorks' | 'faqs' | 'custom' | 'footer';
+type Tab =
+  | 'sections' | 'hero' | 'audience' | 'curricula' | 'features' | 'howItWorks'
+  | 'install' | 'comparison' | 'plans' | 'whatsapp' | 'testimonials' | 'faqs' | 'custom' | 'footer';
 
 /** Built-in sections: their name in the list, and the tab that edits them (none = fixed content). */
-const BUILTIN_INFO: Record<BuiltinSectionKey, { label: string; tab?: Tab }> = {
+const BUILTIN_INFO: Record<BuiltinSectionKey, { label: string; tab: Tab }> = {
   whoIsItFor: { label: 'لمن دقة؟ (بطاقات الفئات)', tab: 'audience' },
   curricula: { label: 'المناهج المدعومة', tab: 'curricula' },
   features: { label: 'المزايا والقدرات', tab: 'features' },
   howItWorks: { label: 'كيف تعمل (الخطوات)', tab: 'howItWorks' },
-  install: { label: 'تنزيل التطبيق على الهاتف' },
-  comparison: { label: 'مقارنة «قبل وبعد» للورقة' },
-  plans: { label: 'بطاقتا المدرّس الخصوصي والمدارس' },
-  whatsapp: { label: 'نموذج تقرير واتساب لولي الأمر' },
-  testimonials: { label: 'شهادات المعلمين' },
+  install: { label: 'تنزيل التطبيق على الهاتف', tab: 'install' },
+  comparison: { label: 'مقارنة «قبل وبعد» للورقة', tab: 'comparison' },
+  plans: { label: 'بطاقتا المدرّس الخصوصي والمدارس', tab: 'plans' },
+  whatsapp: { label: 'نموذج تقرير واتساب لولي الأمر', tab: 'whatsapp' },
+  testimonials: { label: 'شهادات المعلمين', tab: 'testimonials' },
   faqs: { label: 'الأسئلة الشائعة', tab: 'faqs' },
   ctaBanner: { label: 'بانر الدعوة الختامي', tab: 'footer' },
 };
@@ -335,7 +341,9 @@ export const LandingPageCMS: React.FC<LandingPageCMSProps> = ({ onNavigate }) =>
 
   const setHero = (field: keyof LandingPageConfig['hero'], v: string) => edit((p) => ({ ...p, hero: { ...p.hero, [field]: v } }));
 
-  const setSection = <K extends 'whoIsItFor' | 'curricula' | 'howItWorks' | 'features' | 'faqs' | 'ctaBanner' | 'footer'>(
+  const setSection = <
+    K extends 'whoIsItFor' | 'curricula' | 'howItWorks' | 'features' | 'faqs' | 'ctaBanner' | 'footer' | 'install' | 'comparison' | 'plans' | 'whatsapp' | 'testimonials',
+  >(
     key: K,
     patch: Partial<LandingPageConfig[K]>,
   ) => edit((p) => ({ ...p, [key]: { ...p[key], ...patch } }));
@@ -410,6 +418,11 @@ export const LandingPageCMS: React.FC<LandingPageCMSProps> = ({ onNavigate }) =>
     { id: 'features', label: 'المزايا', Icon: Sparkles },
     { id: 'howItWorks', label: 'خطوات العمل', Icon: Compass },
     { id: 'faqs', label: 'الأسئلة الشائعة', Icon: HelpCircle },
+    { id: 'install', label: 'تنزيل التطبيق', Icon: Smartphone },
+    { id: 'comparison', label: 'قبل وبعد', Icon: Columns2 },
+    { id: 'plans', label: 'بطاقتا المدرّس والمدارس', Icon: CreditCard },
+    { id: 'whatsapp', label: 'تقرير واتساب', Icon: MessageCircle },
+    { id: 'testimonials', label: 'شهادات المعلمين', Icon: Quote },
     { id: 'custom', label: `أقسام إضافية (${config.customSections.length})`, Icon: Plus },
     { id: 'footer', label: 'البانر الختامي والتواصل', Icon: PhoneCall },
   ];
@@ -532,8 +545,7 @@ export const LandingPageCMS: React.FC<LandingPageCMSProps> = ({ onNavigate }) =>
           </div>
 
           <p className="text-[11px] text-slate-500 leading-relaxed">
-            الأقسام الأصلية في المنصة يمكن إخفاؤها ونقلها، والأقسام التي تضيفها أنت يمكن حذفها نهائياً. الأقسام المعلّمة بـ{' '}
-            <Lock className="inline w-3 h-3" /> محتواها ثابت في التصميم (إخفاء ونقل فقط).
+            كل قسم تقدر تعدّل محتواه من زر القلم، وتخفيه وتنقله. الأقسام الأصلية في المنصة لا تُحذف (أخفِها بدلاً من ذلك)، والأقسام التي تضيفها أنت يمكن حذفها نهائياً.
           </p>
 
           <div className="border-t border-slate-100 pt-4 max-w-xs">
@@ -726,6 +738,183 @@ export const LandingPageCMS: React.FC<LandingPageCMSProps> = ({ onNavigate }) =>
         </Panel>
       )}
 
+      {/* Install the app */}
+      {activeTab === 'install' && (
+        <Panel title="قسم «نزّل التطبيق»" subtitle="العنوان والنقاط. خطوات التثبيت لكل جوال (أندرويد/آيفون) تبقى كما هي لأنها تتغيّر حسب جهاز الزائر.">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-b border-slate-100 pb-4">
+            <Field label="العنوان" value={config.install.title} onChange={(v) => setSection('install', { title: v })} bold />
+            <Field label="السطر تحت العنوان" value={config.install.subtitle} onChange={(v) => setSection('install', { subtitle: v })} />
+          </div>
+          <LegendNote />
+          <ListEditor
+            items={config.install.points}
+            onChange={(points) => setSection('install', { points })}
+            itemName="نقطة"
+            addLabel="إضافة نقطة"
+            makeNew={() => ({ id: newId(), status: 'visible', text: '' })}
+            columns={1}
+            compact
+            renderFields={(p, up) => <Field label="النص" value={p.text} onChange={(v) => up({ text: v })} />}
+          />
+        </Panel>
+      )}
+
+      {/* Before / after */}
+      {activeTab === 'comparison' && (
+        <Panel title="قسم مقارنة «قبل وبعد»" subtitle="نموذج ورقة طالب قبل التصحيح وبعده.">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-b border-slate-100 pb-4">
+            <Field label="عنوان القسم" value={config.comparison.title} onChange={(v) => setSection('comparison', { title: v })} bold />
+            <Field label="الوصف" value={config.comparison.subtitle} onChange={(v) => setSection('comparison', { subtitle: v })} />
+          </div>
+          <div className="space-y-2">
+            <span className="text-[11px] font-bold text-slate-700">أزرار المواد فوق الورقتين</span>
+            <ListEditor
+              items={config.comparison.subjectTabs}
+              onChange={(subjectTabs) => setSection('comparison', { subjectTabs })}
+              itemName="مادة"
+              addLabel="إضافة مادة"
+              makeNew={() => ({ id: newId('tab'), status: 'visible', text: '' })}
+              compact
+              renderFields={(t, up) => <Field label="اسم المادة" value={t.text} onChange={(v) => up({ text: v })} />}
+            />
+          </div>
+          <div className="bg-amber-50/40 border border-amber-200 rounded-xl p-3 space-y-3">
+            <h3 className="font-bold text-slate-800 text-xs">الورقة قبل التصحيح</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Field label="العنوان" value={config.comparison.beforeTitle} onChange={(v) => setSection('comparison', { beforeTitle: v })} />
+              <Field label="اسم الملف" value={config.comparison.beforeFileName} onChange={(v) => setSection('comparison', { beforeFileName: v })} ltr />
+              <Field label="سطر اسم الطالب" value={config.comparison.beforeStudentLine} onChange={(v) => setSection('comparison', { beforeStudentLine: v })} />
+            </div>
+            <Field label="حل الطالب (كل سطر بسطر)" value={config.comparison.beforeText} onChange={(v) => setSection('comparison', { beforeText: v })} rows={4} />
+            <Field label="ملاحظة صغيرة تحت الحل" value={config.comparison.beforeNote} onChange={(v) => setSection('comparison', { beforeNote: v })} />
+          </div>
+          <div className="bg-blue-50/40 border border-blue-200 rounded-xl p-3 space-y-3">
+            <h3 className="font-bold text-slate-800 text-xs">الورقة بعد التصحيح</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Field label="العنوان" value={config.comparison.afterTitle} onChange={(v) => setSection('comparison', { afterTitle: v })} />
+              <Field label="الدرجة" value={config.comparison.afterScore} onChange={(v) => setSection('comparison', { afterScore: v })} />
+              <Field label="عنوان المعيار" value={config.comparison.criterionLabel} onChange={(v) => setSection('comparison', { criterionLabel: v })} />
+              <Field label="حالة المعيار (بالأحمر)" value={config.comparison.criterionStatus} onChange={(v) => setSection('comparison', { criterionStatus: v })} />
+            </div>
+            <span className="block text-[11px] font-bold text-slate-700">أسطر التصحيح</span>
+            <ListEditor
+              items={config.comparison.rows}
+              onChange={(rows) => setSection('comparison', { rows })}
+              itemName="سطر"
+              addLabel="إضافة سطر تصحيح"
+              makeNew={() => ({ id: newId('row'), status: 'visible', text: '', score: '', correct: true })}
+              columns={1}
+              compact
+              renderFields={(r, up) => (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-[1fr_5.5rem] gap-2">
+                    <Field label="النص" value={r.text} onChange={(v) => up({ text: v })} />
+                    <Field label="العلامة" value={r.score} onChange={(v) => up({ score: v })} ltr />
+                  </div>
+                  <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-[11px] font-bold">
+                    <button type="button" onClick={() => up({ correct: true })} className={`px-2.5 py-1 cursor-pointer ${r.correct ? 'bg-emerald-600 text-white' : 'bg-white text-slate-600'}`}>
+                      ✓ صح
+                    </button>
+                    <button type="button" onClick={() => up({ correct: false })} className={`px-2.5 py-1 cursor-pointer ${!r.correct ? 'bg-red-600 text-white' : 'bg-white text-slate-600'}`}>
+                      ✗ خطأ
+                    </button>
+                  </div>
+                </div>
+              )}
+            />
+            <Field label="ملاحظة المعلم بالأحمر" value={config.comparison.afterNote} onChange={(v) => setSection('comparison', { afterNote: v })} rows={2} />
+          </div>
+        </Panel>
+      )}
+
+      {/* Plans cards */}
+      {activeTab === 'plans' && (
+        <Panel title="بطاقات المدرّس الخصوصي والمدارس" subtitle="بطاقات كبيرة فيها نقاط (عنوان غامق + نص). الزر يفتح صفحة الأسعار.">
+          <LegendNote />
+          <ListEditor
+            items={config.plans.cards}
+            onChange={(cards) => setSection('plans', { cards })}
+            itemName="بطاقة"
+            addLabel="إضافة بطاقة"
+            makeNew={() => ({ id: newId('plan'), status: 'visible', tag: '', title: 'بطاقة جديدة', desc: '', points: [], buttonText: 'عرض الأسعار' })}
+            columns={1}
+            renderFields={(c, up) => (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Field label="الكلمة الصغيرة فوق العنوان" value={c.tag} onChange={(v) => up({ tag: v })} />
+                  <Field label="العنوان" value={c.title} onChange={(v) => up({ title: v })} bold />
+                </div>
+                <Field label="الوصف" value={c.desc} onChange={(v) => up({ desc: v })} rows={2} />
+                <Field label="نص الزر" value={c.buttonText} onChange={(v) => up({ buttonText: v })} hint="اتركه فارغاً لإخفاء الزر." />
+                <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+                  <span className="text-[11px] font-bold text-slate-700">نقاط البطاقة (✓)</span>
+                  <ListEditor
+                    items={c.points}
+                    onChange={(points) => up({ points })}
+                    itemName="نقطة"
+                    addLabel="إضافة نقطة"
+                    makeNew={() => ({ id: newId(), status: 'visible', title: '', desc: '' })}
+                    columns={1}
+                    compact
+                    renderFields={(p, upP) => (
+                      <div className="space-y-2">
+                        <Field label="الجزء الغامق" value={p.title} onChange={(v) => upP({ title: v })} bold />
+                        <Field label="باقي النص" value={p.desc} onChange={(v) => upP({ desc: v })} />
+                      </div>
+                    )}
+                  />
+                </div>
+              </div>
+            )}
+          />
+        </Panel>
+      )}
+
+      {/* WhatsApp report sample */}
+      {activeTab === 'whatsapp' && (
+        <Panel title="نموذج تقرير واتساب لولي الأمر" subtitle="شكل الرسالة التي تظهر للزائر كمثال.">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 border-b border-slate-100 pb-4">
+            <Field label="الشارة الصغيرة" value={config.whatsapp.badge} onChange={(v) => setSection('whatsapp', { badge: v })} />
+            <Field label="العنوان" value={config.whatsapp.title} onChange={(v) => setSection('whatsapp', { title: v })} bold />
+            <Field label="نص الزر" value={config.whatsapp.buttonText} onChange={(v) => setSection('whatsapp', { buttonText: v })} hint="اتركه فارغاً لإخفاء الزر." />
+          </div>
+          <div className="bg-[#EFEAE2]/60 border border-slate-200 rounded-xl p-3 space-y-3">
+            <h3 className="font-bold text-slate-800 text-xs">الرسالة</h3>
+            <div className="grid grid-cols-[1fr_6rem] gap-2">
+              <Field label="اسم المرسل" value={config.whatsapp.senderName} onChange={(v) => setSection('whatsapp', { senderName: v })} />
+              <Field label="الوقت" value={config.whatsapp.time} onChange={(v) => setSection('whatsapp', { time: v })} />
+            </div>
+            <Field label="التحية" value={config.whatsapp.greeting} onChange={(v) => setSection('whatsapp', { greeting: v })} />
+            <Field label="نص الرسالة (كل سطر بسطر)" value={config.whatsapp.body} onChange={(v) => setSection('whatsapp', { body: v })} rows={6} />
+            <Field label="اسم الملف المرفق" value={config.whatsapp.attachmentName} onChange={(v) => setSection('whatsapp', { attachmentName: v })} hint="اتركه فارغاً لإخفاء المرفق." />
+          </div>
+        </Panel>
+      )}
+
+      {/* Testimonials */}
+      {activeTab === 'testimonials' && (
+        <Panel title="شهادات المعلمين" subtitle="أضف شهادة: اسم المعلم ومدرسته وما قاله. إذا ما في شهادات ظاهرة، يظهر النص المؤقت.">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-b border-slate-100 pb-4">
+            <Field label="عنوان القسم" value={config.testimonials.title} onChange={(v) => setSection('testimonials', { title: v })} bold />
+            <Field label="النص المؤقت (قبل وجود شهادات)" value={config.testimonials.placeholder} onChange={(v) => setSection('testimonials', { placeholder: v })} />
+          </div>
+          <LegendNote />
+          <ListEditor
+            items={config.testimonials.items}
+            onChange={(items) => setSection('testimonials', { items })}
+            itemName="شهادة"
+            addLabel="إضافة شهادة"
+            makeNew={() => ({ id: newId('tst'), status: 'visible', title: 'أ. الاسم · المدرسة', desc: '' })}
+            renderFields={(t, up) => (
+              <div className="space-y-2">
+                <Field label="اسم المعلم ومدرسته" value={t.title} onChange={(v) => up({ title: v })} bold />
+                <Field label="الشهادة" value={t.desc} onChange={(v) => up({ desc: v })} rows={3} />
+              </div>
+            )}
+          />
+        </Panel>
+      )}
+
       {/* Custom sections */}
       {activeTab === 'custom' && (
         <Panel
@@ -851,7 +1040,6 @@ const SectionRow: React.FC<{
     <div className="flex items-center gap-2 min-w-0 flex-wrap">
       <span className={`font-bold ${visible ? 'text-slate-900' : 'text-slate-400 line-through'}`}>{name}</span>
       {tag && <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{tag}</span>}
-      {!onEdit && !pinned && <Lock className="w-3 h-3 text-slate-400" aria-label="محتوى ثابت" />}
       {pinned && <span className="text-[10px] text-slate-400">{pinned}</span>}
     </div>
     <div className="flex items-center gap-1">
