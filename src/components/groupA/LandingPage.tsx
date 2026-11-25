@@ -46,7 +46,7 @@ const gridCols = (n: number) =>
   n <= 1 ? 'grid-cols-1 max-w-md mx-auto' : n === 2 ? 'grid-cols-1 md:grid-cols-2' : n === 4 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3';
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
-  const [activeSubjectTab, setActiveSubjectTab] = useState<'math' | 'physics' | 'chemistry' | 'english'>('math');
+  const [activeSubjectTab, setActiveSubjectTab] = useState<string>('');
   const [openFaq, setOpenFaq] = useState<string | null>(null);
 
   const cfg = useLandingConfig();
@@ -230,242 +230,217 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
       );
     },
 
-    install: () => <InstallAppSection />,
+    install: () => <InstallAppSection title={cfg.install.title} subtitle={cfg.install.subtitle} points={shown(cfg.install.points)} soonLabel={soon} />,
 
-    comparison: () => (
-      <section className="max-w-5xl mx-auto px-4 sm:px-6">
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 space-y-6">
-          <div className="text-center space-y-1">
-            <h2 className="text-xl sm:text-2xl font-extrabold text-[#1E3A5F]">
-              مقارنة «قبل وبعد»: نفس الورقة بأعين دقة
-            </h2>
-            <p className="text-xs text-slate-500">
-              شاهد كيف يحول الذكاء الاصطناعي خط الطالب الورقي إلى ورقة مصححة احترافية بمعايير دقيقة.
-            </p>
+    comparison: () => {
+      const c = cfg.comparison;
+      const tabs = shown(c.subjectTabs);
+      const activeTab = tabs.find((t) => t.id === activeSubjectTab)?.id ?? tabs[0]?.id;
+      return (
+        <section className="max-w-5xl mx-auto px-4 sm:px-6">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 space-y-6">
+            <div className="text-center space-y-1">
+              <h2 className="text-xl sm:text-2xl font-extrabold text-[#1E3A5F]">{c.title}</h2>
+              {c.subtitle && <p className="text-xs text-slate-500">{c.subtitle}</p>}
+            </div>
+
+            {tabs.length > 0 && (
+              <div className="flex items-center justify-center gap-2 border-b border-slate-200 pb-3 flex-wrap">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveSubjectTab(tab.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1 ${
+                      activeTab === tab.id ? 'bg-[#1E3A5F] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>{tab.text}</span>
+                    {tab.status === 'soon' && <SoonBadge label={soon} />}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="border border-slate-200 rounded-xl p-4 bg-[#FFFDF9] space-y-3 min-w-0">
+                <div className="flex items-center justify-between gap-2 text-xs font-bold text-slate-600 border-b border-slate-200 pb-2">
+                  <span>{c.beforeTitle}</span>
+                  {c.beforeFileName && <span className="text-[11px] text-slate-400 font-mono truncate">{c.beforeFileName}</span>}
+                </div>
+                <div className="p-4 bg-white border border-dashed border-slate-300 rounded-lg min-h-[220px] font-mono text-xs text-slate-700 space-y-3">
+                  {c.beforeStudentLine && <div className="border-b border-slate-100 pb-2">{c.beforeStudentLine}</div>}
+                  <div className="leading-relaxed opacity-85 whitespace-pre-line break-words">{c.beforeText}</div>
+                  {c.beforeNote && <div className="text-[11px] text-slate-400 italic">{c.beforeNote}</div>}
+                </div>
+              </div>
+
+              <div className="border border-blue-200 rounded-xl p-4 bg-[#F8FAFC] space-y-3 min-w-0">
+                <div className="flex items-center justify-between gap-2 text-xs font-bold text-[#1E3A5F] border-b border-blue-100 pb-2">
+                  <span>{c.afterTitle}</span>
+                  {c.afterScore && (
+                    <span className="bg-emerald-100 text-emerald-800 text-[11px] px-2 py-0.5 rounded font-bold whitespace-nowrap">{c.afterScore}</span>
+                  )}
+                </div>
+                <div className="p-4 bg-white border border-slate-200 rounded-lg min-h-[220px] text-xs space-y-3 relative">
+                  {(c.criterionLabel || c.criterionStatus) && (
+                    <div className="flex justify-between items-center gap-2 text-slate-800 border-b border-slate-100 pb-2">
+                      <span className="font-bold">{c.criterionLabel}</span>
+                      <span className="text-red-600 font-bold">{c.criterionStatus}</span>
+                    </div>
+                  )}
+                  <div className="space-y-1.5 text-[11px]">
+                    {shown(c.rows).map((r) => (
+                      <div key={r.id} className={`flex items-center justify-between gap-2 ${r.correct ? 'text-emerald-700' : 'text-red-600 font-medium'}`}>
+                        <span className="flex items-center gap-1 flex-wrap">
+                          <span>
+                            {r.correct ? '✓' : '✗'} {r.text}
+                          </span>
+                          {r.status === 'soon' && <SoonBadge label={soon} />}
+                        </span>
+                        <span className="font-bold font-mono shrink-0">{r.score}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {c.afterNote && (
+                    <div className="p-2 bg-red-50 text-red-800 rounded border border-red-200 text-[11px] font-sans">{c.afterNote}</div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
+        </section>
+      );
+    },
 
-          {/* Subject Tabs */}
-          <div className="flex items-center justify-center gap-2 border-b border-slate-200 pb-3">
-            {[
-              { id: 'math', label: 'الرياضيات (توجيهي)' },
-              { id: 'physics', label: 'الفيزياء' },
-              { id: 'chemistry', label: 'الكيمياء' },
-              { id: 'english', label: 'اللغة الإنجليزية (Writing)' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveSubjectTab(tab.id as any)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                  activeSubjectTab === tab.id
-                    ? 'bg-[#1E3A5F] text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {tab.label}
-              </button>
+    plans: () => {
+      const cards = shown(cfg.plans.cards);
+      if (!cards.length) return null;
+      const looks = [
+        { Icon: GraduationCap, iconBox: 'bg-blue-50 text-[#1E3A5F]', tag: 'text-blue-600', button: 'bg-[#1E3A5F] hover:bg-[#152a45]' },
+        { Icon: Building, iconBox: 'bg-emerald-50 text-emerald-700', tag: 'text-emerald-600', button: 'bg-slate-900 hover:bg-black' },
+      ];
+      return (
+        <section className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className={`grid gap-8 ${cards.length === 1 ? 'grid-cols-1 max-w-xl mx-auto' : cards.length === 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
+            {cards.map((card, idx) => {
+              const look = looks[idx % looks.length];
+              const isSoon = card.status === 'soon';
+              return (
+                <div key={card.id} className={`bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 space-y-5 shadow-xs ${soonCls(card.status)}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold ${look.iconBox}`}>
+                      <look.Icon className="w-6 h-6" />
+                    </div>
+                    {isSoon && <SoonBadge label={soon} />}
+                  </div>
+                  <div>
+                    {card.tag && <span className={`text-xs font-bold uppercase tracking-wider ${look.tag}`}>{card.tag}</span>}
+                    <h3 className="text-xl font-extrabold text-[#1E3A5F] mt-1">{card.title}</h3>
+                  </div>
+                  {card.desc && <p className="text-xs text-slate-600">{card.desc}</p>}
+                  <ul className="space-y-2.5 text-xs text-slate-700">
+                    {shown(card.points).map((pt) => (
+                      <li key={pt.id} className="flex items-center gap-2">
+                        <CheckCircle2 className={`w-4 h-4 shrink-0 ${pt.status === 'soon' ? 'text-amber-500' : 'text-emerald-600'}`} />
+                        <span>
+                          {pt.title && <strong>{pt.title}</strong>} {pt.desc}
+                          {pt.status === 'soon' && <SoonBadge label={soon} className="mr-1" />}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {card.buttonText && (
+                    <button
+                      onClick={() => !isSoon && onNavigate('A2')}
+                      disabled={isSoon}
+                      className={`w-full text-white py-2.5 rounded-lg text-xs font-bold transition-colors ${isSoon ? 'bg-slate-400 cursor-not-allowed' : `${look.button} cursor-pointer`}`}
+                    >
+                      {isSoon ? soon : card.buttonText}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      );
+    },
+
+    whatsapp: () => {
+      const w = cfg.whatsapp;
+      return (
+        <section className="max-w-4xl mx-auto px-4 sm:px-6">
+          <div className="bg-emerald-800 text-white rounded-2xl p-6 sm:p-8 space-y-6 shadow-lg">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-emerald-700/60 pb-5">
+              <div>
+                {w.badge && (
+                  <div className="inline-flex items-center gap-1.5 bg-emerald-700/80 text-emerald-200 text-xs px-2.5 py-0.5 rounded-full mb-1">
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>{w.badge}</span>
+                  </div>
+                )}
+                <h3 className="text-xl font-bold">{w.title}</h3>
+              </div>
+              {w.buttonText && (
+                <button
+                  onClick={() => onNavigate('B10')}
+                  className="bg-white text-emerald-900 hover:bg-emerald-50 px-4 py-2 rounded-lg text-xs font-bold transition-colors shrink-0 cursor-pointer"
+                >
+                  {w.buttonText}
+                </button>
+              )}
+            </div>
+            <div className="bg-[#EFEAE2] text-slate-800 rounded-xl p-4 max-w-lg mx-auto shadow-inner text-right space-y-2 text-xs">
+              <div className="bg-white rounded-lg p-3 shadow-xs space-y-2 border border-slate-200">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5 text-[11px] text-slate-500">
+                  <span className="font-bold text-[#1E3A5F]">{w.senderName}</span>
+                  <span className="tabular-nums">{w.time}</span>
+                </div>
+                {w.greeting && <p className="font-semibold text-slate-800">{w.greeting}</p>}
+                {w.body && <p className="text-slate-600 leading-relaxed text-[11px] whitespace-pre-line">{w.body}</p>}
+                {w.attachmentName && (
+                  <div className="p-2 bg-emerald-50 border border-emerald-200 rounded text-emerald-900 flex items-center justify-between gap-2 text-[11px]">
+                    <span className="break-all">{w.attachmentName}</span>
+                    <span className="font-bold text-emerald-700 shrink-0">تحميل</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      );
+    },
+
+    testimonials: () => {
+      const t = cfg.testimonials;
+      const items = shown(t.items);
+      if (!items.length) {
+        return (
+          <section className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
+            <div className="border border-dashed border-slate-300 rounded-xl p-8 bg-white/50 space-y-2">
+              <h3 className="font-bold text-slate-800 text-sm">{t.title}</h3>
+              {t.placeholder && <p className="text-xs text-slate-500">{t.placeholder}</p>}
+            </div>
+          </section>
+        );
+      }
+      return (
+        <section className="max-w-6xl mx-auto px-4 sm:px-6">
+          {sectionHeader('', t.title, '')}
+          <div className={`grid gap-6 ${gridCols(items.length)}`}>
+            {items.map((it) => (
+              <figure key={it.id} className={`bg-white border border-slate-200 rounded-xl p-5 space-y-3 ${soonCls(it.status)}`}>
+                <blockquote className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">«{it.desc}»</blockquote>
+                <figcaption className="flex items-center justify-between gap-2 text-xs font-bold text-[#1E3A5F]">
+                  <span>{it.title}</span>
+                  {it.status === 'soon' && <SoonBadge label={soon} />}
+                </figcaption>
+              </figure>
             ))}
           </div>
-
-          {/* 2 Side-by-side papers */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Before: Raw Student paper */}
-            <div className="border border-slate-200 rounded-xl p-4 bg-[#FFFDF9] space-y-3">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-600 border-b border-slate-200 pb-2">
-                <span>(قبل) ورقة الطالب كما رفعها</span>
-                <span className="text-[11px] text-slate-400 font-mono">IMG_SCAN_1042.jpg</span>
-              </div>
-              <div className="p-4 bg-white border border-dashed border-slate-300 rounded-lg min-h-[220px] font-mono text-xs text-slate-700 space-y-3">
-                <div className="border-b border-slate-100 pb-2 flex justify-between">
-                  <span>اسم الطالب: محمود البطش</span>
-                  <span>سؤال 1</span>
-                </div>
-                <div className="leading-relaxed opacity-85">
-                  س² + ص² = 25<br />
-                  2س + 2ص ص' = 0  ⇒  ص' = -س/ص = -3/4<br />
-                  ص'' = (-ص - س ص') / ص²<br />
-                  = (-4 - 3(-3/4)) / 16 = (-7/4) / 16 = -7/64
-                </div>
-                <div className="text-[11px] text-slate-400 italic">
-                  (خط يدوي غير واضح قليلاً، أخطأ في توحيد المقامات بالخطوة الأخيرة)
-                </div>
-              </div>
-            </div>
-
-            {/* After: Graded Paper */}
-            <div className="border border-blue-200 rounded-xl p-4 bg-[#F8FAFC] space-y-3">
-              <div className="flex items-center justify-between text-xs font-bold text-[#1E3A5F] border-b border-blue-100 pb-2">
-                <span>(بعد) تصحيح منصة دقة مع تفريغ المعايير</span>
-                <span className="bg-emerald-100 text-emerald-800 text-[11px] px-2 py-0.5 rounded font-bold">
-                  14 / 20 علامة
-                </span>
-              </div>
-              <div className="p-4 bg-white border border-slate-200 rounded-lg min-h-[220px] text-xs space-y-3 relative">
-                <div className="flex justify-between items-center text-slate-800 border-b border-slate-100 pb-2">
-                  <span className="font-bold">المعيار الوزاري المطبق:</span>
-                  <span className="text-red-600 font-bold">يحتاج مراجعة حسابية</span>
-                </div>
-                <div className="space-y-1.5 text-[11px]">
-                  <div className="flex items-center justify-between text-emerald-700">
-                    <span>✓ اشتقاق ضمني أولي صحيح (2س + 2ص ص' = 0)</span>
-                    <span className="font-bold font-mono">6/6</span>
-                  </div>
-                  <div className="flex items-center justify-between text-emerald-700">
-                    <span>✓ إيجاد ميل المشتقة الأولى (-3/4)</span>
-                    <span className="font-bold font-mono">4/4</span>
-                  </div>
-                  <div className="flex items-center justify-between text-emerald-700">
-                    <span>✓ تطبيق قاعدة قسمة اقترانين للمشتقة الثانية</span>
-                    <span className="font-bold font-mono">4/7</span>
-                  </div>
-                  <div className="flex items-center justify-between text-red-600 font-medium">
-                    <span>✗ خطأ في توحيد المقامات: الناتج الصحيح هو -25/64</span>
-                    <span className="font-bold font-mono">0/3</span>
-                  </div>
-                </div>
-                <div className="p-2 bg-red-50 text-red-800 rounded border border-red-200 text-[11px] font-sans">
-                  ملاحظة المحبرة بالقلم الأحمر على الورقة: "انتبه لتوحيد المقامات بالبسط (-4 + 9/4 = -7/4)"
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    ),
-
-    plans: () => (
-      <section className="max-w-6xl mx-auto px-4 sm:px-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* Card 1: Private Tutor */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 space-y-5 shadow-xs">
-            <div className="w-12 h-12 rounded-xl bg-blue-50 text-[#1E3A5F] flex items-center justify-center font-bold">
-              <GraduationCap className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">الحل الأمثل</span>
-              <h3 className="text-xl font-extrabold text-[#1E3A5F] mt-1">للمدرّس الخصوصي</h3>
-            </div>
-            <p className="text-xs text-slate-600">
-              صُممت منصة دقة خصيصاً لمدرسي التوجيهي الذين يديرون مئات الطلاب في مجموعات متعددة.
-            </p>
-            <ul className="space-y-2.5 text-xs text-slate-700">
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span><strong>وقت أكثر لمجموعات جديدة:</strong> وفّر 15 ساعة تصحيح أسبوعياً وافتح شعباً إضافية.</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span><strong>امتحان أسبوعي بلا أي عبء:</strong> قيّم طلابك أسبوعياً وتتبع تقدمهم بدون تكديس الأوراق.</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span><strong>تقرير يميّزك أمام الأهالي:</strong> تقارير واتساب احترافية ترتقي بسمعتك ومصداقيتك.</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span><strong>نظام مالي وحسابات رسوم الطلاب:</strong> تتبع أقساط الطلاب (150 ₪)، إصدار سندات قبض رسمية، وتذكير الأهالي عبر واتساب.</span>
-              </li>
-            </ul>
-            <button
-              onClick={() => onNavigate('A2')}
-              className="w-full bg-[#1E3A5F] hover:bg-[#152a45] text-white py-2.5 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-            >
-              عرض باقات المدرسين (5 شيكل للطالب)
-            </button>
-          </div>
-
-          {/* Card 2: Private Schools */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 space-y-5 shadow-xs">
-            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
-              <Building className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">نظام المؤسسات التعليمية</span>
-              <h3 className="text-xl font-extrabold text-[#1E3A5F] mt-1">للمدارس الخاصة (الصفوف 1 - 9)</h3>
-            </div>
-            <p className="text-xs text-slate-600">
-              منظومة متكاملة لمدراء المدارس والمشرفين التربويين لمتابعة أداء المعلمين والصفوف.
-            </p>
-            <ul className="space-y-2.5 text-xs text-slate-700">
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span><strong>متابعة الفاقد التعليمي:</strong> خريطة حرارية ترصد المهارات الضعيفة في كل صف فوراً.</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span><strong>تقارير شهرية موحدة للأهالي:</strong> ترسل لإشراك أولياء الأمور بنتائج أبنائهم.</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span><strong>لوحة أداء ورقابة للإدارة:</strong> معرفة نشاط المعلمين ومعدلات التصحيح والتأخير.</span>
-              </li>
-            </ul>
-            <button
-              onClick={() => onNavigate('A2')}
-              className="w-full bg-slate-900 hover:bg-black text-white py-2.5 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-            >
-              عرض خطة المدارس (50 شيكل سنوياً)
-            </button>
-          </div>
-        </div>
-      </section>
-    ),
-
-    whatsapp: () => (
-      <section className="max-w-4xl mx-auto px-4 sm:px-6">
-        <div className="bg-emerald-800 text-white rounded-2xl p-6 sm:p-8 space-y-6 shadow-lg">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-emerald-700/60 pb-5">
-            <div>
-              <div className="inline-flex items-center gap-1.5 bg-emerald-700/80 text-emerald-200 text-xs px-2.5 py-0.5 rounded-full mb-1">
-                <MessageCircle className="w-3.5 h-3.5" />
-                <span>تقرير واتساب التلقائي</span>
-              </div>
-              <h3 className="text-xl font-bold">نموذج التقرير الذي يصله ولي الأمر على هاتفه</h3>
-            </div>
-            <button
-              onClick={() => onNavigate('B10')}
-              className="bg-white text-emerald-900 hover:bg-emerald-50 px-4 py-2 rounded-lg text-xs font-bold transition-colors shrink-0 cursor-pointer"
-            >
-              معاينة التقرير الكامل PDF ←
-            </button>
-          </div>
-
-          {/* Simulated WhatsApp Chat Bubble */}
-          <div className="bg-[#EFEAE2] text-slate-800 rounded-xl p-4 max-w-lg mx-auto shadow-inner text-right space-y-2 text-xs">
-            <div className="bg-white rounded-lg p-3 shadow-xs space-y-2 border border-slate-200">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-1.5 text-[11px] text-slate-500">
-                <span className="font-bold text-[#1E3A5F]">منصة دِقّـة · أ. محمد المصري</span>
-                <span className="tabular-nums">11:42 ص</span>
-              </div>
-              <p className="font-semibold text-slate-800">
-                السلام عليكم ولي أمر الطالب: <strong>أحمد محمود المصري</strong> 🌸
-              </p>
-              <p className="text-slate-600 leading-relaxed text-[11px]">
-                نرفق لكم نتيجة ورقة امتحان الرياضيات (الشهر الأول - التفاضل والتكامل):<br />
-                📊 <strong>الدرجة: 88 / 100</strong> (مستوى ممتاز ↗ أعلى بـ 6 درجات عن الاختبار السابق)<br />
-                💪 <strong>نقاط القوة:</strong> إتقان ممتاز لقواعد الاشتقاق الضمني والمشتقات العليا.<br />
-                🎯 <strong>نقاط تحتاج تقوية:</strong> تطبيقات القيم القصوى والمعدلات المرتبطة بالزمن.<br />
-                📎 مرفق أدناه صورة ورقة الامتحان المصححة كاملة مع ملاحظات المعلم.
-              </p>
-              <div className="p-2 bg-emerald-50 border border-emerald-200 rounded text-emerald-900 flex items-center justify-between text-[11px]">
-                <span>📄 ورقة_الامتحان_المصححة_أحمد_المصري.pdf</span>
-                <span className="font-bold text-emerald-700">تحميل</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    ),
-
-    testimonials: () => (
-      <section className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
-        <div className="border border-dashed border-slate-300 rounded-xl p-8 bg-white/50 space-y-2">
-          <h3 className="font-bold text-slate-800 text-sm">شهادات وتجارب معلمين من قطاع غزة وفلسطين</h3>
-          <p className="text-xs text-slate-500">
-            [قريباً — سيتم عرض تجارب المعلمين بعد انتهاء المرحلة التجريبية الأولى بنهاية الفصل الدراسي]
-          </p>
-        </div>
-      </section>
-    ),
+        </section>
+      );
+    },
 
     faqs: () => {
       const faqs = shown(cfg.faqs.items);

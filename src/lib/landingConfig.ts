@@ -12,6 +12,8 @@ import type {
   LandingHowItWorksStep,
   LandingItemStatus,
   LandingPageConfig,
+  LandingPlanCard,
+  LandingComparisonRow,
 } from '../types';
 
 /** Sections between the hero and the footer, in their default order. */
@@ -50,6 +52,88 @@ export const DEFAULT_LANDING_CONFIG: LandingPageConfig = {
     sampleStudentName: 'أحمد محمود المصري',
     sampleExamScore: '20 / 20',
     sampleTeacherNote: 'تطبيق متقن لمعايير الاشتقاق والتعويض الدقيق',
+  },
+  install: {
+    title: 'نزّل تطبيق دقة',
+    subtitle: 'على الجوال أو الكمبيوتر',
+    points: [
+      { id: 'inst_1', status: 'visible', text: 'أيقونة على الشاشة الرئيسية وتفتح مثل أي تطبيق' },
+      { id: 'inst_2', status: 'visible', text: 'مجاني، حجمه صغير، وبدون متجر تطبيقات' },
+      { id: 'inst_3', status: 'visible', text: 'يتحدّث تلقائياً، ولا يحتاج تنزيل نسخ جديدة' },
+    ],
+  },
+  comparison: {
+    title: 'مقارنة «قبل وبعد»: نفس الورقة بأعين دقة',
+    subtitle: 'شاهد كيف يحول الذكاء الاصطناعي خط الطالب الورقي إلى ورقة مصححة احترافية بمعايير دقيقة.',
+    subjectTabs: [
+      { id: 'tab_1', status: 'visible', text: 'الرياضيات (توجيهي)' },
+      { id: 'tab_2', status: 'visible', text: 'الفيزياء' },
+      { id: 'tab_3', status: 'visible', text: 'الكيمياء' },
+      { id: 'tab_4', status: 'visible', text: 'اللغة الإنجليزية (Writing)' },
+    ],
+    beforeTitle: '(قبل) ورقة الطالب كما رفعها',
+    beforeFileName: 'IMG_SCAN_1042.jpg',
+    beforeStudentLine: 'اسم الطالب: محمود البطش · سؤال 1',
+    beforeText: "س² + ص² = 25\n2س + 2ص ص' = 0  ⇒  ص' = -س/ص = -3/4\nص'' = (-ص - س ص') / ص²\n= (-4 - 3(-3/4)) / 16 = (-7/4) / 16 = -7/64",
+    beforeNote: '(خط يدوي غير واضح قليلاً، أخطأ في توحيد المقامات بالخطوة الأخيرة)',
+    afterTitle: '(بعد) تصحيح منصة دقة مع تفريغ المعايير',
+    afterScore: '14 / 20 علامة',
+    criterionLabel: 'المعيار الوزاري المطبق:',
+    criterionStatus: 'يحتاج مراجعة حسابية',
+    rows: [
+      { id: 'row_1', status: 'visible', correct: true, text: "اشتقاق ضمني أولي صحيح (2س + 2ص ص' = 0)", score: '6/6' },
+      { id: 'row_2', status: 'visible', correct: true, text: 'إيجاد ميل المشتقة الأولى (-3/4)', score: '4/4' },
+      { id: 'row_3', status: 'visible', correct: true, text: 'تطبيق قاعدة قسمة اقترانين للمشتقة الثانية', score: '4/7' },
+      { id: 'row_4', status: 'visible', correct: false, text: 'خطأ في توحيد المقامات: الناتج الصحيح هو -25/64', score: '0/3' },
+    ],
+    afterNote: 'ملاحظة المحبرة بالقلم الأحمر على الورقة: "انتبه لتوحيد المقامات بالبسط (-4 + 9/4 = -7/4)"',
+  },
+  plans: {
+    cards: [
+      {
+        id: 'plan_tutor',
+        status: 'visible',
+        tag: 'الحل الأمثل',
+        title: 'للمدرّس الخصوصي',
+        desc: 'صُممت منصة دقة خصيصاً لمدرسي التوجيهي الذين يديرون مئات الطلاب في مجموعات متعددة.',
+        points: [
+          { id: 'pt_1', status: 'visible', title: 'وقت أكثر لمجموعات جديدة:', desc: 'وفّر 15 ساعة تصحيح أسبوعياً وافتح شعباً إضافية.' },
+          { id: 'pt_2', status: 'visible', title: 'امتحان أسبوعي بلا أي عبء:', desc: 'قيّم طلابك أسبوعياً وتتبع تقدمهم بدون تكديس الأوراق.' },
+          { id: 'pt_3', status: 'visible', title: 'تقرير يميّزك أمام الأهالي:', desc: 'تقارير واتساب احترافية ترتقي بسمعتك ومصداقيتك.' },
+          { id: 'pt_4', status: 'visible', title: 'نظام مالي وحسابات رسوم الطلاب:', desc: 'تتبع أقساط الطلاب (150 ₪)، إصدار سندات قبض رسمية، وتذكير الأهالي عبر واتساب.' },
+        ],
+        buttonText: 'عرض باقات المدرسين (5 شيكل للطالب)',
+      },
+      {
+        id: 'plan_school',
+        status: 'visible',
+        tag: 'نظام المؤسسات التعليمية',
+        title: 'للمدارس الخاصة (الصفوف 1 - 9)',
+        desc: 'منظومة متكاملة لمدراء المدارس والمشرفين التربويين لمتابعة أداء المعلمين والصفوف.',
+        points: [
+          { id: 'ps_1', status: 'visible', title: 'متابعة الفاقد التعليمي:', desc: 'خريطة حرارية ترصد المهارات الضعيفة في كل صف فوراً.' },
+          { id: 'ps_2', status: 'visible', title: 'تقارير شهرية موحدة للأهالي:', desc: 'ترسل لإشراك أولياء الأمور بنتائج أبنائهم.' },
+          { id: 'ps_3', status: 'visible', title: 'لوحة أداء ورقابة للإدارة:', desc: 'معرفة نشاط المعلمين ومعدلات التصحيح والتأخير.' },
+        ],
+        buttonText: 'عرض خطة المدارس (50 شيكل سنوياً)',
+      },
+    ],
+  },
+  whatsapp: {
+    badge: 'تقرير واتساب التلقائي',
+    title: 'نموذج التقرير الذي يصله ولي الأمر على هاتفه',
+    buttonText: 'معاينة التقرير الكامل PDF ←',
+    senderName: 'منصة دِقّـة · أ. محمد المصري',
+    time: '11:42 ص',
+    greeting: 'السلام عليكم ولي أمر الطالب: أحمد محمود المصري 🌸',
+    body:
+      'نرفق لكم نتيجة ورقة امتحان الرياضيات (الشهر الأول - التفاضل والتكامل):\n📊 الدرجة: 88 / 100 (مستوى ممتاز ↗ أعلى بـ 6 درجات عن الاختبار السابق)\n💪 نقاط القوة: إتقان ممتاز لقواعد الاشتقاق الضمني والمشتقات العليا.\n🎯 نقاط تحتاج تقوية: تطبيقات القيم القصوى والمعدلات المرتبطة بالزمن.\n📎 مرفق أدناه صورة ورقة الامتحان المصححة كاملة مع ملاحظات المعلم.',
+    attachmentName: '📄 ورقة_الامتحان_المصححة_أحمد_المصري.pdf',
+  },
+  testimonials: {
+    title: 'شهادات وتجارب معلمين من قطاع غزة وفلسطين',
+    placeholder: '[قريباً — سيتم عرض تجارب المعلمين بعد انتهاء المرحلة التجريبية الأولى بنهاية الفصل الدراسي]',
+    items: [],
   },
   whoIsItFor: {
     sectionBadge: 'الفئات المستهدفة والشراكات',
@@ -266,6 +350,40 @@ function textItem(v: Loose, prefix: string, i: number): LandingFeatureItem {
   return { id: str(v.id) || `${prefix}_${i + 1}`, status: status(v.status), title: str(v.title), desc: str(v.desc) };
 }
 
+/** Text fields of a flat object: saved strings win, anything else keeps the default. */
+function texts<T extends object>(saved: Loose, base: T): T {
+  const out = { ...base } as Record<string, unknown>;
+  for (const [k, v] of Object.entries(base)) if (typeof v === 'string') out[k] = str(saved[k], v);
+  return out as T;
+}
+
+function featureList(saved: unknown, fallback: LandingFeatureItem[], prefix: string): LandingFeatureItem[] {
+  return list<LandingFeatureItem>(saved, fallback, (x, i) => textItem(x, prefix, i), prefix);
+}
+
+function planCards(saved: unknown): LandingPlanCard[] {
+  const defaults = DEFAULT_LANDING_CONFIG.plans.cards;
+  if (!Array.isArray(saved)) return defaults.map((c) => ({ ...c, points: c.points.map((p) => ({ ...p })) }));
+  return withIds(
+    saved.map((v, i) => {
+      const o = obj(v);
+      const id = str(o.id) || `plan_${i + 1}`;
+      const base = defaults.find((d) => d.id === id) ?? { id, status: 'visible' as const, tag: '', title: '', desc: '', points: [], buttonText: '' };
+      return { ...texts(o, base), id, status: status(o.status, base.status), points: featureList(o.points, base.points, `${id}_p`) };
+    }),
+    'plan',
+  );
+}
+
+function comparisonRows(saved: unknown, fallback: LandingComparisonRow[]): LandingComparisonRow[] {
+  return list<LandingComparisonRow>(
+    saved,
+    fallback,
+    (x, i) => ({ id: str(x.id) || `row_${i + 1}`, status: status(x.status), text: str(x.text), score: str(x.score), correct: x.correct !== false }),
+    'row',
+  );
+}
+
 export function mergeLanding(saved: unknown): LandingPageConfig {
   const d = DEFAULT_LANDING_CONFIG;
   const s = obj(saved);
@@ -308,6 +426,21 @@ export function mergeLanding(saved: unknown): LandingPageConfig {
 
   return {
     hero: { ...d.hero, ...(obj(s.hero) as Partial<LandingPageConfig['hero']>) },
+    install: {
+      ...texts(obj(s.install), d.install),
+      points: bullets(obj(s.install).points, d.install.points, 'inst'),
+    },
+    comparison: {
+      ...texts(obj(s.comparison), d.comparison),
+      subjectTabs: bullets(obj(s.comparison).subjectTabs, d.comparison.subjectTabs, 'tab'),
+      rows: comparisonRows(obj(s.comparison).rows, d.comparison.rows),
+    },
+    plans: { cards: planCards(obj(s.plans).cards) },
+    whatsapp: texts(obj(s.whatsapp), d.whatsapp),
+    testimonials: {
+      ...texts(obj(s.testimonials), d.testimonials),
+      items: featureList(obj(s.testimonials).items, d.testimonials.items, 'tst'),
+    },
     whoIsItFor: {
       sectionBadge: str(who.sectionBadge, d.whoIsItFor.sectionBadge),
       sectionTitle: str(who.sectionTitle, d.whoIsItFor.sectionTitle),

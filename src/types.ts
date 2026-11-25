@@ -429,8 +429,78 @@ export interface LandingCustomSection {
   items: LandingFeatureItem[];
 }
 
+/** «نزّل التطبيق»: the texts; the install steps per phone stay built in. */
+export interface LandingInstallConfig {
+  title: string;
+  subtitle: string;
+  points: LandingBullet[];
+}
+
+/** One marking line on the «after» paper: ✓ (correct) or ✗, with its mark. */
+export interface LandingComparisonRow {
+  id: string;
+  status: LandingItemStatus;
+  text: string;
+  score: string;
+  correct: boolean;
+}
+
+export interface LandingComparisonConfig {
+  title: string;
+  subtitle: string;
+  subjectTabs: LandingBullet[];
+  beforeTitle: string;
+  beforeFileName: string;
+  beforeStudentLine: string;
+  /** The student's working, one line per row. */
+  beforeText: string;
+  beforeNote: string;
+  afterTitle: string;
+  afterScore: string;
+  criterionLabel: string;
+  criterionStatus: string;
+  rows: LandingComparisonRow[];
+  afterNote: string;
+}
+
+/** A big audience card in the «plans» section: points are bold title + text. */
+export interface LandingPlanCard {
+  id: string;
+  status: LandingItemStatus;
+  tag: string;
+  title: string;
+  desc: string;
+  points: LandingFeatureItem[];
+  buttonText: string;
+}
+
+export interface LandingWhatsappConfig {
+  badge: string;
+  title: string;
+  buttonText: string;
+  senderName: string;
+  time: string;
+  greeting: string;
+  /** Message body, one line per row. */
+  body: string;
+  attachmentName: string;
+}
+
+export interface LandingTestimonialsConfig {
+  title: string;
+  /** Shown while there are no visible testimonials. */
+  placeholder: string;
+  /** title = teacher's name and school, desc = what they said. */
+  items: LandingFeatureItem[];
+}
+
 export interface LandingPageConfig {
   hero: LandingHeroConfig;
+  install: LandingInstallConfig;
+  comparison: LandingComparisonConfig;
+  plans: { cards: LandingPlanCard[] };
+  whatsapp: LandingWhatsappConfig;
+  testimonials: LandingTestimonialsConfig;
   whoIsItFor: {
     sectionBadge: string;
     sectionTitle: string;

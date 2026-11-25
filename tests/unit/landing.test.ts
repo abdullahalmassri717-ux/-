@@ -52,3 +52,21 @@ test('a removed custom section drops out of the order; bad values fall back safe
   assert.ok(c.sectionOrder.indexOf('faqs') < c.sectionOrder.indexOf('ctaBanner'));
   assert.equal(c.features.items[0].status, 'visible');
 });
+
+test('the once-fixed sections load their defaults and keep saved edits', () => {
+  const c = mergeLanding({
+    plans: { cards: [{ id: 'plan_tutor', title: 'للمدرّس', points: [{ title: 'أ', desc: 'ب', status: 'soon' }] }] },
+    whatsapp: { title: 'تقرير' },
+    comparison: { rows: [{ text: 'خطأ', score: '0/3', correct: false }] },
+  });
+  assert.equal(c.plans.cards.length, 1);
+  assert.equal(c.plans.cards[0].title, 'للمدرّس');
+  assert.equal(c.plans.cards[0].tag, DEFAULT_LANDING_CONFIG.plans.cards[0].tag);
+  assert.equal(c.plans.cards[0].points[0].status, 'soon');
+  assert.equal(c.whatsapp.title, 'تقرير');
+  assert.equal(c.whatsapp.senderName, DEFAULT_LANDING_CONFIG.whatsapp.senderName);
+  assert.equal(c.comparison.rows[0].correct, false);
+  assert.equal(c.comparison.subjectTabs.length, 4);
+  assert.equal(c.install.points.length, 3);
+  assert.deepEqual(c.testimonials.items, []);
+});
