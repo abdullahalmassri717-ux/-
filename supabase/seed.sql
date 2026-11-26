@@ -394,6 +394,8 @@ insert into public.payment_receipts (invoice_id, organization_id, method, amount
 
 update public.payment_receipts set status = 'confirmed', review_note = 'تم التأكد من الحوالة'
   where invoice_id in ('0eb52ab8-ac01-43ac-89c6-b2447b79b83b', 'c7973af3-8875-4682-8863-5eb10763014e');
+-- فواتير عرض قديمة: لا تقفل الجهات التجريبية (آلية عدم الدفع في 20261126000300).
+update public.invoices set enforce = false;
 
 -- رسوم الطلاب (شهر نوفمبر 2026)
 insert into public.tuition_charges (id, organization_id, student_id, period_month, amount_due, notes) values

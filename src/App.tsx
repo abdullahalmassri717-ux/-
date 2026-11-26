@@ -21,6 +21,7 @@ import { getExamScope, setExamScope } from './data/examScope';
 import { Toaster } from './components/common/Toaster';
 import { InstallAppBanner } from './components/common/InstallAppBanner';
 import { OrgStatusGate } from './components/common/OrgStatusGate';
+import { BillingBanner } from './components/common/BillingBanner';
 import { ScreenErrorBoundary } from './components/common/ScreenErrorBoundary';
 
 // Group C Components
@@ -516,6 +517,11 @@ export default function App() {
             <OrgStatusGate entity={activeEntity} onRefresh={auth.refresh} />
           ) : (
             <DataProvider org={viewEntity} real={isReal} teacherView={isReal && isOwnerTeacherView}>
+              {isReal &&
+                activeEntity.id &&
+                (roleForPath(location.pathname) === 'teacher' || roleForPath(location.pathname) === 'school_principal') && (
+                  <BillingBanner orgId={activeEntity.id} onNavigate={handleNavigate} />
+                )}
               <ScreenErrorBoundary resetKey={location.pathname}>
                 <Suspense fallback={<ScreenLoading />}>{renderScreen()}</Suspense>
               </ScreenErrorBoundary>
