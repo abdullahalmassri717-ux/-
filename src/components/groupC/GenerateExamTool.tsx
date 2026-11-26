@@ -248,7 +248,7 @@ export const GenerateExamTool: React.FC<GenerateExamToolProps> = ({ onNavigate, 
       title: scope && visibleLessons.length === 1 ? `امتحان ${visibleLessons[0].title}` : subject ? `امتحان ${subject.subject}` : '',
       groupId: group?.id ?? null,
       kind: 'exam',
-      questions: items.map(({ lessonId, outcome, text, type, maxScore, modelAnswer, criteria }) => ({ lessonId, outcome, text, type, maxScore, modelAnswer, criteria })),
+      questions: items.map(({ lessonId, outcome, text, type, maxScore, modelAnswer, criteria, answerLines }) => ({ lessonId, outcome, text, type, maxScore, modelAnswer, criteria, answerLines })),
     });
     onNavigate('B5');
   };

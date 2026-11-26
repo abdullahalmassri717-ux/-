@@ -70,6 +70,8 @@ export interface QuestionInput {
   modelAnswer: string;
   lessonId: string | null;
   criteria: { description: string; points: number }[];
+  /** Handwritten answer lines on the printed sheet (saved in the exam's print layout). */
+  answerLines?: number;
 }
 
 export interface AssessmentQuestion extends QuestionRubric {

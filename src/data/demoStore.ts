@@ -27,7 +27,7 @@ import type {
   WeeklyReportRow,
 } from './types';
 import { buildWeeklyText } from '../lib/weeklyReportText';
-import { normalizePrintLayout, type PrintLayout } from '../lib/printLayout';
+import { layoutFromQuestions, normalizePrintLayout, type PrintLayout } from '../lib/printLayout';
 
 const wait = <T,>(value: T): Promise<T> => new Promise((r) => setTimeout(() => r(value), 120));
 let seq = 0;
@@ -448,6 +448,7 @@ export function createDemoStore(): DataStore {
           criteria: q.criteria,
         })),
       });
+      printLayouts.set(id, layoutFromQuestions(input.questions));
       return wait(id);
     },
     async updateAssessment(id, patch) {

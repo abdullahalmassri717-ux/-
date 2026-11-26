@@ -46,3 +46,13 @@ test('normalize drops bad values', () => {
     lines: { '1': 5, '2': 0, '3': 40 },
   });
 });
+
+test('estimates answer space from the model answer, not one line', async () => {
+  const { estimateLines, layoutFromQuestions } = await import('../../src/lib/printLayout.ts');
+  assert.equal(estimateLines({ type: 'multiple_choice', modelAnswer: 'ب' }), 1);
+  const long = 'كلمة '.repeat(80);
+  assert.ok(estimateLines({ type: 'essay', modelAnswer: long }) >= 10);
+  assert.ok(estimateLines({ type: 'problem_solving', modelAnswer: 'س = 3' }) >= 4);
+  assert.ok(estimateLines({ type: 'short_answer', modelAnswer: '' }) >= 2);
+  assert.deepEqual(layoutFromQuestions([{ answerLines: 5 }, {}, { answerLines: 99 }]).lines, { '1': 5, '3': 40 });
+});

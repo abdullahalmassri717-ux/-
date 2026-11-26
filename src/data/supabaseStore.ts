@@ -9,7 +9,7 @@ import { createSupabaseBilling } from './billing';
 import { createSupabaseAi } from './ai';
 import { createSupabaseSchool, type SchoolStore } from './school';
 import { fetchAll } from './fetchAll';
-import { normalizePrintLayout } from '../lib/printLayout';
+import { layoutFromQuestions, normalizePrintLayout } from '../lib/printLayout';
 import type {
   AssessmentDetail,
   AssessmentRow,
@@ -815,6 +815,7 @@ export function createSupabaseStore(db: SupabaseClient, orgId: string): DataStor
         submission_opens_at: input.submissionMode === 'link' ? input.submissionOpensAt ?? null : null,
         submission_closes_at: input.submissionMode === 'link' ? input.submissionClosesAt ?? null : null,
         auto_send_reports: input.autoSendReports,
+        print_layout: layoutFromQuestions(input.questions),
       });
       if (error) fail(error, 'تعذّر حفظ الامتحان.');
       const questions = input.questions.map((q, idx) => ({

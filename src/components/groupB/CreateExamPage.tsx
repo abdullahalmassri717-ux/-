@@ -6,9 +6,11 @@ import { takeExamDraft } from '../../data/examDraft';
 import type { DraftQuestion as AiDraft } from '../../data/ai';
 import { prepareImageForGrading, type PreparedImage } from '../../lib/imageResize';
 import { filesToPageImages, pdfErrorText, PAGE_FILE_ACCEPT } from '../../lib/pdfPages';
+import { estimateLines, MAX_LINES } from '../../lib/printLayout';
 import { ClosePicker, defaultClosePreset, fromLocalInput, resolveClose, toLocalInput, type ClosePreset } from './SubmissionTime';
 
-type DraftQuestion = QuestionRubric & { lessonId: string | null };
+/** answerLines: null = estimate from the model answer until the AI or the teacher sets it. */
+type DraftQuestion = QuestionRubric & { lessonId: string | null; answerLines: number | null };
 
 const blankQuestion = (n: number): DraftQuestion => ({
   id: `q${Date.now()}_${n}`,
@@ -18,9 +20,29 @@ const blankQuestion = (n: number): DraftQuestion => ({
   maxScore: 10,
   lesson: '',
   lessonId: null,
+  answerLines: null,
   modelAnswer: '',
   criteria: [{ description: '', points: 10 }],
 });
+const linesLabel = (n: number) => (n === 0 ? 'بلا فراغ' : n === 1 ? 'سطر واحد' : n === 2 ? 'سطران' : n <= 10 ? `${n} أسطر` : `${n} سطراً`);
+
+/** How many handwritten lines this question gets on the printed answer sheet. */
+const AnswerLinesField: React.FC<{ value: number; auto: boolean; onChange: (n: number) => void }> = ({ value, auto, onChange }) => (
+  <div className="flex flex-wrap items-center justify-between gap-2 text-xs bg-[#F7F8FA] border border-slate-200 rounded-xl p-2.5">
+    <div className="min-w-0">
+      <span className="font-bold text-slate-800">مساحة الإجابة في الورقة: </span>
+      <span className="text-slate-500">{auto ? 'تقدير تلقائي حسب الإجابة النموذجية' : 'تعديلك'}</span>
+    </div>
+    <div className="flex items-center gap-1 shrink-0">
+      <button type="button" onClick={() => onChange(Math.max(0, value - 1))} disabled={value <= 0} aria-label="أسطر أقل"
+        className="w-7 h-7 rounded-lg border border-slate-300 bg-white font-bold cursor-pointer disabled:opacity-40">−</button>
+      <span className="w-20 text-center font-bold tabular-nums">{linesLabel(value)}</span>
+      <button type="button" onClick={() => onChange(Math.min(MAX_LINES, value + 1))} disabled={value >= MAX_LINES} aria-label="أسطر أكثر"
+        className="w-7 h-7 rounded-lg border border-slate-300 bg-white font-bold cursor-pointer disabled:opacity-40">+</button>
+    </div>
+  </div>
+);
+
 const fromDraft = (q: AiDraft, i: number): DraftQuestion => ({
   id: `q${Date.now()}_${i}`,
   questionNumber: i + 1,
@@ -29,6 +51,7 @@ const fromDraft = (q: AiDraft, i: number): DraftQuestion => ({
   maxScore: q.maxScore,
   lesson: '',
   lessonId: q.lessonId,
+  answerLines: typeof q.answerLines === 'number' && q.answerLines > 0 ? q.answerLines : null,
   modelAnswer: q.modelAnswer,
   criteria: q.criteria.length ? q.criteria : [{ description: '', points: q.maxScore }],
 });
@@ -197,6 +220,7 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
           maxScore: Number(q.maxScore),
           modelAnswer: q.modelAnswer,
           lessonId: q.lessonId,
+          answerLines: q.answerLines ?? estimateLines(q),
           criteria: q.criteria.map((c) => ({ description: c.description, points: Number(c.points) || 0 })),
         })),
       }));
@@ -227,7 +251,12 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
     setIsAiSuggesting(qId);
     try {
       const r = await store.aiSuggestRubric({ subjectId: group.subjectId, lessonId: q.lessonId, text: q.text, maxScore: Number(q.maxScore) || 10 });
-      updateQ(qId, { modelAnswer: q.modelAnswer.trim() ? q.modelAnswer : r.modelAnswer, criteria: r.criteria });
+      updateQ(qId, {
+        modelAnswer: q.modelAnswer.trim() ? q.modelAnswer : r.modelAnswer,
+        criteria: r.criteria,
+        // The AI's guess of the answer space, unless the teacher already chose one.
+        ...(q.answerLines === null && r.answerLines ? { answerLines: r.answerLines } : {}),
+      });
     } catch (e) {
       notify(errorMessage(e));
     } finally {
@@ -506,7 +535,13 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
 
         {/* Auto Dispatch Toggle (PDF requirement: أرسل النتائج تلقائياً بعد التصحيح أو بعد مراجعتي) */}
         <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-          <span className="font-bold text-slate-700">إرسال تقارير واتساب للأهالي:</span>
+          <div className="space-y-0.5">
+            <span className="font-bold text-slate-700 block">اعتماد الدرجات للتقرير الأسبوعي للأهالي:</span>
+            <span className="text-[11px] text-slate-500 block">
+              التقرير يُرسل للأهالي مرة واحدة في الأسبوع (الخميس مساءً)، وفيه الأوراق المعتمدة فقط.
+              {autoSendReports === 'auto' && ' الأوراق التي صحّحها الذكاء الاصطناعي بثقة عالية تُعتمد وحدها، والباقي ينتظر مراجعتك.'}
+            </span>
+          </div>
           <div className="flex gap-2">
             <button
               type="button"
@@ -515,7 +550,7 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
                 autoSendReports === 'after_review' ? 'bg-[#1E3A5F] text-white' : 'bg-slate-100 text-slate-700'
               }`}
             >
-              بعد مراجعتي واعتمادي (موصى به)
+              أعتمدها بنفسي بعد المراجعة (موصى به)
             </button>
             <button
               type="button"
@@ -524,7 +559,7 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
                 autoSendReports === 'auto' ? 'bg-[#1E3A5F] text-white' : 'bg-slate-100 text-slate-700'
               }`}
             >
-              أرسل تلقائياً فور انتهاء التصحيح
+              اعتماد تلقائي للدرجات الواثقة
             </button>
           </div>
         </div>
@@ -654,6 +689,13 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
                   className="w-full p-2 bg-[#F7F8FA] border border-slate-300 rounded-lg font-mono"
                 />
               </div>
+
+              {/* Answer space on the printed sheet */}
+              <AnswerLinesField
+                value={q.answerLines ?? estimateLines(q)}
+                auto={q.answerLines === null}
+                onChange={(n) => updateQ(q.id, { answerLines: n })}
+              />
 
               {/* Rubric Breakdown Criteria */}
               <div className="bg-[#F7F8FA] border border-slate-200 rounded-xl p-3.5 space-y-2 text-xs">
