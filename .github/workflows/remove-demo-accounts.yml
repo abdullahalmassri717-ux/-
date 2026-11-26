@@ -10,9 +10,17 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'LIST = only print what exists; DRYRUN = run the cleanup and undo it; DELETE = remove the test data for real; SHOWCASE = give the platform owner his own demo school + tutor page'
+        description: 'LIST = only print what exists; DRYRUN = run the cleanup and undo it; DELETE = remove the test data for real; SHOWCASE = owner demo orgs; NUMBERS-PREPARE/NUMBERS = remove demo test numbers with a new token'
         required: true
         default: 'LIST'
+      prepare_run_id:
+        description: 'NUMBERS only: run id of the NUMBERS-PREPARE run'
+        required: false
+        default: ''
+      ciphertext:
+        description: 'NUMBERS only: Supabase access token encrypted with the NUMBERS-PREPARE public key (base64, RSA-OAEP-SHA256)'
+        required: false
+        default: ''
       extra_user_ids:
         description: 'Optional: extra user ids to delete, comma separated'
         required: false
@@ -141,3 +149,69 @@ jobs:
           docker run --rm -e PGPASSWORD -v "$PWD/scripts/demo-remove:/sql:ro" postgres:17 \
             psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" \
             -v ON_ERROR_STOP=1 -f /sql/admin-showcase.sql
+
+  # NUMBERS-PREPARE / NUMBERS: remove the demo numbers from Supabase "test phone
+  # numbers" with a Supabase access token that is not in the secrets, sent
+  # encrypted (same idea as Deploy Supabase prepare/apply). Other numbers stay.
+  numbers:
+    if: ${{ github.event.inputs.confirm == 'NUMBERS-PREPARE' || github.event.inputs.confirm == 'NUMBERS' }}
+    runs-on: ubuntu-latest
+    env:
+      REF: roeweplhofhjtcnbfmvo
+      MODE: ${{ github.event.inputs.confirm }}
+      DEMO_PHONES: '970599990001 970599990002 970599990003 970599990004 970599990005'
+    steps:
+      - name: Make key pair (prepare)
+        if: env.MODE == 'NUMBERS-PREPARE'
+        run: |
+          mkdir -p ~/tokkey && cd ~/tokkey
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out priv.pem 2>/dev/null
+          openssl pkey -in priv.pem -pubout -out pub.pem
+          echo "PUBLIC KEY (safe to share):"; cat pub.pem
+      - name: Keep private half (prepare)
+        if: env.MODE == 'NUMBERS-PREPARE'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/tokkey/priv.pem
+          key: numbers-keypair-${{ github.run_id }}
+      - name: Restore private half
+        if: env.MODE == 'NUMBERS'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/tokkey/priv.pem
+          key: numbers-keypair-${{ github.event.inputs.prepare_run_id }}
+          fail-on-cache-miss: true
+      - name: Remove demo numbers from the test phone list
+        if: env.MODE == 'NUMBERS'
+        env:
+          CIPHERTEXT: ${{ github.event.inputs.ciphertext }}
+        run: |
+          set -euo pipefail
+          tok=$(printf %s "$CIPHERTEXT" | base64 -d | openssl pkeyutl -decrypt -inkey ~/tokkey/priv.pem \
+            -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256)
+          rm -f ~/tokkey/priv.pem
+          echo "::add-mask::$tok"
+          api="https://api.supabase.com/v1/projects/$REF/config/auth"
+          curl -fsS --retry 3 --retry-all-errors "$api" -H "Authorization: Bearer $tok" > /tmp/auth.json
+          current=$(jq -r '.sms_test_otp // ""' /tmp/auth.json)
+          echo "Test numbers before: $(echo "$current" | tr ',' '\n' | grep -c = || true)"
+          kept=""
+          IFS=',' read -ra entries <<< "$current"
+          for e in "${entries[@]}"; do
+            num="${e%%=*}"
+            case " $DEMO_PHONES " in *" $num "*) ;; *) [ -n "$e" ] && kept="${kept:+$kept,}$e" ;; esac
+          done
+          jq -n --arg otp "$kept" '{sms_test_otp: $otp}' > /tmp/patch.json
+          code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --retry 3 --retry-all-errors -X PATCH "$api" \
+            -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' --data-binary @/tmp/patch.json)
+          echo "HTTP $code"
+          case "$code" in 2*) ;; *) head -c 500 /tmp/out.json; exit 1 ;; esac
+          curl -fsS "$api" -H "Authorization: Bearer $tok" | jq -r '.sms_test_otp // ""' > /tmp/after.txt
+          echo "Test numbers after: $(tr ',' '\n' < /tmp/after.txt | grep -c = || true)"
+          for p in $DEMO_PHONES; do if grep -q "$p=" /tmp/after.txt; then echo "::error::$p still there"; exit 1; fi; done
+          echo "Kept (last 3 digits): $(tr ',' '\n' < /tmp/after.txt | sed -n 's/^.*\([0-9]\{3\}\)=.*/…\1/p' | tr '\n' ' ')"
+      - name: Delete private half from the cache
+        if: always() && env.MODE == 'NUMBERS'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh cache delete "numbers-keypair-${{ github.event.inputs.prepare_run_id }}" --repo "$GITHUB_REPOSITORY" || true
