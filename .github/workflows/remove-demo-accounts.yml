@@ -10,15 +10,44 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type DELETE to remove all demo accounts and their data'
+        description: 'Type DELETE to remove all demo accounts and their data (or LIST to only print what exists, changes nothing)'
         required: true
-        default: ''
+        default: 'LIST'
 
 concurrency:
   group: demo-accounts
   cancel-in-progress: false
 
 jobs:
+  # Read-only inventory with the database password: what exists per organization,
+  # the users, and the files. Prints only org names, counts and the last 3 digits
+  # of phone numbers (this repository is public).
+  list:
+    if: ${{ github.event.inputs.confirm == 'LIST' }}
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_REF: roeweplhofhjtcnbfmvo
+      PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find the database address
+        run: |
+          for region in eu-central-1 eu-central-2 eu-west-1 eu-west-2 eu-west-3 eu-north-1 us-east-1 us-east-2 us-west-1 us-west-2 \
+                        ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2 ca-central-1 sa-east-1 me-central-1; do
+            for n in 0 1; do
+              host="aws-$n-$region.pooler.supabase.com"
+              if docker run --rm -e PGPASSWORD postgres:17 psql "host=$host port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require connect_timeout=8" -Atc 'select 1' >/dev/null 2>&1; then
+                echo "DB_HOST=$host" >> "$GITHUB_ENV"; exit 0
+              fi
+            done
+          done
+          echo "::error::Could not connect to the database."; exit 1
+      - name: Inventory (read only)
+        run: |
+          docker run --rm -e PGPASSWORD -v "$PWD/scripts/demo-remove:/sql:ro" postgres:17 \
+            psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" \
+            -v ON_ERROR_STOP=1 -c 'begin read only' -f /sql/inventory.sql
+
   remove:
     if: ${{ github.event.inputs.confirm == 'DELETE' }}
     runs-on: ubuntu-latest
