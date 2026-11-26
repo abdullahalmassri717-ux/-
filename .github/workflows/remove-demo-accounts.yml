@@ -156,6 +156,9 @@ jobs:
   numbers:
     if: ${{ github.event.inputs.confirm == 'NUMBERS-PREPARE' || github.event.inputs.confirm == 'NUMBERS' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     env:
       REF: roeweplhofhjtcnbfmvo
       MODE: ${{ github.event.inputs.confirm }}
@@ -201,7 +204,10 @@ jobs:
             num="${e%%=*}"
             case " $DEMO_PHONES " in *" $num "*) ;; *) [ -n "$e" ] && kept="${kept:+$kept,}$e" ;; esac
           done
-          jq -n --arg otp "$kept" '{sms_test_otp: $otp}' > /tmp/patch.json
+          # Supabase wants the expiry sent together with the list; keep the current one.
+          until=$(jq -r '.sms_test_otp_valid_until // empty' /tmp/auth.json)
+          [ -n "$until" ] || until=$(date -u -d '+1 year' +%Y-%m-%dT%H:%M:%SZ)
+          jq -n --arg otp "$kept" --arg until "$until" '{sms_test_otp: $otp, sms_test_otp_valid_until: $until}' > /tmp/patch.json
           code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --retry 3 --retry-all-errors -X PATCH "$api" \
             -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' --data-binary @/tmp/patch.json)
           echo "HTTP $code"
