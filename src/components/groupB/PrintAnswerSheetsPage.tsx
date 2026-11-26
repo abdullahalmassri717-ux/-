@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { ScreenId } from '../../types';
-import { Printer, QrCode, ArrowRight, Minus, Plus, RotateCcw, Loader2 } from 'lucide-react';
+import { Printer, QrCode, ArrowRight, Minus, Plus, Sparkles, Loader2 } from 'lucide-react';
 import { notify } from '../../lib/notify';
 import { useData, useLoad } from '../../data/DataContext';
 import { useSelected } from '../../data/selection';
@@ -303,7 +303,37 @@ export const PrintAnswerSheetsPage: React.FC<PrintAnswerSheetsPageProps> = ({ on
     change({ ...layout, pages: target, lines: next });
   };
 
-  const reset = () => layout && change({ ...layout, pages: null, lines: {} });
+  // The AI suggests the answer lines once per exam (the first time this page
+  // opens it); the teacher can change any number, or ask again.
+  const [suggesting, setSuggesting] = useState(false);
+  const suggestFor = useRef('');
+  const suggest = React.useCallback(
+    async (base: PrintLayout, manual: boolean) => {
+      if (!examId) return;
+      suggestFor.current = examId;
+      setSuggesting(true);
+      try {
+        const ai = await store.aiSuggestAnswerLines(examId);
+        if (suggestFor.current !== examId) return;
+        change({ ...base, pages: null, lines: ai, ai: true });
+        if (manual) notify('اقترح الذكاء الاصطناعي عدد الأسطر من جديد. عدّل أي سؤال كما تريد.', 'success');
+      } catch (e) {
+        // Keep the quick estimate; mark as done so it doesn't retry on every visit.
+        if (suggestFor.current === examId) change({ ...base, pages: null, lines: manual ? {} : base.lines, ai: true });
+        if (manual) notify(e instanceof Error ? e.message : 'تعذّر اقتراح الأسطر الآن.', 'warning');
+      } finally {
+        setSuggesting(false);
+      }
+    },
+    [examId, store],
+  );
+  useEffect(() => {
+    if (!exam || !layout || layout.ai || suggesting || !exam.questions.length) return;
+    // A layout the teacher already shaped by hand is left as it is.
+    if (Object.keys(layout.lines).length) return;
+    if (suggestFor.current === examId) return;
+    void suggest(layout, false);
+  }, [exam, layout, examId, suggesting, suggest]);
 
   // Preview width follows the screen.
   const previewRef = useRef<HTMLDivElement>(null);
@@ -450,6 +480,13 @@ export const PrintAnswerSheetsPage: React.FC<PrintAnswerSheetsPageProps> = ({ on
 
           <div className="space-y-1.5">
             <p className="font-bold text-slate-800">مساحة الإجابة لكل سؤال (بالأسطر، السطر 8 ملم):</p>
+            <p className="text-slate-500 flex items-center gap-1">
+              {suggesting ? (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> الذكاء الاصطناعي يقدّر عدد الأسطر لكل سؤال من نصه ونموذج إجابته…</>
+              ) : (
+                <><Sparkles className="w-3.5 h-3.5 text-purple-600" /> الذكاء الاصطناعي يقترح عدد الأسطر حسب طول الإجابة المتوقعة. غيّر أي رقم بالأزرار + و −.</>
+              )}
+            </p>
             <ul className="divide-y divide-slate-100 border border-slate-200 rounded-xl">
               {exam.questions.map((q, i) => (
                 <li key={q.id} className="flex items-center justify-between gap-2 p-2">
@@ -484,8 +521,12 @@ export const PrintAnswerSheetsPage: React.FC<PrintAnswerSheetsPageProps> = ({ on
               <span className="text-slate-500">
                 «بلا فراغ» مناسب لأسئلة الاختيار التي يضع فيها الطالب دائرة على الإجابة داخل نص السؤال.
               </span>
-              <button onClick={reset} className="flex items-center gap-1 text-slate-600 hover:text-[#1E3A5F] font-bold cursor-pointer">
-                <RotateCcw className="w-3.5 h-3.5" /> المساحات الافتراضية
+              <button
+                onClick={() => layout && suggest(layout, true)}
+                disabled={suggesting}
+                className="flex items-center gap-1 text-slate-600 hover:text-[#1E3A5F] font-bold cursor-pointer disabled:opacity-50"
+              >
+                <Sparkles className="w-3.5 h-3.5" /> اقترح الأسطر من جديد
               </button>
             </div>
             {tooTall && (

@@ -9,25 +9,27 @@ export interface PrintLayout {
   /** The page count the teacher asked for (null = no target). */
   pages: number | null;
   style: AnswerStyle;
-  /** Answer lines per question number. A missing number uses the default for its type. */
+  /** Answer lines per question number. A missing number uses estimateLines. */
   lines: Record<string, number>;
+  /** True once the AI suggested the lines (so opening the page again doesn't ask again). */
+  ai: boolean;
 }
 
 export const MAX_LINES = 40;
 export const MAX_PAGES = 10;
 
-/** Default answer lines by question type. */
-export function defaultLines(type: string): number {
-  switch (type) {
-    case 'multiple_choice':
-      return 1;
-    case 'short_answer':
-      return 3;
-    case 'essay':
-      return 8;
-    default:
-      return 6;
-  }
+/**
+ * A quick guess of the answer lines a question needs, used until the AI has
+ * suggested its numbers (or when it can't be reached): longer model answers
+ * and more marks mean more lines. Never 1 line unless it's a choice question.
+ */
+export function estimateLines(q: { type: string; maxScore?: number; modelAnswer?: string }): number {
+  if (q.type === 'multiple_choice') return 1;
+  const base = q.type === 'short_answer' ? 3 : q.type === 'essay' ? 8 : 5;
+  // About 45 handwritten characters fit on one line; add 1 line of spare room.
+  const fromAnswer = q.modelAnswer?.trim() ? Math.ceil(q.modelAnswer.trim().length / 45) + 1 : 0;
+  const fromMarks = q.maxScore ? Math.ceil(q.maxScore / 2) + 1 : 0;
+  return Math.max(base, Math.min(MAX_LINES, Math.max(fromAnswer, fromMarks)));
 }
 
 export function normalizePrintLayout(raw: unknown): PrintLayout {
@@ -39,11 +41,11 @@ export function normalizePrintLayout(raw: unknown): PrintLayout {
       if (/^\d{1,3}$/.test(k) && typeof v === 'number' && Number.isFinite(v)) lines[k] = Math.max(0, Math.min(MAX_LINES, Math.round(v)));
     }
   }
-  return { pages, style: r.style === 'box' ? 'box' : 'lines', lines };
+  return { pages, style: r.style === 'box' ? 'box' : 'lines', lines, ai: r.ai === true };
 }
 
-export function linesFor(layout: PrintLayout, q: { questionNumber: number; type: string }): number {
-  return layout.lines[String(q.questionNumber)] ?? defaultLines(q.type);
+export function linesFor(layout: PrintLayout, q: { questionNumber: number; type: string; maxScore?: number; modelAnswer?: string }): number {
+  return layout.lines[String(q.questionNumber)] ?? estimateLines(q);
 }
 
 // ---------------------------------------------------------------------------

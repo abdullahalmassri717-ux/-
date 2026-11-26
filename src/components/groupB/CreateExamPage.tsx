@@ -504,10 +504,11 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
           )}
         </div>
 
-        {/* Auto Dispatch Toggle (PDF requirement: أرسل النتائج تلقائياً بعد التصحيح أو بعد مراجعتي) */}
-        <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-          <span className="font-bold text-slate-700">إرسال تقارير واتساب للأهالي:</span>
-          <div className="flex gap-2">
+        {/* Approval of results. Parents get ONE weekly report (SMS with a link) that
+            includes only approved papers; nothing is sent per exam. */}
+        <div className="pt-2 border-t border-slate-100 space-y-2 text-xs">
+          <span className="font-bold text-slate-700 block">اعتماد النتائج (للتقرير الأسبوعي للأهالي):</span>
+          <div className="flex flex-col sm:flex-row gap-2">
             <button
               type="button"
               onClick={() => setAutoSendReports('after_review')}
@@ -524,9 +525,15 @@ export const CreateExamPage: React.FC<CreateExamPageProps> = ({ onNavigate }) =>
                 autoSendReports === 'auto' ? 'bg-[#1E3A5F] text-white' : 'bg-slate-100 text-slate-700'
               }`}
             >
-              أرسل تلقائياً فور انتهاء التصحيح
+              اعتماد تلقائي للأوراق الواضحة
             </button>
           </div>
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            لا يُرسل شيء للأهالي بعد كل امتحان. ولي الأمر يستلم تقريراً واحداً كل أسبوع فيه الأوراق المعتمدة فقط.
+            {autoSendReports === 'auto'
+              ? ' في الاعتماد التلقائي تُعتمد الورقة فور تصحيحها إذا كان الذكاء الاصطناعي واثقاً من كل أسئلتها، والأوراق المشكوك فيها تبقى بانتظار مراجعتك.'
+              : ' الورقة لا تدخل التقرير حتى تراجعها وتعتمدها.'}
+          </p>
         </div>
 
         {/* Multi-Form Version Switch [قريباً] (PDF page 12) */}

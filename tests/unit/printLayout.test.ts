@@ -2,7 +2,7 @@
 // "make it N pages" spreads the answer lines to fill exactly N pages.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fitToPages, fitsIn, normalizePrintLayout, packPages, type PageMetrics } from '../../src/lib/printLayout.ts';
+import { estimateLines, fitToPages, fitsIn, normalizePrintLayout, packPages, type PageMetrics } from '../../src/lib/printLayout.ts';
 
 const m = (questions: number[]): PageMetrics => ({ page: 1000, firstHeader: 200, nextHeader: 80, gap: 10, line: 30, questions });
 
@@ -44,5 +44,14 @@ test('normalize drops bad values', () => {
     pages: null,
     style: 'lines',
     lines: { '1': 5, '2': 0, '3': 40 },
+    ai: false,
   });
+  assert.equal(normalizePrintLayout({ ai: true }).ai, true);
+});
+
+test('estimate gives open questions real space', () => {
+  assert.equal(estimateLines({ type: 'multiple_choice', maxScore: 2 }), 1);
+  assert.ok(estimateLines({ type: 'short_answer', maxScore: 1 }) >= 3);
+  assert.ok(estimateLines({ type: 'problem_solving', maxScore: 10, modelAnswer: 'x'.repeat(400) }) >= 10);
+  assert.ok(estimateLines({ type: 'essay', maxScore: 100, modelAnswer: 'x'.repeat(9000) }) <= 40);
 });

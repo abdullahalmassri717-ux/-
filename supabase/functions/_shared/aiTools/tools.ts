@@ -512,3 +512,43 @@ roles: مصفوفة بطول عدد الأعمدة (${width})، دور لكل ع
   const headerRow = res.data.header_row >= 0 && res.data.header_row <= 2 ? res.data.header_row : -1;
   return { data: { headerRow, roles }, usage: [res.usage] };
 }
+
+const LinesSchema = z.object({
+  questions: z.array(z.object({ number: z.number().int(), lines: z.number().int() })),
+});
+
+/**
+ * How many answer lines each question needs on the printed answer sheet, from
+ * the question, its marks and its model answer, for a student of this grade.
+ * The teacher can change every number afterwards. Uses the cheap fast model.
+ */
+export async function suggestAnswerLines(
+  model: ToolModel,
+  config: ToolModelConfig,
+  o: {
+    questions: { number: number; text: string; type: string; maxScore: number; modelAnswer: string }[];
+    subjectName: string;
+    gradeName: string;
+  },
+): Promise<ToolResult<{ lines: Record<string, number> }>> {
+  const kinds: Record<string, string> = { multiple_choice: 'اختيار من متعدد', short_answer: 'إجابة قصيرة', problem_solving: 'حل مسألة', essay: 'مقالي' };
+  const list = o.questions
+    .map((q) => `سؤال رقم ${q.number} (${kinds[q.type] ?? q.type}، ${q.maxScore} درجات):\n${q.text.slice(0, 1500)}\nنموذج الإجابة: ${(q.modelAnswer || '—').slice(0, 1500)}`)
+    .join('\n\n');
+  const res = await model.json({
+    model: config.fastModel,
+    effort: 'low',
+    system: `أنت مدرّس خبير تجهّز ورقة إجابة مطبوعة. لكل سؤال، قدّر عدد أسطر الكتابة (ارتفاع السطر 8 ملم) التي يحتاجها طالب هذا الصف ليكتب إجابته كاملة بخط يده.
+فكّر بطول نموذج الإجابة وعدد الخطوات والرسومات أو الجداول المطلوبة، وأن الطالب يكتب أكبر من الطباعة (الصفوف الصغرى أكبر خطاً). أضف سطراً أو سطرين احتياطاً.
+اختيار من متعدد أو صح وخطأ يكتفي فيه الطالب بالرمز: سطر واحد. إذا كان السؤال فيه عدة فروع فاجمع ما تحتاجه الفروع كلها.
+عدد الأسطر بين 1 و40. أعد رقماً لكل سؤال برقمه نفسه.`,
+    content: [{ type: 'text', text: `المادة: ${o.subjectName} — ${o.gradeName}\n\n${list}` }],
+    schema: LinesSchema,
+  });
+  const wanted = new Set(o.questions.map((q) => q.number));
+  const lines: Record<string, number> = {};
+  for (const q of res.data.questions) {
+    if (wanted.has(q.number)) lines[String(q.number)] = Math.max(1, Math.min(40, Math.round(q.lines)));
+  }
+  return { data: { lines }, usage: [res.usage] };
+}

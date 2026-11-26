@@ -78,6 +78,8 @@ export interface AiStore {
   aiClearPendingGenerate(): void;
   aiExtractExam(subjectId: string, pages: PaperPage[]): Promise<{ questions: DraftQuestion[]; readable: boolean }>;
   aiSuggestRubric(input: { subjectId: string; lessonId: string | null; text: string; maxScore: number }): Promise<{ modelAnswer: string; criteria: { description: string; points: number }[] }>;
+  /** Answer lines per question number for the printed answer sheet. */
+  aiSuggestAnswerLines(examId: string): Promise<Record<string, number>>;
   aiStudyPlan(subjectId: string, lessons: { id: string; mastery: number | null }[], days: number): Promise<StudyPlan>;
   aiParentReply(input: { message: string; studentFirstName: string; facts: string[] }): Promise<{ reply: string; needsTeacher: boolean }>;
   aiAssistant(turns: { role: 'user' | 'assistant'; text: string }[]): Promise<string>;
@@ -168,6 +170,10 @@ export function createSupabaseAi(db: SupabaseClient, orgId: string): AiStore {
     aiExtractExam: (subjectId, pages) =>
       call('extract_exam', { subjectId, pages: pages.map((p) => ({ data: p.base64, mediaType: p.mediaType })) }),
     aiSuggestRubric: (input) => call('suggest_rubric', { ...input }),
+    async aiSuggestAnswerLines(examId) {
+      const r = await call<{ lines?: Record<string, number> }>('suggest_answer_lines', { examId });
+      return r.lines ?? {};
+    },
     aiStudyPlan: (subjectId, lessons, days) => call('study_plan', { subjectId, lessons, days }),
     aiParentReply: (input) => call('parent_reply', { ...input }),
     aiMapStudentColumns: (rows) => call('map_student_columns', { rows }),
@@ -345,6 +351,8 @@ export function createDemoAi(): AiStore {
         ],
       });
     },
+    // Demo: the page falls back to its own estimate (no AI in demo mode).
+    aiSuggestAnswerLines: () => wait({}, 600),
     async aiStudyPlan(_subjectId, weak, days) {
       const list = weak.map((w) => lessons.find((l) => l.id === w.id)).filter((l): l is (typeof lessons)[number] => !!l);
       const n = Math.min(Math.max(days, 1), 30);

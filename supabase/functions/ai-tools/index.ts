@@ -13,6 +13,7 @@ import {
   mapStudentColumns,
   parentReply,
   studyPlan,
+  suggestAnswerLines,
   suggestRubric,
   type LessonContext,
 } from '../_shared/aiTools/tools.ts';
@@ -221,6 +222,33 @@ Deno.serve(async (req) => {
           lessons: lessons.map((l) => ({ ...l, content: l.content.slice(0, 3000), mastery: mastery.get(l.id) ?? null })),
           days: Number(body.days) || 7,
           ...info,
+        });
+        await log(result.usage);
+        return json(result.data);
+      }
+
+      case 'suggest_answer_lines': {
+        // Read with the teacher's own permissions, so only their org's exams.
+        const examId = str(body.examId, 40);
+        if (!UUID.test(examId)) return json({ error: 'الطلب غير صالح.' }, 400);
+        const { data: exam } = await db
+          .from('assessments')
+          .select('id, organization_id, subject_id, questions(number, text, type, max_score, model_answer)')
+          .eq('id', examId)
+          .eq('organization_id', orgId)
+          .maybeSingle();
+        if (!exam) return json({ error: 'الامتحان غير موجود.' }, 404);
+        type Q = { number: number; text: string; type: string; max_score: number; model_answer: string | null };
+        const questions = ((exam.questions ?? []) as Q[])
+          .sort((a, b) => a.number - b.number)
+          .slice(0, 60)
+          .map((q) => ({ number: q.number, text: q.text, type: q.type, maxScore: Number(q.max_score), modelAnswer: q.model_answer ?? '' }));
+        if (!questions.length) return json({ lines: {} });
+        const info = exam.subject_id ? await subjectInfo(db, exam.subject_id as string).catch(() => null) : null;
+        const result = await suggestAnswerLines(model, config, {
+          questions,
+          subjectName: info?.subjectName ?? '',
+          gradeName: info?.gradeName ?? '',
         });
         await log(result.usage);
         return json(result.data);
