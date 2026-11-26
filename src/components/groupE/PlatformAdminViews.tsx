@@ -589,7 +589,8 @@ const SupportTab: React.FC = () => {
 const SettingsTab: React.FC = () => {
   const [accounts, setAccounts] = useState<PaymentAccount[] | null>(null);
   const [support, setSupport] = useState('');
-  const [trialDays, setTrialDays] = useState('14');
+  const [trialDays, setTrialDays] = useState('30');
+  const [graceDays, setGraceDays] = useState('7');
   const [currency, setCurrency] = useState({ code: PLATFORM_CONFIG.currencyCode, symbol: PLATFORM_CONFIG.currencySymbol, name: PLATFORM_CONFIG.currency });
   const [usdRate, setUsdRate] = useState('3.7');
   const [busy, setBusy] = useState(false);
@@ -601,7 +602,9 @@ const SettingsTab: React.FC = () => {
       getPublicSetting<{ days?: number }>('trial'),
       getPublicSetting<{ code: string; symbol: string; name: string }>('currency'),
       getPublicSetting<{ usd_to_ils?: number }>('exchange'),
-    ]).then(([a, s, t, c, x]) => {
+      getPublicSetting<{ grace_days?: number; warn_days?: number }>('billing_policy'),
+    ]).then(([a, s, t, c, x, b]) => {
+      if (b?.grace_days != null) setGraceDays(String(b.grace_days));
       if (x?.usd_to_ils) setUsdRate(String(x.usd_to_ils));
       setAccounts(a?.accounts ?? []);
       setSupport(s?.whatsapp ?? '');
@@ -617,6 +620,7 @@ const SettingsTab: React.FC = () => {
       await savePlatformSetting('payment_accounts', { accounts: accounts.filter((a) => a.title.trim() && a.number.trim()) });
       await savePlatformSetting('support', { whatsapp: support.replace(/[^\d+]/g, '') });
       await savePlatformSetting('trial', { days: Math.max(0, Number(trialDays) || 0) });
+      await savePlatformSetting('billing_policy', { grace_days: Math.max(0, Number(graceDays) || 0), warn_days: 3 }, false);
       await savePlatformSetting('currency', currency);
       if (Number(usdRate) > 0) await savePlatformSetting('exchange', { usd_to_ils: Number(usdRate) }, false);
       notify('حُفظت الإعدادات.');
@@ -657,6 +661,11 @@ const SettingsTab: React.FC = () => {
         <label className="space-y-1">
           <span className="font-bold">مدة الفترة التجريبية (أيام)</span>
           <input type="number" min={0} value={trialDays} onChange={(e) => setTrialDays(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg font-mono" />
+        </label>
+        <label className="space-y-1">
+          <span className="font-bold">مهلة دفع الفاتورة (أيام)</span>
+          <input type="number" min={0} value={graceDays} onChange={(e) => setGraceDays(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg font-mono" />
+          <span className="block text-[11px] text-slate-500">بعدها تتوقف أدوات الذكاء الاصطناعي ورفع الأوراق حتى الدفع. البيانات لا تُحذف.</span>
         </label>
         <label className="space-y-1">
           <span className="font-bold">العملة (الاسم)</span>

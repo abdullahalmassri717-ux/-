@@ -12,6 +12,7 @@
 // code cannot be used to re-upload (and re-grade with AI) again and again.
 import { adminClient, corsHeaders, env, json, runInBackground } from '../_shared/http.ts';
 import { gradeSubmission } from '../_shared/gradeSubmission.ts';
+import { billingLock } from '../_shared/billingLock.ts';
 import { closedMessage, linkState, OFFLINE_GRACE_MINUTES, type SubmissionWindow } from '../_shared/submissionWindow.ts';
 
 const MAX_PAGES = 6;
@@ -134,6 +135,8 @@ Deno.serve(async (req) => {
     .lte('starts_on', today)
     .or(`ends_on.is.null,ends_on.gte.${today}`);
   if ((paused ?? 0) > 0) return json({ error: 'التسليم متوقف مؤقتاً عند المدرّس. تواصل معه.' }, 403);
+  // Unpaid subscription (the student is not told why; that is between the teacher and the platform).
+  if (await billingLock(admin, a.organization_id)) return json({ error: 'التسليم متوقف مؤقتاً عند المدرّس. تواصل معه.' }, 403);
 
   const hash = await clientHash(req, a.id);
   const since = new Date(Date.now() - WINDOW_MINUTES * 60_000).toISOString();

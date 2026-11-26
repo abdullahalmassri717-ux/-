@@ -4,6 +4,7 @@
 // so only published curriculum can be used.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { adminClient, corsHeaders, env, json, logFunctionError, runInBackground, userClient } from '../_shared/http.ts';
+import { BILLING_LOCK_MESSAGE, billingLock } from '../_shared/billingLock.ts';
 import { ClaudeToolModel, EscalatingToolModel, ToolError, toolConfigFromEnv, type Usage } from '../_shared/aiTools/model.ts';
 import { asNumerals } from '../_shared/numerals.ts';
 import {
@@ -98,6 +99,7 @@ Deno.serve(async (req) => {
   if (!apiKey) return json({ error: 'أدوات الذكاء الاصطناعي غير مفعّلة بعد. أبلغ مدير المنصة.' }, 503);
 
   const admin = adminClient();
+  if (await billingLock(admin, orgId)) return json({ error: BILLING_LOCK_MESSAGE, billingLocked: true }, 402);
   // A daily cap per teacher keeps a stuck screen or a mistake from running up the bill.
   const { data: setting } = await admin.from('platform_settings').select('value').eq('key', 'ai_tools').maybeSingle();
   const limit = Number((setting?.value as { daily_limit_per_user?: number } | null)?.daily_limit_per_user ?? 200);

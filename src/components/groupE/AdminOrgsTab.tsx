@@ -1,9 +1,10 @@
 // Platform admin › organizations: approve new sign-ups, disable, edit, change plan,
 // issue an invoice from real usage, delete, or add an organization directly.
 import React, { useState } from 'react';
-import { CheckCircle2, Ban, Edit, Layers, FileText, Trash2, Plus, RotateCcw } from 'lucide-react';
+import { CheckCircle2, Ban, Edit, Layers, FileText, Trash2, Plus, RotateCcw, Lock } from 'lucide-react';
 import { adminApi, type AdminOrg, type AdminPlan, type UsageQuote } from '../../data/admin';
 import { toInternationalPhone } from '../../lib/phone';
+import { adminBillingOverview, adminSetBillingHold, type BillingHoldMode } from '../../data/billingHold';
 import { notify } from '../../lib/notify';
 import {
   useAsync,
@@ -29,12 +30,14 @@ type Dialog =
   | { kind: 'plan'; org: AdminOrg; planId: string }
   | { kind: 'disable'; org: AdminOrg; note: string }
   | { kind: 'delete'; org: AdminOrg; confirm: string }
+  | { kind: 'billing'; org: AdminOrg; mode: BillingHoldMode; until: string }
   | { kind: 'invoice'; org: AdminOrg; quote: UsageQuote | null; amount: string; note: string }
   | { kind: 'new'; name: string; orgKind: AdminOrg['kind']; region: string; ownerName: string; ownerPhone: string; planId: string };
 
 export const AdminOrgsTab: React.FC<{ onChanged?: () => void }> = ({ onChanged }) => {
   const orgs = useAsync(() => api.listOrganizations());
   const plans = useAsync(() => api.listPlans());
+  const billing = useAsync(() => adminBillingOverview());
   const [q, setQ] = useState('');
   const [kind, setKind] = useState<'all' | 'individual_teacher' | 'school'>('all');
   const [status, setStatus] = useState<'all' | AdminOrg['status']>('all');
@@ -62,6 +65,7 @@ export const AdminOrgsTab: React.FC<{ onChanged?: () => void }> = ({ onChanged }
       await fn();
       setDialog(null);
       orgs.reload();
+      billing.reload();
       onChanged?.();
       notify(done);
     } catch (e) {
@@ -160,6 +164,19 @@ export const AdminOrgsTab: React.FC<{ onChanged?: () => void }> = ({ onChanged }
                       </span>
                     )}
                     {o.statusNote && o.status === 'disabled' && <span className="text-[11px] text-rose-700 block">سبب التعطيل: {o.statusNote}</span>}
+                    {(() => {
+                      const b = billing.data?.[o.id];
+                      if (!b) return null;
+                      if (b.locked)
+                        return (
+                          <span className="text-[11px] text-rose-700 font-bold block">
+                            {b.locked === 'manual' ? 'الذكاء الاصطناعي مقفل يدوياً' : `الذكاء الاصطناعي متوقف لعدم الدفع (متأخرة منذ ${dateLabel(b.overdueSince)})`}
+                          </span>
+                        );
+                      if (b.hold === 'grace')
+                        return <span className="text-[11px] text-emerald-700 font-bold block">مهلة بلا قفل {b.holdUntil ? `حتى ${dateLabel(b.holdUntil)}` : 'دائمة'}</span>;
+                      return b.nextInvoiceOn ? <span className="text-[11px] text-slate-500 block">الفاتورة التلقائية القادمة: {dateLabel(b.nextInvoiceOn)}</span> : null;
+                    })()}
                   </div>
                   {o.status === 'pending' && (
                     <button
@@ -208,6 +225,17 @@ export const AdminOrgsTab: React.FC<{ onChanged?: () => void }> = ({ onChanged }
                   {o.subscriptionStatus && (
                     <button onClick={() => openInvoice(o)} className="text-blue-700 flex items-center gap-1">
                       <FileText className="w-3.5 h-3.5" /> إصدار فاتورة
+                    </button>
+                  )}
+                  {o.subscriptionStatus && (
+                    <button
+                      onClick={() => {
+                        const b = billing.data?.[o.id];
+                        setDialog({ kind: 'billing', org: o, mode: b?.hold ?? 'auto', until: b?.holdUntil ?? '' });
+                      }}
+                      className="text-blue-700 flex items-center gap-1"
+                    >
+                      <Lock className="w-3.5 h-3.5" /> الدفع والقفل
                     </button>
                   )}
                   {o.status === 'active' ? (
@@ -276,6 +304,45 @@ export const AdminOrgsTab: React.FC<{ onChanged?: () => void }> = ({ onChanged }
               if (!dialog.planId) return notify('اختر باقة.');
               void run(() => api.changePlan(dialog.org.id, dialog.planId), 'تم تغيير الباقة.');
             }}
+          />
+        </Modal>
+      )}
+
+      {dialog?.kind === 'billing' && (
+        <Modal title={`الدفع والقفل: «${dialog.org.name}»`} onClose={() => setDialog(null)}>
+          <p className="text-slate-600 leading-relaxed">
+            عند القفل تتوقف أدوات الذكاء الاصطناعي والتصحيح ورفع الأوراق فقط. الدخول وقراءة البيانات يبقيان، ولا يُحذف شيء.
+          </p>
+          <div className="space-y-2">
+            {(
+              [
+                ['auto', 'تلقائي حسب الدفع', 'يُقفل إذا مرّت مهلة الفاتورة بلا دفع، ويُفتح فور تأكيد الدفع.'],
+                ['grace', 'مهلة / تمديد', 'لا قفل حتى التاريخ المحدد (فارغ = دائماً). إن كانت الجهة في التجربة تُمدَّد التجربة نفسها.'],
+                ['lock', 'قفل الآن', 'إيقاف أدوات الذكاء الاصطناعي ورفع الأوراق فوراً حتى تغيّره.'],
+              ] as const
+            ).map(([m, t, d]) => (
+              <label key={m} className={`block border rounded-xl p-3 cursor-pointer ${dialog.mode === m ? 'border-blue-500 bg-blue-50' : 'border-slate-200'}`}>
+                <input type="radio" className="ml-2" checked={dialog.mode === m} onChange={() => setDialog({ ...dialog, mode: m })} />
+                <strong>{t}</strong>
+                <span className="block text-[11px] text-slate-500 mt-1">{d}</span>
+              </label>
+            ))}
+          </div>
+          {dialog.mode === 'grace' && (
+            <Field label="حتى تاريخ">
+              <input type="date" value={dialog.until} onChange={(e) => setDialog({ ...dialog, until: e.target.value })} className={inputCls} />
+            </Field>
+          )}
+          <SaveRow
+            busy={busy}
+            danger={dialog.mode === 'lock'}
+            onCancel={() => setDialog(null)}
+            onSave={() =>
+              void run(
+                () => adminSetBillingHold(dialog.org.id, dialog.mode, dialog.mode === 'grace' && dialog.until ? dialog.until : null),
+                dialog.mode === 'lock' ? `قُفل «${dialog.org.name}».` : dialog.mode === 'grace' ? `أُعطي «${dialog.org.name}» مهلة.` : `«${dialog.org.name}» على الوضع التلقائي.`,
+              )
+            }
           />
         </Modal>
       )}
