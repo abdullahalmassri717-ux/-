@@ -210,9 +210,9 @@ jobs:
             drop=no
             case " $DEMO_PHONES " in *" $num "*) drop=yes ;; esac
             for sfx in $DROP_SUFFIX; do
-              [ ${#sfx} -ge 3 ] && case "$num" in *"$sfx") drop=yes ;; esac
+              if [ ${#sfx} -ge 3 ]; then case "$num" in *"$sfx") drop=yes ;; esac; fi
             done
-            [ "$drop" = no ] && [ -n "$e" ] && kept="${kept:+$kept,}$e"
+            if [ "$drop" = no ] && [ -n "$e" ]; then kept="${kept:+$kept,}$e"; fi
           done
           # Supabase wants the expiry sent together with the list; keep the current one.
           until=$(jq -r '.sms_test_otp_valid_until // empty' /tmp/auth.json)
