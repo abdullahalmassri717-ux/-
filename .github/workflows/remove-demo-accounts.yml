@@ -21,6 +21,10 @@ on:
         description: 'NUMBERS only: Supabase access token encrypted with the NUMBERS-PREPARE public key (base64, RSA-OAEP-SHA256)'
         required: false
         default: ''
+      drop_suffix:
+        description: 'NUMBERS only: also remove test numbers ending with these digits (space separated, at least 3 digits each)'
+        required: false
+        default: ''
       extra_user_ids:
         description: 'Optional: extra user ids to delete, comma separated'
         required: false
@@ -162,6 +166,7 @@ jobs:
     env:
       REF: roeweplhofhjtcnbfmvo
       MODE: ${{ github.event.inputs.confirm }}
+      DROP_SUFFIX: ${{ github.event.inputs.drop_suffix }}
       DEMO_PHONES: '970599990001 970599990002 970599990003 970599990004 970599990005'
     steps:
       - name: Make key pair (prepare)
@@ -202,7 +207,12 @@ jobs:
           IFS=',' read -ra entries <<< "$current"
           for e in "${entries[@]}"; do
             num="${e%%=*}"
-            case " $DEMO_PHONES " in *" $num "*) ;; *) [ -n "$e" ] && kept="${kept:+$kept,}$e" ;; esac
+            drop=no
+            case " $DEMO_PHONES " in *" $num "*) drop=yes ;; esac
+            for sfx in $DROP_SUFFIX; do
+              [ ${#sfx} -ge 3 ] && case "$num" in *"$sfx") drop=yes ;; esac
+            done
+            [ "$drop" = no ] && [ -n "$e" ] && kept="${kept:+$kept,}$e"
           done
           # Supabase wants the expiry sent together with the list; keep the current one.
           until=$(jq -r '.sms_test_otp_valid_until // empty' /tmp/auth.json)
