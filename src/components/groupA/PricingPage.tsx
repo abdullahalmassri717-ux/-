@@ -18,7 +18,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onNavigate }) => {
   const [tab, setTab] = useState<'teacher' | 'school' | 'all'>('teacher');
   const [studentCount, setStudentCount] = useState<number>(30);
   const currency = usePublicSetting<{ symbol?: string }>('currency', { symbol: PLATFORM_CONFIG.currencySymbol });
-  const trial = usePublicSetting<{ days?: number }>('trial', { days: 14 });
+  const trial = usePublicSetting<{ days?: number }>('trial', { days: 30 });
   const payment = usePublicSetting<{ accounts?: PaymentAccount[] }>('payment_accounts', {
     accounts: [{ title: 'تحويل بنكي أو محفظة إلكترونية', number: 'تظهر بيانات الحساب هنا بعد أن يضيفها مدير المنصة' }],
   });

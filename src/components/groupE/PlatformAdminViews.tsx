@@ -589,7 +589,7 @@ const SupportTab: React.FC = () => {
 const SettingsTab: React.FC = () => {
   const [accounts, setAccounts] = useState<PaymentAccount[] | null>(null);
   const [support, setSupport] = useState('');
-  const [trialDays, setTrialDays] = useState('14');
+  const [trialDays, setTrialDays] = useState('30');
   const [currency, setCurrency] = useState({ code: PLATFORM_CONFIG.currencyCode, symbol: PLATFORM_CONFIG.currencySymbol, name: PLATFORM_CONFIG.currency });
   const [usdRate, setUsdRate] = useState('3.7');
   const [busy, setBusy] = useState(false);
