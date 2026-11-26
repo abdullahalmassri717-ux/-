@@ -17,6 +17,8 @@ export interface DraftQuestion {
   maxScore: number;
   modelAnswer: string;
   criteria: { description: string; points: number }[];
+  /** The AI's guess of the handwritten answer lines for the printed sheet. */
+  answerLines?: number;
 }
 
 export type BankSource = 'teacher' | 'ai_generated' | 'old_exam' | 'ministerial' | 'past_exam';
@@ -77,7 +79,7 @@ export interface AiStore {
   aiWaitGenerate(jobId: string): Promise<GenerateResult>;
   aiClearPendingGenerate(): void;
   aiExtractExam(subjectId: string, pages: PaperPage[]): Promise<{ questions: DraftQuestion[]; readable: boolean }>;
-  aiSuggestRubric(input: { subjectId: string; lessonId: string | null; text: string; maxScore: number }): Promise<{ modelAnswer: string; criteria: { description: string; points: number }[] }>;
+  aiSuggestRubric(input: { subjectId: string; lessonId: string | null; text: string; maxScore: number }): Promise<{ modelAnswer: string; criteria: { description: string; points: number }[]; answerLines?: number }>;
   aiStudyPlan(subjectId: string, lessons: { id: string; mastery: number | null }[], days: number): Promise<StudyPlan>;
   aiParentReply(input: { message: string; studentFirstName: string; facts: string[] }): Promise<{ reply: string; needsTeacher: boolean }>;
   aiAssistant(turns: { role: 'user' | 'assistant'; text: string }[]): Promise<string>;
@@ -309,6 +311,7 @@ function sampleQuestion(lesson: { id: string; title: string; outcomes: string[] 
       { description: 'خطوات الحل والتعويض بدقة', points: 4 },
       { description: 'الناتج النهائي الصحيح', points: 3 },
     ],
+    answerLines: 7,
   };
 }
 

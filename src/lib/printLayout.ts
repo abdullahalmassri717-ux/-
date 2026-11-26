@@ -42,8 +42,27 @@ export function normalizePrintLayout(raw: unknown): PrintLayout {
   return { pages, style: r.style === 'box' ? 'box' : 'lines', lines };
 }
 
-export function linesFor(layout: PrintLayout, q: { questionNumber: number; type: string }): number {
-  return layout.lines[String(q.questionNumber)] ?? defaultLines(q.type);
+/**
+ * A guess at the handwriting space a question needs, from its model answer
+ * (usually written by the AI): about 8 handwritten words fit on one 8 mm line,
+ * and worked problems get extra room for the steps. Used when the AI did not
+ * give a number (older exams, teacher-written questions).
+ */
+export function estimateLines(q: { type: string; modelAnswer?: string; maxScore?: number }): number {
+  if (q.type === 'multiple_choice') return 1;
+  const answer = (q.modelAnswer ?? '').trim();
+  const least = q.type === 'short_answer' ? 2 : q.type === 'essay' ? 6 : 4;
+  if (!answer) return Math.min(MAX_LINES, defaultLines(q.type) + Math.floor((q.maxScore ?? 0) / 10));
+  const words = answer.split(/\s+/).length;
+  const rows = answer.split('\n').filter((l) => l.trim()).length;
+  let n = Math.max(Math.ceil(words / 8), rows);
+  n = q.type === 'problem_solving' ? Math.ceil(n * 1.5) + 2 : n + 1;
+  return Math.max(least, Math.min(30, n));
+}
+
+/** Lines for one question: the teacher's/AI's saved number, else the estimate. */
+export function linesFor(layout: PrintLayout, q: { questionNumber: number; type: string; modelAnswer?: string; maxScore?: number }): number {
+  return layout.lines[String(q.questionNumber)] ?? estimateLines(q);
 }
 
 // ---------------------------------------------------------------------------
@@ -140,4 +159,13 @@ export function fitToPages(m: PageMetrics, current: number[], target: number): n
     }
   });
   return out;
+}
+
+/** The print layout a new exam starts with: the answer lines given per question (by number). */
+export function layoutFromQuestions(questions: { answerLines?: number }[]): PrintLayout {
+  const lines: Record<string, number> = {};
+  questions.forEach((q, i) => {
+    if (typeof q.answerLines === 'number' && Number.isFinite(q.answerLines)) lines[String(i + 1)] = Math.max(0, Math.min(MAX_LINES, Math.round(q.answerLines)));
+  });
+  return { pages: null, style: 'lines', lines };
 }

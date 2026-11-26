@@ -26,6 +26,8 @@ export interface DraftQuestion {
   maxScore: number;
   modelAnswer: string;
   criteria: { description: string; points: number }[];
+  /** Lines of handwriting (8 mm each) the student needs on the printed sheet. */
+  answerLines: number;
 }
 
 export interface ToolResult<T> {
@@ -61,6 +63,7 @@ const QuestionSchema = z.object({
   max_score: z.number(),
   model_answer: z.string(),
   criteria: z.array(z.object({ description: z.string(), points: z.number() })),
+  answer_lines: z.number(),
 });
 
 const GenerateSchema = z.object({ questions: z.array(QuestionSchema) });
@@ -77,6 +80,11 @@ const CheckSchema = z.object({
   ),
 });
 
+/** Shared rule: how many handwritten lines the printed answer sheet leaves for each question. */
+export const ANSWER_LINES_RULE = `- answer_lines: عدد الأسطر التي يحتاجها طالب يكتب بخط يده على ورقة الإجابة المطبوعة (عرض السطر نحو 18 سم، وارتفاعه 8 ملم، ويتسع لنحو 8 إلى 10 كلمات بخط اليد).
+  قدّره من نموذج الإجابة: أسطر الإجابة الكاملة بخط طالب مع هامش بسيط، وللمسائل أضف أسطراً لكتابة الخطوات والتعويض.
+  الاختيار من متعدد يكفيه سطر واحد لكتابة رمز الإجابة. لا تقل عن 1 ولا تزد عن 30.`;
+
 const GENERATE_SYSTEM = `أنت مساعد مدرّس خبير في كتابة أسئلة الامتحانات للمدارس العربية.
 اكتب الأسئلة بالعربية الفصحى البسيطة المناسبة لعمر الطلاب، وبنفس مصطلحات ورموز الدروس المعطاة.
 القواعد:
@@ -84,7 +92,8 @@ const GENERATE_SYSTEM = `أنت مساعد مدرّس خبير في كتابة �
 - lesson_id يجب أن يكون أحد معرّفات الدروس المعطاة حرفياً، وoutcome نص ناتج التعلّم الذي يقيسه السؤال.
 - اكتب نموذج إجابة كاملاً وواضحاً، ومعايير تصحيح قابلة للقياس على ورقة الطالب، ومجموع نقاط المعايير يساوي max_score.
 - السؤال يُحلّ على الورق: لا رسومات تفاعلية ولا روابط.
-- نوّع الأسئلة بين الدروس المختارة قدر الإمكان.`;
+- نوّع الأسئلة بين الدروس المختارة قدر الإمكان.
+${ANSWER_LINES_RULE}`;
 
 const CHECK_SYSTEM = `أنت مراجع مناهج دقيق. تتأكد أن كل سؤال امتحان يقيس ناتج تعلّم من الدروس المعطاة فقط.
 اعتبر السؤال خارج الدروس إذا احتاج الطالب لمعرفة أو مهارة لم ترد في محتوى الدروس أو نواتجها.
@@ -92,6 +101,7 @@ const CHECK_SYSTEM = `أنت مراجع مناهج دقيق. تتأكد أن ك�
 
 /** Spreads rounding so criteria always add up to the question's score. */
 function normalizeQuestion(q: z.infer<typeof QuestionSchema>, lessonIds: Set<string>): DraftQuestion | null {
+  const lines = Number.isFinite(q.answer_lines) ? Math.round(q.answer_lines) : 0;
   const text = q.text.trim();
   if (!text) return null;
   const maxScore = Math.min(Math.max(Math.round(q.max_score * 2) / 2, 1), 100);
@@ -109,6 +119,7 @@ function normalizeQuestion(q: z.infer<typeof QuestionSchema>, lessonIds: Set<str
     maxScore: scaled.reduce((s, c) => s + c.points, 0),
     modelAnswer: q.model_answer.trim(),
     criteria: scaled,
+    answerLines: Math.min(Math.max(lines, q.type === 'multiple_choice' ? 1 : 2), 30),
   };
 }
 
@@ -292,6 +303,7 @@ const ExtractSchema = z.object({
       criteria: z.array(z.object({ description: z.string(), points: z.number() })),
       lesson_id: z.string(),
       outcome: z.string(),
+      answer_lines: z.number(),
     }),
   ),
 });
@@ -312,6 +324,7 @@ export async function extractExam(
 إذا ذُكرت الدرجة على الورقة فاستخدمها.
 اختر lesson_id من قائمة الدروس إن كان السؤال يناسب أحدها، وإلا اكتب "none".
 إذا كانت الصور غير مقروءة اجعل readable = false.
+${ANSWER_LINES_RULE}
 ${numeralsInstruction(o.numerals)}`,
     content: [
       ...o.pages,
@@ -440,6 +453,7 @@ export async function assistantChat(
 const RubricSchema = z.object({
   model_answer: z.string(),
   criteria: z.array(z.object({ description: z.string(), points: z.number() })),
+  answer_lines: z.number(),
 });
 
 /** Suggests a model answer and marking criteria for a question the teacher wrote. */
@@ -447,13 +461,14 @@ export async function suggestRubric(
   model: ToolModel,
   config: ToolModelConfig,
   o: { text: string; maxScore: number; lesson: LessonContext | null; subjectName: string; gradeName: string; numerals: Numerals },
-): Promise<ToolResult<{ modelAnswer: string; criteria: { description: string; points: number }[] }>> {
+): Promise<ToolResult<{ modelAnswer: string; criteria: { description: string; points: number }[]; answerLines: number }>> {
   const res = await model.json({
     model: config.mainModel,
     effort: 'low',
     system: `أنت مدرّس خبير. اكتب نموذج إجابة كاملاً ومعايير تصحيح واضحة لسؤال امتحان ورقي.
 كل معيار شيء يمكن رؤيته على ورقة الطالب (خطوة، قانون، ناتج). من 2 إلى 5 معايير، ومجموع نقاطها يساوي درجة السؤال بالضبط.
 استخدم مصطلحات الدرس إن وُجد.
+${ANSWER_LINES_RULE}
 ${numeralsInstruction(o.numerals)}`,
     content: [
       {
@@ -464,11 +479,11 @@ ${numeralsInstruction(o.numerals)}`,
     schema: RubricSchema,
   });
   const q = normalizeQuestion(
-    { lesson_id: '', outcome: '', text: o.text, type: 'problem_solving', max_score: o.maxScore, model_answer: res.data.model_answer, criteria: res.data.criteria },
+    { lesson_id: '', outcome: '', text: o.text, type: 'problem_solving', max_score: o.maxScore, model_answer: res.data.model_answer, criteria: res.data.criteria, answer_lines: res.data.answer_lines },
     new Set(),
   );
   const styled = q ? questionInNumerals(q, o.numerals) : null;
-  return { data: { modelAnswer: styled?.modelAnswer ?? '', criteria: styled?.criteria ?? [] }, usage: [res.usage] };
+  return { data: { modelAnswer: styled?.modelAnswer ?? '', criteria: styled?.criteria ?? [], answerLines: styled?.answerLines ?? 0 }, usage: [res.usage] };
 }
 
 const ROLES = ['name', 'parentPhone', 'studentPhone', 'grade', 'section', 'class', 'ignore'] as const;
