@@ -12,7 +12,7 @@ create temp table target_orgs as
 select id from public.organizations
  where id in ('4f6d59b4-0b32-4109-bf31-7726cf02e3b1',   -- مدرسة الامل (200 طالب تجريبي)
               'de300000-0000-4000-8000-0000000000a0')  -- مدرسة دقة التجريبية
-    or is_demo;
+    or (is_demo and id::text not like 'de3a0000-%');  -- جهات عرض مدير المنصة تبقى
 
 \echo 'الجهات التي ستُحذف:'
 select o.name from public.organizations o join target_orgs t using (id);

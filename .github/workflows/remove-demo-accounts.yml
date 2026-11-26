@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'LIST = only print what exists; DRYRUN = run the cleanup and undo it; DELETE = remove the test data for real'
+        description: 'LIST = only print what exists; DRYRUN = run the cleanup and undo it; DELETE = remove the test data for real; SHOWCASE = give the platform owner his own demo school + tutor page'
         required: true
         default: 'LIST'
       extra_user_ids:
@@ -112,3 +112,32 @@ jobs:
           echo "HTTP $code"
           case "$code" in 2*) ;; *) head -c 500 /tmp/out.json; exit 1 ;; esac
           echo "Test numbers left: $(echo "$kept" | tr ',' '\n' | grep -c = || true)"
+
+  # SHOWCASE: the platform owner's own demo school and private-tutor page
+  # (scripts/demo-remove/admin-showcase.sql), so he can open every area to try
+  # and explain the platform. Safe to run again.
+  showcase:
+    if: ${{ github.event.inputs.confirm == 'SHOWCASE' }}
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_REF: roeweplhofhjtcnbfmvo
+      PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find the database address
+        run: |
+          for region in eu-central-1 eu-central-2 eu-west-1 eu-west-2 eu-west-3 eu-north-1 us-east-1 us-east-2 us-west-1 us-west-2 \
+                        ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2 ca-central-1 sa-east-1 me-central-1; do
+            for n in 0 1; do
+              host="aws-$n-$region.pooler.supabase.com"
+              if docker run --rm -e PGPASSWORD postgres:17 psql "host=$host port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require connect_timeout=8" -Atc 'select 1' >/dev/null 2>&1; then
+                echo "DB_HOST=$host" >> "$GITHUB_ENV"; exit 0
+              fi
+            done
+          done
+          echo "::error::Could not connect to the database."; exit 1
+      - name: Create the owner's demo organizations
+        run: |
+          docker run --rm -e PGPASSWORD -v "$PWD/scripts/demo-remove:/sql:ro" postgres:17 \
+            psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" \
+            -v ON_ERROR_STOP=1 -f /sql/admin-showcase.sql
