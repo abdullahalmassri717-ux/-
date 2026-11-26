@@ -6,7 +6,7 @@
 \set ON_ERROR_STOP 1
 begin;
 
--- نفس محتوى supabase/migrations/20261126000100_stop_auto_remove_demo.sql
+-- نفس محتوى supabase/migrations/20261126000200_stop_auto_remove_demo.sql
 drop trigger if exists group_students_remove_demo on public.group_students;
 drop function if exists private.remove_demo_on_first_real_student();
 

@@ -503,7 +503,7 @@ update public.organizations set weekly_reports_enabled = false;
 select tests.eq(public.queue_weekly_reports(now() + interval '1 minute'), 0, 'الأسبوعي: الجهة التي أوقفته لا تُجهَّز لها تقارير');
 rollback;
 
--- حذف البيانات التجريبية تلقائياً مع أول طالب حقيقي في صف
+-- منذ 2026-11-26: الجهات التجريبية (ومنها جهات عرض مدير المنصة) لا تُحذف تلقائياً مع أول طالب حقيقي
 begin;
 insert into auth.users (id, phone) values ('de399999-0000-4000-8000-000000000001', '970599990001');
 insert into public.organizations (id, name, kind, created_by, status, is_demo)
@@ -517,8 +517,8 @@ insert into public.students (id, organization_id, full_name) values ('de399999-0
 insert into public.group_students (group_id, student_id, organization_id)
 select g.id, 'de399999-0000-4000-8000-000000000002', g.organization_id from public.groups g
  where g.organization_id = tests.org('individual_teacher') and g.archived_at is null order by g.created_at limit 1;
-select tests.eq((select count(*) from public.organizations where is_demo), 0::bigint, 'التجريبي: أول طالب حقيقي يحذف الجهات التجريبية');
-select tests.eq((select count(*) from auth.users where phone = '970599990001'), 0::bigint, 'التجريبي: ويحذف المستخدم التجريبي');
+select tests.eq((select count(*) from public.organizations where is_demo), 1::bigint, 'التجريبي: أول طالب حقيقي لا يحذف الجهات التجريبية');
+select tests.eq((select count(*) from auth.users where phone = '970599990001'), 1::bigint, 'التجريبي: ولا يحذف المستخدم التجريبي');
 select tests.eq((select count(*) from public.organizations where id = tests.org('individual_teacher')), 1::bigint, 'التجريبي: الجهة الحقيقية باقية');
 rollback;
 
