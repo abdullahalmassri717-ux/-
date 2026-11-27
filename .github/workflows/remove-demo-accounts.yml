@@ -2,7 +2,7 @@
 # organizations (with their classes, students, exams and papers), the 5 demo
 # users, and their numbers from Supabase "test phone numbers" (other numbers in
 # that list, such as the owner's own, are kept).
-# Runs ONLY by hand from the Actions tab, after typing DELETE. It cannot be undone,
+# Runs ONLY by hand from the Actions tab: LIST (read only), DRYRUN (undone), DELETE.
 # but the demo accounts can be created again with the "Demo accounts" workflow.
 name: Remove demo accounts
 
@@ -10,8 +10,24 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type DELETE to remove all demo accounts and their data'
+        description: 'LIST = only print what exists; DRYRUN = run the cleanup and undo it; DELETE = remove the test data for real; SHOWCASE = owner demo orgs; NUMBERS-PREPARE/NUMBERS = remove demo test numbers with a new token'
         required: true
+        default: 'LIST'
+      prepare_run_id:
+        description: 'NUMBERS only: run id of the NUMBERS-PREPARE run'
+        required: false
+        default: ''
+      ciphertext:
+        description: 'NUMBERS only: Supabase access token encrypted with the NUMBERS-PREPARE public key (base64, RSA-OAEP-SHA256)'
+        required: false
+        default: ''
+      drop_suffix:
+        description: 'NUMBERS only: also remove test numbers ending with these digits (space separated, at least 3 digits each)'
+        required: false
+        default: ''
+      extra_user_ids:
+        description: 'Optional: extra user ids to delete, comma separated'
+        required: false
         default: ''
 
 concurrency:
@@ -19,31 +35,79 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Read-only inventory with the database password: what exists per organization,
+  # the users, and the files. Prints only org names, counts and the last 3 digits
+  # of phone numbers (this repository is public).
+  list:
+    if: ${{ github.event.inputs.confirm == 'LIST' }}
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_REF: roeweplhofhjtcnbfmvo
+      PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find the database address
+        run: |
+          for region in eu-central-1 eu-central-2 eu-west-1 eu-west-2 eu-west-3 eu-north-1 us-east-1 us-east-2 us-west-1 us-west-2 \
+                        ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2 ca-central-1 sa-east-1 me-central-1; do
+            for n in 0 1; do
+              host="aws-$n-$region.pooler.supabase.com"
+              if docker run --rm -e PGPASSWORD postgres:17 psql "host=$host port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require connect_timeout=8" -Atc 'select 1' >/dev/null 2>&1; then
+                echo "DB_HOST=$host" >> "$GITHUB_ENV"; exit 0
+              fi
+            done
+          done
+          echo "::error::Could not connect to the database."; exit 1
+      - name: Inventory (read only)
+        run: |
+          docker run --rm -e PGPASSWORD -v "$PWD/scripts/demo-remove:/sql:ro" postgres:17 \
+            psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" \
+            -v ON_ERROR_STOP=1 -c 'begin read only' -f /sql/inventory.sql
+
+  # DRYRUN / DELETE: scripts/demo-remove/cleanup-before-launch.sql in one
+  # transaction with the database password. DRYRUN ends with ROLLBACK.
   remove:
-    if: ${{ github.event.inputs.confirm == 'DELETE' }}
+    if: ${{ github.event.inputs.confirm == 'DELETE' || github.event.inputs.confirm == 'DRYRUN' }}
     runs-on: ubuntu-latest
     env:
       REF: roeweplhofhjtcnbfmvo
+      PROJECT_REF: roeweplhofhjtcnbfmvo
+      PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      MODE: ${{ github.event.inputs.confirm }}
+      EXTRA_USERS: ${{ github.event.inputs.extra_user_ids }}
       DEMO_PHONES: '970599990001 970599990002 970599990003 970599990004 970599990005'
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check secret
+      - name: Find the database address
         run: |
-          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then echo "::error::SUPABASE_ACCESS_TOKEN is missing"; exit 1; fi
+          for region in eu-central-1 eu-central-2 eu-west-1 eu-west-2 eu-west-3 eu-north-1 us-east-1 us-east-2 us-west-1 us-west-2 \
+                        ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2 ca-central-1 sa-east-1 me-central-1; do
+            for n in 0 1; do
+              host="aws-$n-$region.pooler.supabase.com"
+              if docker run --rm -e PGPASSWORD postgres:17 psql "host=$host port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require connect_timeout=8" -Atc 'select 1' >/dev/null 2>&1; then
+                echo "DB_HOST=$host" >> "$GITHUB_ENV"; exit 0
+              fi
+            done
+          done
+          echo "::error::Could not connect to the database."; exit 1
 
-      - name: Delete demo organizations and users
+      - name: Delete the test data (${{ github.event.inputs.confirm }})
         run: |
-          jq -Rs '{query: .}' scripts/demo-remove/remove-demo-accounts.sql > /tmp/body.json
-          code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --retry 3 --retry-all-errors --max-time 300 \
-            -X POST "https://api.supabase.com/v1/projects/$REF/database/query" \
-            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' \
-            --data-binary @/tmp/body.json)
-          echo "HTTP $code"; head -c 2000 /tmp/out.json; echo
-          case "$code" in 2*) ;; *) exit 1 ;; esac
+          mkdir -p /tmp/sql
+          if [ "$MODE" = DELETE ]; then cp scripts/demo-remove/cleanup-before-launch.sql /tmp/sql/run.sql
+          else sed 's/^commit;$/rollback;/' scripts/demo-remove/cleanup-before-launch.sql > /tmp/sql/run.sql; fi
+          grep -nE '^(commit|rollback);' /tmp/sql/run.sql
+          docker run --rm -e PGPASSWORD -v /tmp/sql:/sql:ro postgres:17 \
+            psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" \
+            -v ON_ERROR_STOP=1 -v "extra_user_ids=$EXTRA_USERS" -f /sql/run.sql
 
+      # Needs a working SUPABASE_ACCESS_TOKEN secret; if it is expired this step
+      # only warns (the demo users are already gone, so the numbers lead nowhere).
       - name: Remove demo numbers from the test phone list
+        if: env.MODE == 'DELETE'
+        continue-on-error: true
         run: |
           api="https://api.supabase.com/v1/projects/$REF/config/auth"
           curl -fsS --retry 3 --retry-all-errors "$api" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" > /tmp/auth.json
@@ -60,3 +124,110 @@ jobs:
           echo "HTTP $code"
           case "$code" in 2*) ;; *) head -c 500 /tmp/out.json; exit 1 ;; esac
           echo "Test numbers left: $(echo "$kept" | tr ',' '\n' | grep -c = || true)"
+
+  # SHOWCASE: the platform owner's own demo school and private-tutor page
+  # (scripts/demo-remove/admin-showcase.sql), so he can open every area to try
+  # and explain the platform. Safe to run again.
+  showcase:
+    if: ${{ github.event.inputs.confirm == 'SHOWCASE' }}
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_REF: roeweplhofhjtcnbfmvo
+      PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find the database address
+        run: |
+          for region in eu-central-1 eu-central-2 eu-west-1 eu-west-2 eu-west-3 eu-north-1 us-east-1 us-east-2 us-west-1 us-west-2 \
+                        ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2 ca-central-1 sa-east-1 me-central-1; do
+            for n in 0 1; do
+              host="aws-$n-$region.pooler.supabase.com"
+              if docker run --rm -e PGPASSWORD postgres:17 psql "host=$host port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require connect_timeout=8" -Atc 'select 1' >/dev/null 2>&1; then
+                echo "DB_HOST=$host" >> "$GITHUB_ENV"; exit 0
+              fi
+            done
+          done
+          echo "::error::Could not connect to the database."; exit 1
+      - name: Create the owner's demo organizations
+        run: |
+          docker run --rm -e PGPASSWORD -v "$PWD/scripts/demo-remove:/sql:ro" postgres:17 \
+            psql "host=$DB_HOST port=5432 user=postgres.$PROJECT_REF dbname=postgres sslmode=require" \
+            -v ON_ERROR_STOP=1 -f /sql/admin-showcase.sql
+
+  # NUMBERS-PREPARE / NUMBERS: remove the demo numbers from Supabase "test phone
+  # numbers" with a Supabase access token that is not in the secrets, sent
+  # encrypted (same idea as Deploy Supabase prepare/apply). Other numbers stay.
+  numbers:
+    if: ${{ github.event.inputs.confirm == 'NUMBERS-PREPARE' || github.event.inputs.confirm == 'NUMBERS' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    env:
+      REF: roeweplhofhjtcnbfmvo
+      MODE: ${{ github.event.inputs.confirm }}
+      DROP_SUFFIX: ${{ github.event.inputs.drop_suffix }}
+      DEMO_PHONES: '970599990001 970599990002 970599990003 970599990004 970599990005'
+    steps:
+      - name: Make key pair (prepare)
+        if: env.MODE == 'NUMBERS-PREPARE'
+        run: |
+          mkdir -p ~/tokkey && cd ~/tokkey
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out priv.pem 2>/dev/null
+          openssl pkey -in priv.pem -pubout -out pub.pem
+          echo "PUBLIC KEY (safe to share):"; cat pub.pem
+      - name: Keep private half (prepare)
+        if: env.MODE == 'NUMBERS-PREPARE'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/tokkey/priv.pem
+          key: numbers-keypair-${{ github.run_id }}
+      - name: Restore private half
+        if: env.MODE == 'NUMBERS'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/tokkey/priv.pem
+          key: numbers-keypair-${{ github.event.inputs.prepare_run_id }}
+          fail-on-cache-miss: true
+      - name: Remove demo numbers from the test phone list
+        if: env.MODE == 'NUMBERS'
+        env:
+          CIPHERTEXT: ${{ github.event.inputs.ciphertext }}
+        run: |
+          set -euo pipefail
+          tok=$(printf %s "$CIPHERTEXT" | base64 -d | openssl pkeyutl -decrypt -inkey ~/tokkey/priv.pem \
+            -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256)
+          rm -f ~/tokkey/priv.pem
+          echo "::add-mask::$tok"
+          api="https://api.supabase.com/v1/projects/$REF/config/auth"
+          curl -fsS --retry 3 --retry-all-errors "$api" -H "Authorization: Bearer $tok" > /tmp/auth.json
+          current=$(jq -r '.sms_test_otp // ""' /tmp/auth.json)
+          echo "Test numbers before: $(echo "$current" | tr ',' '\n' | grep -c = || true)"
+          kept=""
+          IFS=',' read -ra entries <<< "$current"
+          for e in "${entries[@]}"; do
+            num="${e%%=*}"
+            drop=no
+            case " $DEMO_PHONES " in *" $num "*) drop=yes ;; esac
+            for sfx in $DROP_SUFFIX; do
+              if [ ${#sfx} -ge 3 ]; then case "$num" in *"$sfx") drop=yes ;; esac; fi
+            done
+            if [ "$drop" = no ] && [ -n "$e" ]; then kept="${kept:+$kept,}$e"; fi
+          done
+          # Supabase wants the expiry sent together with the list; keep the current one.
+          until=$(jq -r '.sms_test_otp_valid_until // empty' /tmp/auth.json)
+          [ -n "$until" ] || until=$(date -u -d '+1 year' +%Y-%m-%dT%H:%M:%SZ)
+          jq -n --arg otp "$kept" --arg until "$until" '{sms_test_otp: $otp, sms_test_otp_valid_until: $until}' > /tmp/patch.json
+          code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --retry 3 --retry-all-errors -X PATCH "$api" \
+            -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' --data-binary @/tmp/patch.json)
+          echo "HTTP $code"
+          case "$code" in 2*) ;; *) head -c 500 /tmp/out.json; exit 1 ;; esac
+          curl -fsS "$api" -H "Authorization: Bearer $tok" | jq -r '.sms_test_otp // ""' > /tmp/after.txt
+          echo "Test numbers after: $(tr ',' '\n' < /tmp/after.txt | grep -c = || true)"
+          for p in $DEMO_PHONES; do if grep -q "$p=" /tmp/after.txt; then echo "::error::$p still there"; exit 1; fi; done
+          echo "Kept (last 3 digits): $(tr ',' '\n' < /tmp/after.txt | sed -n 's/^.*\([0-9]\{3\}\)=.*/…\1/p' | tr '\n' ' ')"
+      - name: Delete private half from the cache
+        if: always() && env.MODE == 'NUMBERS'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh cache delete "numbers-keypair-${{ github.event.inputs.prepare_run_id }}" --repo "$GITHUB_REPOSITORY" || true
