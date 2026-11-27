@@ -577,4 +577,42 @@ set local role authenticated;
 select tests.eq((select page from public.admin_app_errors(7) where message = 'خطأ تجريبي'), '/s/…', 'الأخطاء: المدير يراه، ورمز الطالب محذوف من الرابط');
 rollback;
 
+-- عدم الدفع: فاتورة متأخرة توقف الرفع والتصحيح، الدفع يفتح فوراً، والمدير يقفل/يمهل
+begin;
+select tests.eq(private.billing_lock(tests.org('individual_teacher')), null::text, 'الدفع: لا قفل بلا فواتير متأخرة');
+insert into public.invoices (organization_id, number, period_start, period_end, price_per_student, amount, status, due_on)
+values (tests.org('individual_teacher'), 'INV-T-LOCK', current_date - 40, current_date - 10, 10, 100, 'issued', current_date - 1);
+select tests.eq(private.billing_lock(tests.org('individual_teacher')), 'unpaid', 'الدفع: فاتورة متأخرة تقفل');
+select tests.throws($q$insert into public.submissions (organization_id, assessment_id, student_id)
+  select organization_id, assessment_id, student_id from public.submissions where organization_id = tests.org('individual_teacher') limit 1$q$,
+  'الدفع: لا أوراق جديدة أثناء القفل');
+select tests.eq((select (public.my_billing_state(tests.org('individual_teacher')))->>'locked'), null::text, 'الدفع: غير العضو لا يرى الحالة');
+select tests.login('+970590000001');
+set local role authenticated;
+select tests.eq((public.my_billing_state(tests.org('individual_teacher')))->>'locked', 'unpaid', 'الدفع: صاحب الجهة يرى القفل');
+select tests.eq((public.my_billing_state(tests.org('individual_teacher')))->'invoice'->>'number', 'INV-T-LOCK', 'الدفع: ويرى الفاتورة المستحقة');
+select tests.throws($q$select public.admin_set_billing_hold(tests.org('individual_teacher'), 'auto')$q$, 'الدفع: المدرّس لا يفتح القفل بنفسه');
+select tests.throws($q$update public.organizations set billing_hold = 'grace' where id = tests.org('individual_teacher')$q$, 'الدفع: ولا يعدّل عمود المهلة');
+reset role;
+update public.invoices set status = 'paid', paid_at = now() where number = 'INV-T-LOCK';
+select tests.eq(private.billing_lock(tests.org('individual_teacher')), null::text, 'الدفع: الدفع يفتح فوراً');
+select tests.login('+970590000099');
+set local role authenticated;
+select public.admin_set_billing_hold(tests.org('individual_teacher'), 'lock');
+select tests.eq(public.org_billing_lock(tests.org('individual_teacher')), 'manual', 'الدفع: المدير يقفل يدوياً');
+select public.admin_set_billing_hold(tests.org('individual_teacher'), 'grace', current_date + 10);
+select tests.eq(public.org_billing_lock(tests.org('individual_teacher')), null::text, 'الدفع: والمهلة تفتح');
+select public.admin_set_billing_hold(tests.org('individual_teacher'), 'auto');
+reset role;
+-- الفاتورة التلقائية بعد نهاية التجربة
+update public.subscriptions set status = 'trial', trial_ends_on = current_date - 1
+ where organization_id = tests.org('individual_teacher') and status in ('trial', 'active', 'past_due');
+select tests.eq((select next_invoice_on from public.subscriptions where organization_id = tests.org('individual_teacher') and status = 'trial'), current_date, 'الدفع: موعد الفاتورة بعد التجربة');
+select tests.eq(private.run_billing_cycle() >= 1, true, 'الدفع: الدورة اليومية تصدر الفاتورة');
+select tests.eq((select status::text from public.subscriptions where organization_id = tests.org('individual_teacher') and status in ('trial', 'active', 'past_due')), 'active', 'الدفع: التجربة صارت اشتراكاً');
+select tests.eq((select due_on from public.invoices where organization_id = tests.org('individual_teacher') and notes = 'فاتورة تلقائية'), current_date + 7, 'الدفع: مهلة 7 أيام');
+select tests.eq(private.billing_lock(tests.org('individual_teacher')), null::text, 'الدفع: لا قفل خلال المهلة');
+select tests.eq(private.run_billing_cycle(), 0, 'الدفع: لا فاتورة ثانية في نفس اليوم');
+rollback;
+
 \echo 'كل الفحوص نجحت ✓'
