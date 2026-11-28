@@ -11,7 +11,6 @@ import {
   User,
   School,
   BookOpen,
-  Upload,
   Calendar,
   MessageCircle,
   Plus,
@@ -30,6 +29,8 @@ type RegCurriculum = {
 };
 import { useAuth } from '../../lib/auth';
 import { FinishSignupWithWhatsApp } from './FinishSignupWithWhatsApp';
+import { adminApi, type AdminPlan } from '../../data/admin';
+import { codeChannelWords, useCodeChannel, usePublicSetting } from '../../lib/settings';
 
 interface RegisterPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -54,6 +55,35 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
   const tutorRequest = isReal && auth.status === 'signed_in' && auth.entities.length > 0 &&
     new URLSearchParams(window.location.search).get('type') === 'tutor';
   const [step, setStep] = useState<number>(tutorRequest ? 2 : 1);
+
+  // Prices, currency, trial length and the login-code channel come from the
+  // platform admin's settings (same source as the pricing page), never from code.
+  const words = codeChannelWords(useCodeChannel());
+  const trial = usePublicSetting<{ days?: number }>('trial', { days: 30 });
+  const currency = usePublicSetting<{ symbol?: string }>('currency', { symbol: PLATFORM_CONFIG.currencySymbol });
+  const sym = currency.symbol ?? PLATFORM_CONFIG.currencySymbol;
+  const [plans, setPlans] = useState<AdminPlan[]>([]);
+  useEffect(() => {
+    let alive = true;
+    adminApi()
+      .listPlans()
+      .then((all) => alive && setPlans(all.filter((p) => p.isActive && p.isPublic)))
+      .catch(() => alive && setPlans([]));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const cheapest = (target: AdminPlan['target'][]) =>
+    plans
+      .filter((p) => target.includes(p.target) && p.pricePerStudent > 0)
+      .sort((a, b) => a.pricePerStudent - b.pricePerStudent)[0];
+  const priceText = (p?: AdminPlan) =>
+    p
+      ? `${p.pricePerStudent} ${sym} ${p.billingCycle === 'yearly' ? 'سنوياً' : 'شهرياً'} لكل ${p.pricingModel === 'per_paper' ? 'ورقة مصحّحة' : 'طالب'}`
+      : '';
+  const teacherPlan = cheapest(['teachers']);
+  const schoolPlan = cheapest(['schools', 'enterprise']);
+  const trialText = trial.days ? `تجربة مجانية ${trial.days} يوماً` : '';
 
   // Teacher Form State
   // The curriculum list is data: the real one comes from the database (available curricula only).
@@ -83,7 +113,6 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
   const [orgName, setOrgName] = useState(isReal ? '' : 'مدرسة الأمل الخاصة');
   const [orgRegion, setOrgRegion] = useState(isReal ? '' : 'غزة - الرمال الجنوبي');
   const [studentEstimate, setStudentEstimate] = useState('280');
-  const [logoUploaded, setLogoUploaded] = useState(false);
   const [teachersToInvite, setTeachersToInvite] = useState(
     isReal
       ? []
@@ -95,7 +124,6 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
   const [newTeacherName, setNewTeacherName] = useState('');
   const [newTeacherPhone, setNewTeacherPhone] = useState('');
   const [newTeacherSubject, setNewTeacherSubject] = useState('');
-  const [callBooked, setCallBooked] = useState(false);
 
   // Active Curriculum Data
   const currentCurriculum: RegCurriculum = curricula.find((c) => c.id === selectedCurriculumId) ?? curricula[0] ?? { id: '', name: '', country: '', grades: [] };
@@ -220,6 +248,13 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
               </p>
             </div>
 
+            {trialText && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs font-bold flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{trialText} لكل حساب جديد، بدون دفع وبدون أي التزام.</span>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {/* Option 1: مدرّس فردي */}
               <button
@@ -237,7 +272,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                 <div>
                   <h3 className="font-bold text-slate-900 text-sm">مدرّس فردي</h3>
                   <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                    للمعلمين الخصوصيين والمستقلين. فوترة شهرية {PLATFORM_CONFIG.pricing.tutorMonthlyPerStudent} {PLATFORM_CONFIG.currencySymbol} لكل طالب نشط.
+                    للمعلمين الخصوصيين والمستقلين.{teacherPlan ? ` يبدأ من ${priceText(teacherPlan)}.` : ''}
                   </p>
                 </div>
               </button>
@@ -258,7 +293,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                 <div>
                   <h3 className="font-bold text-slate-900 text-sm">مدرسة</h3>
                   <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                    خاصة أو حكومية. عقد سنوي لكل طالب بدفعتين فصليتين مع ربط المعلمين والشعب.
+                    خاصة أو حكومية، مع ربط المعلمين والشعب.{schoolPlan ? ` يبدأ من ${priceText(schoolPlan)}.` : ''}
                   </p>
                 </div>
               </button>
@@ -442,7 +477,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                 </div>
               ) : (
               <div>
-                <label className="block font-bold text-slate-700 mb-1">رقم الواتساب</label>
+                <label className="block font-bold text-slate-700 mb-1">{words.phoneLabel}</label>
                 <input
                   type="tel"
                   inputMode="tel"
@@ -453,21 +488,27 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                   className="w-full p-2.5 bg-[#F7F8FA] border border-slate-300 rounded-xl text-left tabular-nums text-slate-900"
                 />
                 <p className="text-[10px] text-slate-500 mt-1">
-                  تدخل لاحقاً بهذا الرقم ورمز تحقق يصلك على واتساب، بدون كلمة مرور.
+                  تدخل لاحقاً بهذا الرقم ورمز تحقق يصلك {words.by}، بدون كلمة مرور.
                 </p>
               </div>
               )}
 
-              {/* Confirmation badge */}
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs space-y-1">
-                <div className="font-bold flex items-center gap-1.5">
-                  <Check className="w-4 h-4 text-emerald-600" />
-                  <span>تم ضبط حسابك مع المنهج والصفوف المختارة بنجاح!</span>
+              {/* Trial + price summary (from the admin's settings) */}
+              {(trialText || teacherPlan) && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs space-y-1">
+                  {trialText && (
+                    <div className="font-bold flex items-center gap-1.5">
+                      <Check className="w-4 h-4 text-emerald-600" />
+                      <span>تبدأ بـ{trialText}، بدون دفع.</span>
+                    </div>
+                  )}
+                  {teacherPlan && (
+                    <p className="text-[11px] text-emerald-800">
+                      بعد التجربة: {priceText(teacherPlan)}، دون أي التزام مسبق.
+                    </p>
+                  )}
                 </div>
-                <p className="text-[11px] text-emerald-800">
-                  خطة الفوترة: {PLATFORM_CONFIG.pricing.tutorMonthlyPerStudent} {PLATFORM_CONFIG.currencySymbol} شهرياً لكل طالب نشط فقط، دون أي التزام مسبق.
-                </p>
-              </div>
+              )}
             </div>
 
             {isReal ? (
@@ -508,7 +549,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                 بيانات {entityType === 'school' ? 'المدرسة' : 'المركز التعليمي'}
               </h2>
               <p className="text-xs text-slate-500 mt-1">
-                سيظهر اسم وشعار جهتك التعليمية على كافة الأوراق المصححة وتقارير واتساب.
+                سيظهر اسم جهتك التعليمية على الأوراق المصححة وتقارير أولياء الأمور.
               </p>
             </div>
 
@@ -549,22 +590,6 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                   />
                 </div>
               </div>
-
-              {/* Logo Upload Simulation */}
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  شعار {entityType === 'school' ? 'المدرسة' : 'المركز'} (يُطبع على الأوراق)
-                </label>
-                <div
-                  onClick={() => setLogoUploaded(true)}
-                  className="border-2 border-dashed border-slate-300 hover:border-blue-400 p-4 rounded-xl text-center cursor-pointer transition-colors bg-slate-50 flex items-center justify-center gap-2"
-                >
-                  <Upload className="w-5 h-5 text-slate-400" />
-                  <span className="font-semibold text-slate-600">
-                    {logoUploaded ? '✓ تم رفع الشعار بنجاح (logo.png)' : 'انقر لرفع الشعار بصيغة PNG أو JPG'}
-                  </span>
-                </div>
-              </div>
             </div>
 
             <div className="pt-4 flex items-center justify-between">
@@ -591,7 +616,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
             <div>
               <h2 className="text-xl font-black text-[#1E3A5F]">ادعُ معلميك وجهّز المنظومة</h2>
               <p className="text-xs text-slate-500 mt-1">
-                أدخل أرقام واتساب لمعلمي الشعب لربطهم بمدرستك تلقائياً وبدء التصحيح.
+                أضف أرقام جوالات معلميك لربطهم بمدرستك، ويمكنك إضافتهم لاحقاً من لوحة الإدارة أيضاً.
               </p>
             </div>
 
@@ -608,7 +633,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                 />
                 <input
                   type="text"
-                  placeholder="رقم الواتساب (059...)"
+                  placeholder="رقم الجوال (059...)"
                   value={newTeacherPhone}
                   onChange={(e) => setNewTeacherPhone(e.target.value)}
                   className="p-2 bg-white border border-slate-300 rounded-lg font-mono text-slate-900"
@@ -652,29 +677,15 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
               </div>
             </div>
 
-            {/* Action 1: احجز مكالمة تجهيز ودعم فني */}
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <div className="space-y-0.5">
-                <span className="font-bold text-[#1E3A5F] block flex items-center gap-1.5">
-                  <PhoneCall className="w-4 h-4 text-blue-600" />
-                  <span>جلسة تدريب وتجهيز مخصصة لطاقمك</span>
-                </span>
-                <p className="text-slate-600 text-[11px]">
-                  يقوم فريق الدقة التقني بإدخال قوائم طلابك وربط الشعب ومساعدتكم في طباعة النماذج الأولى.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setCallBooked(true)}
-                className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition-colors whitespace-nowrap ${
-                  callBooked
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-white hover:bg-slate-50 text-[#1E3A5F] border border-blue-300'
-                }`}
-              >
-                {callBooked ? '✓ تم حجز المكالمة بنجاح' : 'احجز مكالمة تجهيز مجانية'}
-              </button>
+            {/* Setup help: the Daqa team reaches out after sign-up */}
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl text-xs space-y-0.5">
+              <span className="font-bold text-[#1E3A5F] flex items-center gap-1.5">
+                <PhoneCall className="w-4 h-4 text-blue-600" />
+                <span>جلسة تجهيز مجانية لطاقمك</span>
+              </span>
+              <p className="text-slate-600 text-[11px]">
+                بعد التسجيل يتواصل معك فريق دقة لمساعدتك في إدخال قوائم الطلاب وربط الشعب وطباعة النماذج الأولى.
+              </p>
             </div>
 
             {isReal ? (
@@ -696,7 +707,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                   </div>
                 ) : (
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">رقم الواتساب</label>
+                    <label className="block font-bold text-slate-700 mb-1">{words.phoneLabel}</label>
                     <input
                       type="tel"
                       inputMode="tel"
@@ -707,7 +718,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                       className="w-full p-2.5 bg-[#F7F8FA] border border-slate-300 rounded-xl text-left tabular-nums text-slate-900"
                     />
                     <p className="text-[10px] text-slate-500 mt-1">
-                      تدخل لاحقاً بهذا الرقم ورمز تحقق يصلك على واتساب، بدون كلمة مرور.
+                      تدخل لاحقاً بهذا الرقم ورمز تحقق يصلك {words.by}، بدون كلمة مرور.
                     </p>
                   </div>
                 )}
