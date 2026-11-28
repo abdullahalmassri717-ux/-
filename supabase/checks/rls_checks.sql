@@ -615,4 +615,46 @@ select tests.eq(private.billing_lock(tests.org('individual_teacher')), null::tex
 select tests.eq(private.run_billing_cycle(), 0, 'الدفع: لا فاتورة ثانية في نفس اليوم');
 rollback;
 
+-- الإشعارات: الملخصات تصل للمعلم الصحيح فقط، بلا تكرار، وكل شخص يرى إشعاراته فقط
+begin;
+create or replace function private.is_notify_daytime() returns boolean language sql stable as $$ select true $$;
+alter table public.submissions disable trigger submissions_touch;
+update public.submissions set status = 'needs_review', graded_at = now() - interval '2 days', updated_at = now() - interval '2 days'
+ where organization_id = tests.org('individual_teacher');
+select tests.eq(public.generate_notifications() >= 1, true, 'الإشعارات: الملخص ينشئ تذكيراً');
+select tests.eq((select count(*) from public.notifications where kind = 'review_overdue' and user_id = tests.uid('+970590000001')
+  and organization_id = tests.org('individual_teacher')), 1::bigint, 'الإشعارات: تذكير الأوراق المتأخرة للمدرّس');
+select tests.eq((select link from public.notifications where kind = 'review_overdue' and user_id = tests.uid('+970590000001')
+  and organization_id = tests.org('individual_teacher')), '/app/review?org=' || tests.org('individual_teacher')::text, 'الإشعارات: الرابط يفتح الجهة الصحيحة');
+select public.generate_notifications();
+select tests.eq((select count(*) from public.notifications where kind = 'review_overdue' and user_id = tests.uid('+970590000001')
+  and organization_id = tests.org('individual_teacher')), 1::bigint, 'الإشعارات: لا تكرار في نفس اليوم');
+select tests.eq((select count(*) from public.notifications where user_id = tests.uid('+970590000002')
+  and organization_id = tests.org('individual_teacher')), 0::bigint, 'الإشعارات: لا شيء لمن ليس في الجهة');
+select tests.eq((select count(*) from public.claim_pending_pushes(50)), 0::bigint, 'الإشعارات: بلا أجهزة لا يُرسل شيء');
+select tests.eq((select count(*) from public.notifications where pushed_at is null), 0::bigint, 'الإشعارات: وتُعلَّم كمحسومة');
+-- تذكرة دعم: رسالة المستخدم لطاقم الدعم، ورد الدعم لصاحب التذكرة
+select tests.login('+970590000002');
+set local role authenticated;
+select tests.eq((select count(*) from public.notifications), 0::bigint, 'الإشعارات: لا يرى إشعارات غيره');
+insert into public.support_tickets (organization_id, subject) values (tests.org('school'), 'تذكرة تجربة الإشعارات');
+insert into public.support_messages (ticket_id, body) select id, 'مرحبا' from public.support_tickets where subject = 'تذكرة تجربة الإشعارات';
+select tests.throws($q$insert into public.notifications (user_id, kind, title, dedupe_key) values (auth.uid(), 'x', 'x', 'x')$q$, 'الإشعارات: المستخدم لا ينشئ إشعاراً');
+select public.save_push_subscription('https://push.example.com/abc', repeat('A', 87), repeat('B', 22), 'test');
+select tests.eq((select count(*) from public.push_subscriptions), 1::bigint, 'الإشعارات: حفظ جهاز الجوال');
+reset role;
+select tests.eq((select count(*) from public.notifications where kind = 'support_message' and user_id = 'f118abc0-6877-4745-8d29-bb9429abeaee'), 1::bigint, 'الإشعارات: رسالة الدعم تصل للمدير');
+select set_config('request.jwt.claims', json_build_object('sub', 'f118abc0-6877-4745-8d29-bb9429abeaee', 'role', 'authenticated')::text, true);
+set local role authenticated;
+insert into public.support_messages (ticket_id, body) select id, 'أهلاً، تم' from public.support_tickets where subject = 'تذكرة تجربة الإشعارات';
+select tests.eq((select count(*) from public.notifications where kind = 'support_message'), 1::bigint, 'الإشعارات: المدير يرى إشعاره');
+select public.mark_all_notifications_read();
+select tests.eq((select count(*) from public.notifications where read_at is null), 0::bigint, 'الإشعارات: تعليم الكل كمقروء');
+reset role;
+select tests.eq((select link from public.notifications where kind = 'support_reply' and user_id = tests.uid('+970590000002')),
+  '/school/support?org=' || tests.org('school')::text, 'الإشعارات: رد الدعم لصاحب التذكرة في منطقة المدرسة');
+select tests.eq((select count(*) from public.claim_pending_pushes(50) where endpoint = 'https://push.example.com/abc'), 1::bigint, 'الإشعارات: الإرسال للجوال يجد الجهاز');
+select tests.eq((select count(*) from public.claim_pending_pushes(50)), 0::bigint, 'الإشعارات: ولا يرسل مرتين');
+rollback;
+
 \echo 'كل الفحوص نجحت ✓'

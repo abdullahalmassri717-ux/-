@@ -237,9 +237,27 @@ export default function App() {
     return isOrgOwner(activeEntity) ? '/school' : '/app';
   };
 
+  // A notification link carries ?org=<id>: open that organization first, then the page.
+  const orgParam = new URLSearchParams(location.search).get('org');
+  const pendingOrgSwitch =
+    isReal && !!orgParam && orgParam !== activeEntity.id && auth.entities.some((e) => e.id === orgParam);
+  useEffect(() => {
+    if (!isReal || !orgParam || auth.status !== 'signed_in') return;
+    const ent = auth.entities.find((e) => e.id === orgParam);
+    if (ent && ent.id !== activeEntity.id) {
+      setActiveEntityId(ent.id);
+      saveEntityId(ent.id);
+      return;
+    }
+    const params = new URLSearchParams(location.search);
+    params.delete('org');
+    const rest = params.toString();
+    navigate(`${location.pathname}${rest ? `?${rest}` : ''}`, { replace: true });
+  }, [isReal, orgParam, auth.status, auth.entities, activeEntity.id]);
+
   // Real mode: keep people inside the areas their account may open.
   useEffect(() => {
-    if (!isReal || auth.status === 'loading') return;
+    if (!isReal || auth.status === 'loading' || pendingOrgSwitch) return;
     const path = location.pathname.replace(/\/+$/, '') || '/';
     const area = roleForPath(path);
     const isProtected = area === 'teacher' || area === 'school_principal' || area === 'platform_admin';
@@ -267,7 +285,7 @@ export default function App() {
     if (area === 'school_principal' && !isOrgOwner(activeEntity)) {
       navigate('/app', { replace: true });
     }
-  }, [isReal, auth.status, auth.entities, auth.profile, activeEntity, location.pathname, location.search]);
+  }, [isReal, auth.status, auth.entities, auth.profile, activeEntity, location.pathname, location.search, pendingOrgSwitch]);
 
   // Opening the billing address directly (bookmark, shared link) is blocked too.
   useEffect(() => {

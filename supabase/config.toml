@@ -48,3 +48,7 @@ verify_jwt = false
 
 [functions.whatsapp-inbound]
 verify_jwt = false
+
+[functions.push]
+verify_jwt = false
+import_map = "./functions/deno.json"

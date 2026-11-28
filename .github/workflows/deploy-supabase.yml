@@ -199,3 +199,4 @@ jobs:
           supabase functions deploy shared-report-papers --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt $yes_flag
           supabase functions deploy send-sms-hook --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt $yes_flag
           supabase functions deploy whatsapp-inbound --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt $yes_flag
+          supabase functions deploy push --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt $yes_flag
