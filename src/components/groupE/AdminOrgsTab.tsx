@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { CheckCircle2, Ban, Edit, Layers, FileText, Trash2, Plus, RotateCcw, Lock } from 'lucide-react';
 import { adminApi, type AdminOrg, type AdminPlan, type UsageQuote } from '../../data/admin';
 import { toInternationalPhone } from '../../lib/phone';
-import { adminBillingOverview, adminSetBillingHold, type BillingHoldMode } from '../../data/billingHold';
+import { adminBillingOverview, adminSetBillingHold, adminTrialOverview, type BillingHoldMode } from '../../data/billingHold';
 import { notify } from '../../lib/notify';
 import {
   useAsync,
@@ -38,6 +38,7 @@ export const AdminOrgsTab: React.FC<{ onChanged?: () => void }> = ({ onChanged }
   const orgs = useAsync(() => api.listOrganizations());
   const plans = useAsync(() => api.listPlans());
   const billing = useAsync(() => adminBillingOverview());
+  const trial = useAsync(() => adminTrialOverview());
   const [q, setQ] = useState('');
   const [kind, setKind] = useState<'all' | 'individual_teacher' | 'school'>('all');
   const [status, setStatus] = useState<'all' | AdminOrg['status']>('all');
@@ -66,6 +67,7 @@ export const AdminOrgsTab: React.FC<{ onChanged?: () => void }> = ({ onChanged }
       setDialog(null);
       orgs.reload();
       billing.reload();
+      trial.reload();
       onChanged?.();
       notify(done);
     } catch (e) {
@@ -163,6 +165,22 @@ export const AdminOrgsTab: React.FC<{ onChanged?: () => void }> = ({ onChanged }
                         حساب مدرّس خصوصي مستقل لنفس الشخص، وهو أيضاً معلم في: {o.ownerAlsoTeachesAt}
                       </span>
                     )}
+                    {(() => {
+                      const t = trial.data?.[o.id];
+                      if (!t) return null;
+                      return (
+                        <>
+                          {t.duplicateHint && (
+                            <span className="text-[11px] text-amber-800 font-bold block">⚠ قد يكون تسجيلاً مكرراً: {t.duplicateHint}</span>
+                          )}
+                          {t.quota && (
+                            <span className="text-[11px] text-slate-500 block">
+                              رصيد التجربة: {t.quota.papersUsed}/{t.quota.papersLimit || '∞'} ورقة · {t.quota.aiUsed}/{t.quota.aiLimit || '∞'} أداة ذكاء
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
                     {o.statusNote && o.status === 'disabled' && <span className="text-[11px] text-rose-700 block">سبب التعطيل: {o.statusNote}</span>}
                     {(() => {
                       const b = billing.data?.[o.id];

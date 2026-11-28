@@ -6,6 +6,7 @@
 // only ever created inside Edge Functions (never in the browser).
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { BILLING_LOCK_MESSAGE, billingLock } from './billingLock.ts';
+import { papersExhausted, trialQuota } from './trialQuota.ts';
 import {
   ClaudeGradingProvider,
   GradingError,
@@ -79,6 +80,20 @@ export async function gradeSubmission(
   const orgId = sub.organization_id as string;
   // Unpaid subscription: no AI grading until the payment is confirmed (the paper stays as uploaded).
   if (await billingLock(admin, orgId)) return { ok: false, status: 'uploaded', error: BILLING_LOCK_MESSAGE };
+  // Free trial: a set number of graded papers (admin settings). Re-grading a
+  // paper that was already graded is free; new papers wait, saved, until the
+  // subscription starts.
+  if (sub.status === 'uploaded' || sub.status === 'grading' || sub.status === 'failed') {
+    const trialMessage = papersExhausted(await trialQuota(admin, orgId));
+    if (trialMessage) {
+      const { count } = await admin
+        .from('grading_runs')
+        .select('id', { count: 'exact', head: true })
+        .eq('submission_id', submissionId)
+        .eq('status', 'succeeded');
+      if (!count) return { ok: false, status: 'uploaded', error: trialMessage };
+    }
+  }
   type S = { name: string; numerals: string | null };
   type A = { title: string; group_id: string; auto_send_reports: boolean; status: string; subjects: S | S[] | null };
   const assessment = (Array.isArray(sub.assessments) ? sub.assessments[0] : sub.assessments) as A | null;

@@ -5,6 +5,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { adminClient, corsHeaders, env, json, logFunctionError, runInBackground, userClient } from '../_shared/http.ts';
 import { BILLING_LOCK_MESSAGE, billingLock } from '../_shared/billingLock.ts';
+import { aiExhausted, countAiRequest, FREE_TRIAL_TASKS, trialQuota } from '../_shared/trialQuota.ts';
 import { ClaudeToolModel, EscalatingToolModel, ToolError, toolConfigFromEnv, type Usage } from '../_shared/aiTools/model.ts';
 import { asNumerals } from '../_shared/numerals.ts';
 import {
@@ -100,6 +101,12 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   if (await billingLock(admin, orgId)) return json({ error: BILLING_LOCK_MESSAGE, billingLocked: true }, 402);
+  // Free trial: a set number of AI requests (admin settings), then subscribe.
+  const countsInTrial = !FREE_TRIAL_TASKS.has(task);
+  if (countsInTrial) {
+    const trialMessage = aiExhausted(await trialQuota(admin, orgId));
+    if (trialMessage) return json({ error: trialMessage, trialLimit: true }, 402);
+  }
   // A daily cap per teacher keeps a stuck screen or a mistake from running up the bill.
   const { data: setting } = await admin.from('platform_settings').select('value').eq('key', 'ai_tools').maybeSingle();
   const limit = Number((setting?.value as { daily_limit_per_user?: number } | null)?.daily_limit_per_user ?? 200);
@@ -110,8 +117,10 @@ Deno.serve(async (req) => {
   const config = toolConfigFromEnv(env());
   // Cheap model first; the stronger one only when the cheap one fails.
   const model = new EscalatingToolModel(new ClaudeToolModel(apiKey), config.strongModel);
-  const log = (ran: Usage[], ok = true) => {
+  const log = async (ran: Usage[], ok = true) => {
     const usage = [...model.takeFailedUsage(), ...ran];
+    // One successful request = one use of the free trial's allowance.
+    if (ok && countsInTrial) await countAiRequest(admin, orgId);
     return usage.length
       ? admin.from('ai_tool_runs').insert(
           usage.map((u) => ({

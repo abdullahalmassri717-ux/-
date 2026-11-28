@@ -1,6 +1,6 @@
 // Warning strip above every screen of an organization about its payment:
 // the last days of the free trial, an invoice waiting to be paid, or AI tools
-// stopped because an invoice is overdue. Data is never deleted; paying (and the
+// stopped because an invoice is overdue, or the free trial's allowance used up. Data is never deleted; paying (and the
 // platform admin confirming it) turns everything back on at once.
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Clock, Lock } from 'lucide-react';
@@ -50,6 +50,27 @@ export const BillingBanner: React.FC<{ orgId: string; onNavigate: (s: ScreenId) 
           ? 'استلمنا إيصال الدفع وننتظر تأكيده. تعود أدوات الذكاء الاصطناعي والتصحيح فور التأكيد. بياناتك كلها محفوظة.'
           : `لم تُدفع فاتورة الاشتراك${state.invoice ? ` (${money(state.invoice.amount, state.invoice.currency)})` : ''}، فتوقفت أدوات الذكاء الاصطناعي والتصحيح ورفع الأوراق. بياناتك كلها محفوظة، وتعود الخدمة فور تأكيد الدفع.`;
     return box('bg-rose-600 text-white', <Lock className="w-5 h-5" />, text);
+  }
+  // Free trial allowance: say so when it is used up (everyone) or nearly (owner).
+  const q = state.trialQuota;
+  if (q) {
+    const papersOut = q.papersLimit > 0 && q.papersUsed >= q.papersLimit;
+    const aiOut = q.aiLimit > 0 && q.aiUsed >= q.aiLimit;
+    if (papersOut || aiOut) {
+      const what = papersOut && aiOut ? 'التصحيح وأدوات الذكاء الاصطناعي' : papersOut ? `التصحيح (${q.papersLimit} ورقة)` : `أدوات الذكاء الاصطناعي (${q.aiLimit} طلباً)`;
+      const text = state.owner
+        ? `انتهى رصيد الفترة التجريبية المجانية في ${what}. اشترك لتكمل، وبياناتك وأوراقك كلها محفوظة${papersOut ? ' والأوراق الجديدة تُصحَّح فور تفعيل الاشتراك' : ''}.`
+        : `انتهى رصيد الفترة التجريبية في ${what}. تواصل مع إدارة الجهة لتفعيل الاشتراك.`;
+      return box('bg-amber-50 border border-amber-300 text-amber-900', <AlertTriangle className="w-5 h-5 text-amber-600" />, text);
+    }
+    const near = (used: number, limit: number) => limit > 0 && used >= limit * 0.8;
+    if (state.owner && (near(q.papersUsed, q.papersLimit) || near(q.aiUsed, q.aiLimit))) {
+      return box(
+        'bg-blue-50 border border-blue-200 text-blue-900',
+        <Clock className="w-5 h-5 text-blue-600" />,
+        `رصيد الفترة التجريبية قارب على الانتهاء: صحّحت ${q.papersUsed} من ${q.papersLimit} ورقة، واستخدمت أدوات الذكاء الاصطناعي ${q.aiUsed} من ${q.aiLimit} مرة.`,
+      );
+    }
   }
   if (!state.owner) return null;
   if (state.invoice && !state.pendingReceipt) {
