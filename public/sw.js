@@ -1,8 +1,9 @@
 // Daqa service worker: lets the site be installed as an app and open without internet.
 // - Pages: always try the internet first, fall back to the saved copy when offline.
 // - Built files (/assets/*, icons, fonts): saved after the first visit.
+// - Shows Daqa's notifications on the phone (push) and opens the right page on tap.
 // - Never touches sign-in, database or uploads (Supabase and /api), or anything that is not a GET.
-const VERSION = 'daqa-v1';
+const VERSION = 'daqa-v2';
 const SHELL = ['/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -62,3 +63,40 @@ async function cacheFirst(req) {
   }
   return res;
 }
+
+// Notifications sent by the server (supabase/functions/push).
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { title: 'دقة', body: event.data ? event.data.text() : '' };
+  }
+  const title = data.title || 'دقة';
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || '',
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      dir: 'rtl',
+      lang: 'ar',
+      tag: data.tag || undefined,
+      data: { url: typeof data.url === 'string' && data.url.startsWith('/') ? data.url : '/app' },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL((event.notification.data && event.notification.data.url) || '/app', self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+      for (const w of wins) {
+        if (new URL(w.url).origin === self.location.origin && 'focus' in w) {
+          return w.focus().then(() => ('navigate' in w ? w.navigate(url) : null));
+        }
+      }
+      return self.clients.openWindow(url);
+    })
+  );
+});

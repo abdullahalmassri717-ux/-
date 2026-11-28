@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { PLATFORM_CONFIG, MOCK_ENTITIES } from '../mockData';
 import { useAuth } from '../lib/auth';
+import { NotificationBell } from './common/NotificationBell';
 
 interface NavbarProps {
   currentRole: UserRole;
@@ -425,6 +426,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>التقرير الشامل</span>
             </button>
           )}
+
+          <NotificationBell />
 
           {/* Logout Button */}
           {onLogout && (
