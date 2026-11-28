@@ -5,6 +5,7 @@ import { toInternationalPhone } from './phone';
 import { Entity, EntityRole, EntityType } from '../types';
 import { PLATFORM_CONFIG } from '../mockData';
 import { AdminAccess, FULL_ACCESS, parseAdminAccess } from './adminAccess';
+import { deviceId } from './deviceId';
 
 // Real sign-in: WhatsApp number + one-time 6-digit code, through Supabase Auth.
 // When no Supabase project is configured the app stays in demo mode and this
@@ -212,6 +213,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       p_name: input.name.trim(),
       p_type: input.kind,
       p_full_name: input.fullName.trim(),
+      p_device: deviceId(),
     });
     if (error) return { id: null, error: friendlyError(error) };
     const orgId = data as string;

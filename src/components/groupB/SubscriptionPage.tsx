@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ScreenId, Entity } from '../../types';
 import { errorMessage, useData, useLoad } from '../../data/DataContext';
 import { monthStart, whatsappLink, type InvoiceRow, type TuitionPayment, type TuitionRow } from '../../data/billing';
@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { notify } from '../../lib/notify';
 import { InvoiceSheet } from '../common/InvoiceSheet';
+import { getBillingState, requestSubscriptionInvoice, type TrialQuota } from '../../data/billingHold';
 
 interface SubscriptionPageProps {
   onNavigate: (screen: ScreenId) => void;
@@ -78,6 +79,27 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
   const tuitionQ = useLoad((st) => (isOwner && !isSchool ? st.listTuition(month) : Promise.resolve([] as TuitionRow[])), [month]);
   const billing = billingQ.data ?? null;
   const rows = tuitionQ.data ?? [];
+  // Free-trial allowance (papers graded / AI requests) until the first payment.
+  const [trialQuota, setTrialQuota] = useState<TrialQuota | null>(null);
+  const [subscribing, setSubscribing] = useState(false);
+  const orgId = activeEntity?.id;
+  useEffect(() => {
+    if (!isOwner || !orgId) return;
+    void getBillingState(orgId).then((st) => setTrialQuota(st?.trialQuota ?? null));
+  }, [isOwner, orgId, billingQ.data]);
+  const subscribeNow = async () => {
+    if (!orgId) return;
+    setSubscribing(true);
+    try {
+      await requestSubscriptionInvoice(orgId);
+      notify('صدرت فاتورة الاشتراك. ادفعها وارفع الإيصال من هذه الصفحة، ويُفتح الاستخدام الكامل فور تأكيد الدفع.', 'success');
+      billingQ.reload();
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      setSubscribing(false);
+    }
+  };
   const sym = billing?.currency.symbol ?? '';
 
   // Modals
@@ -650,6 +672,25 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate, 
                     )}
                     {billing.subscriptionStatus === 'trial' && (
                       <p className="text-[11px] text-blue-700 font-bold">فترة تجريبية{billing.trialEndsOn ? ` حتى ${dateLabel(billing.trialEndsOn)}` : ''}</p>
+                    )}
+                    {trialQuota && (
+                      <div className="text-[11px] text-slate-600 space-y-0.5 pt-1">
+                        <p>
+                          رصيد التجربة المجانية: صحّحت <strong className="font-mono">{trialQuota.papersUsed}</strong> من{' '}
+                          <strong className="font-mono">{trialQuota.papersLimit}</strong> ورقة، وأدوات الذكاء الاصطناعي{' '}
+                          <strong className="font-mono">{trialQuota.aiUsed}</strong> من <strong className="font-mono">{trialQuota.aiLimit}</strong>.
+                        </p>
+                        <p className="text-slate-500">يُفتح الاستخدام بلا حدود بعد أول دفعة.</p>
+                        {billing.subscriptionStatus === 'trial' && !openInvoice && (
+                          <button
+                            disabled={subscribing}
+                            onClick={subscribeNow}
+                            className="mt-1 bg-[#1E3A5F] text-white px-3 py-1.5 rounded-lg font-bold disabled:opacity-60"
+                          >
+                            {subscribing ? 'لحظة...' : 'اشترك الآن'}
+                          </button>
+                        )}
+                      </div>
                     )}
                     {billing.subscriptionStatus === 'past_due' && <p className="text-[11px] text-rose-700 font-bold">يوجد مبلغ متأخر على الاشتراك</p>}
                   </div>

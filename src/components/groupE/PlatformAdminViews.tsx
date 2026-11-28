@@ -590,6 +590,8 @@ const SettingsTab: React.FC = () => {
   const [accounts, setAccounts] = useState<PaymentAccount[] | null>(null);
   const [support, setSupport] = useState('');
   const [trialDays, setTrialDays] = useState('30');
+  // Free-trial allowance until the first payment (0 = no limit).
+  const [trialLimits, setTrialLimits] = useState({ papers_teacher: '150', ai_teacher: '50', papers_school: '600', ai_school: '150' });
   const [graceDays, setGraceDays] = useState('7');
   const [currency, setCurrency] = useState({ code: PLATFORM_CONFIG.currencyCode, symbol: PLATFORM_CONFIG.currencySymbol, name: PLATFORM_CONFIG.currency });
   const [usdRate, setUsdRate] = useState('3.7');
@@ -599,7 +601,7 @@ const SettingsTab: React.FC = () => {
     Promise.all([
       getPublicSetting<{ accounts?: PaymentAccount[] }>('payment_accounts'),
       getPublicSetting<{ whatsapp?: string }>('support'),
-      getPublicSetting<{ days?: number }>('trial'),
+      getPublicSetting<{ days?: number; papers_teacher?: number; ai_teacher?: number; papers_school?: number; ai_school?: number }>('trial'),
       getPublicSetting<{ code: string; symbol: string; name: string }>('currency'),
       getPublicSetting<{ usd_to_ils?: number }>('exchange'),
       getPublicSetting<{ grace_days?: number; warn_days?: number }>('billing_policy'),
@@ -609,6 +611,14 @@ const SettingsTab: React.FC = () => {
       setAccounts(a?.accounts ?? []);
       setSupport(s?.whatsapp ?? '');
       if (t?.days) setTrialDays(String(t.days));
+      if (t) {
+        setTrialLimits((cur) => ({
+          papers_teacher: String(t.papers_teacher ?? cur.papers_teacher),
+          ai_teacher: String(t.ai_teacher ?? cur.ai_teacher),
+          papers_school: String(t.papers_school ?? cur.papers_school),
+          ai_school: String(t.ai_school ?? cur.ai_school),
+        }));
+      }
       if (c) setCurrency(c);
     });
   }, []);
@@ -619,7 +629,14 @@ const SettingsTab: React.FC = () => {
     try {
       await savePlatformSetting('payment_accounts', { accounts: accounts.filter((a) => a.title.trim() && a.number.trim()) });
       await savePlatformSetting('support', { whatsapp: support.replace(/[^\d+]/g, '') });
-      await savePlatformSetting('trial', { days: Math.max(0, Number(trialDays) || 0) });
+      const n = (v: string) => Math.max(0, Math.round(Number(v) || 0));
+      await savePlatformSetting('trial', {
+        days: n(trialDays),
+        papers_teacher: n(trialLimits.papers_teacher),
+        ai_teacher: n(trialLimits.ai_teacher),
+        papers_school: n(trialLimits.papers_school),
+        ai_school: n(trialLimits.ai_school),
+      });
       await savePlatformSetting('billing_policy', { grace_days: Math.max(0, Number(graceDays) || 0), warn_days: 3 }, false);
       await savePlatformSetting('currency', currency);
       if (Number(usdRate) > 0) await savePlatformSetting('exchange', { usd_to_ils: Number(usdRate) }, false);
@@ -686,6 +703,34 @@ const SettingsTab: React.FC = () => {
           <input type="number" min={0} step="0.01" value={usdRate} onChange={(e) => setUsdRate(e.target.value)} dir="ltr" className="w-full p-2 border border-slate-300 rounded-lg font-mono" />
           <span className="block text-[11px] text-slate-500">تكلفة الذكاء الاصطناعي بالدولار. نستخدم هذا السعر لعرضها بعملتك في «جودة التصحيح».</span>
         </label>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-3">
+        <h3 className="font-extrabold text-[#1E3A5F] text-sm">حدود الفترة التجريبية</h3>
+        <p className="text-slate-500">
+          الاستخدام المجاني محدود بهذه الأرقام حتى أول دفعة، حتى لا يأخذ أحد التجربة ويعيدها برقم جديد بلا حدود. عند انتهاء الرصيد تُحفظ الأوراق الجديدة وتُصحَّح بعد الاشتراك. اكتب 0 لإلغاء الحد.
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {(
+            [
+              ['papers_teacher', 'أوراق مصحّحة (مدرّس)'],
+              ['ai_teacher', 'طلبات أدوات الذكاء (مدرّس)'],
+              ['papers_school', 'أوراق مصحّحة (مدرسة أو مركز)'],
+              ['ai_school', 'طلبات أدوات الذكاء (مدرسة أو مركز)'],
+            ] as const
+          ).map(([k, label]) => (
+            <label key={k} className="space-y-1">
+              <span className="font-bold block">{label}</span>
+              <input
+                type="number"
+                min={0}
+                value={trialLimits[k]}
+                onChange={(e) => setTrialLimits({ ...trialLimits, [k]: e.target.value })}
+                className="w-full p-2 border border-slate-300 rounded-lg font-mono"
+              />
+            </label>
+          ))}
+        </div>
       </div>
 
       <button disabled={busy} onClick={save} className="bg-[#1E3A5F] text-white px-6 py-2.5 rounded-xl font-bold disabled:opacity-60">
